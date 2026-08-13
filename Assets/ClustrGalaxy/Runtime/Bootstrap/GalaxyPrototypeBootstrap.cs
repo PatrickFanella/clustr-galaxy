@@ -80,7 +80,7 @@ namespace ClustrGalaxy.Bootstrap
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader);
+            hud.Initialize(flight, targeting, dataLoader, navigation);
         }
 
         private static void CreateSystem()

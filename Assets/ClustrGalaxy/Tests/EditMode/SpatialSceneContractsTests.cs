@@ -239,6 +239,33 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void MapSelection_OnlyAllowsTheNextSemanticLevel()
+        {
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, "community"), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, "post"), Is.False);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Region, "subreddit"), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.System, "post"), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Inspect, "comment"), Is.True);
+        }
+
+        [Test]
+        public void MapSelection_PicksTheNearestVisibleCandidateWithinRadius()
+        {
+            var cursor = new Vector2(0.5f, 0.5f);
+            var candidates = new[]
+            {
+                new GalaxyMapCandidate("far", "community", new Vector2(0.6f, 0.5f), true),
+                new GalaxyMapCandidate("near", "community", new Vector2(0.52f, 0.5f), true),
+                new GalaxyMapCandidate("behind", "community", cursor, false)
+            };
+
+            Assert.That(GalaxyMapSelection.NearestId(
+                GalaxyNavigationLevel.Galaxy, cursor, candidates, 0.15f), Is.EqualTo("near"));
+            Assert.That(GalaxyMapSelection.NearestId(
+                GalaxyNavigationLevel.Galaxy, Vector2.zero, candidates, 0.05f), Is.Empty);
+        }
+
+        [Test]
         public void LandmarkProjection_IsStableAndAddsDepthToFlatLegacyCoordinates()
         {
             var bounds = new SpatialBounds

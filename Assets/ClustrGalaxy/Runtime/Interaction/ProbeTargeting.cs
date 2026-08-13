@@ -54,8 +54,19 @@ namespace ClustrGalaxy.Interaction
                 }
             }
 
-            Target = best;
+            SelectTarget(best);
+        }
+
+        public void SelectTarget(GalaxyEntity target)
+        {
+            Target = target;
             TargetChanged(Target);
+        }
+
+        public void SetAcquisitionEnabled(bool enabled)
+        {
+            if (enabled) targetAction?.Enable();
+            else targetAction?.Disable();
         }
 
         private GalaxyEntity DirectReticleTarget()

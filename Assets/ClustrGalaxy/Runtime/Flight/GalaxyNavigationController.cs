@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -15,6 +16,8 @@ namespace ClustrGalaxy.Flight
         private Camera viewCamera = null!;
         private InputAction toggleMap = null!;
         private InputAction back = null!;
+        private InputAction mapCursor = null!;
+        private InputAction mapSelect = null!;
         private float blend;
         private Vector3 storedVelocity;
         private Vector3 storedAngularVelocity;
@@ -23,6 +26,7 @@ namespace ClustrGalaxy.Flight
         public bool IsMapOpen { get; private set; }
         public GalaxyNavigationLevel Level => history.Level;
         public string FocusedStableId => history.StableId;
+        public Vector2 MapCursorPosition { get; private set; } = new(0.5f, 0.5f);
         public event Action<bool> ModeChanged = delegate { };
         public event Action<GalaxyNavigationLevel, string> ViewChanged = delegate { };
 
@@ -42,18 +46,32 @@ namespace ClustrGalaxy.Flight
             back = new InputAction("Back", InputActionType.Button, "<Keyboard>/escape");
             back.AddBinding("<Gamepad>/start");
             back.performed += _ => NavigateBack();
+            mapCursor = new InputAction("Map Cursor", InputActionType.Value);
+            mapCursor.AddCompositeBinding("2DVector")
+                .With("Up", "<Keyboard>/upArrow")
+                .With("Down", "<Keyboard>/downArrow")
+                .With("Left", "<Keyboard>/leftArrow")
+                .With("Right", "<Keyboard>/rightArrow");
+            mapCursor.AddBinding("<Gamepad>/leftStick");
+            mapSelect = new InputAction("Map Select", InputActionType.Button, "<Keyboard>/enter");
+            mapSelect.AddBinding("<Gamepad>/buttonSouth");
+            mapSelect.performed += _ => SelectAtMapCursor();
         }
 
         private void OnEnable()
         {
             toggleMap?.Enable();
             back?.Enable();
+            mapCursor?.Enable();
+            mapSelect?.Enable();
         }
 
         private void OnDisable()
         {
             toggleMap?.Disable();
             back?.Disable();
+            mapCursor?.Disable();
+            mapSelect?.Disable();
         }
 
         public void SetMapOpen(bool open)
@@ -63,6 +81,7 @@ namespace ClustrGalaxy.Flight
                 return;
             }
             IsMapOpen = open;
+            targeting?.SetAcquisitionEnabled(!open);
             if (open)
             {
                 storedVelocity = body.linearVelocity;
@@ -109,6 +128,50 @@ namespace ClustrGalaxy.Flight
 
         private NavigationPose CapturePose() => new(body.position, body.rotation);
 
+        private void Update()
+        {
+            if (!IsMapOpen)
+            {
+                return;
+            }
+
+            MapCursorPosition = new Vector2(
+                Mathf.Clamp01(MapCursorPosition.x + mapCursor.ReadValue<Vector2>().x * Time.unscaledDeltaTime * 0.65f),
+                Mathf.Clamp01(MapCursorPosition.y + mapCursor.ReadValue<Vector2>().y * Time.unscaledDeltaTime * 0.65f));
+            if (Mouse.current != null && Mouse.current.delta.ReadValue().sqrMagnitude > 0.1f)
+            {
+                var mouse = Mouse.current.position.ReadValue();
+                MapCursorPosition = new Vector2(mouse.x / Screen.width, mouse.y / Screen.height);
+            }
+        }
+
+        private void SelectAtMapCursor()
+        {
+            if (!IsMapOpen || viewCamera == null)
+            {
+                return;
+            }
+
+            var candidates = new List<GalaxyMapCandidate>();
+            foreach (var entity in GalaxyEntity.ActiveEntities)
+            {
+                var metadata = entity.GetComponent<LiveEntityMetadata>();
+                if (metadata?.Node == null)
+                {
+                    continue;
+                }
+                var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
+                candidates.Add(new GalaxyMapCandidate(entity.StableId, metadata.Node.type,
+                    new Vector2(viewport.x, viewport.y), viewport.z > 0f));
+            }
+
+            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition, candidates, 0.12f);
+            if (GalaxyEntity.TryGet(selectedId, out var selected))
+            {
+                targeting.SelectTarget(selected);
+            }
+        }
+
         private void LateUpdate()
         {
             if (viewCamera == null)
@@ -143,6 +206,8 @@ namespace ClustrGalaxy.Flight
         {
             toggleMap?.Dispose();
             back?.Dispose();
+            mapCursor?.Dispose();
+            mapSelect?.Dispose();
         }
     }
 }

@@ -14,15 +14,18 @@ namespace ClustrGalaxy.UI
         private GUIStyle bodyStyle = null!;
         private Texture2D panelTexture = null!;
         private GalaxyPerformanceMonitor performance = null!;
+        private GalaxyNavigationController navigation = null!;
 
         public void Initialize(
             ObserverProbeController flightController,
             ProbeTargeting targetController,
-            SpatialSceneLoader spatialSceneLoader)
+            SpatialSceneLoader spatialSceneLoader,
+            GalaxyNavigationController navigationController)
         {
             flight = flightController;
             targeting = targetController;
             dataLoader = spatialSceneLoader;
+            navigation = navigationController;
             performance = GetComponent<GalaxyPerformanceMonitor>();
         }
 
@@ -60,6 +63,7 @@ namespace ClustrGalaxy.UI
             GUILayout.Label($"SPEED  {flight?.Speed ?? 0f:000.0}", bodyStyle);
             GUILayout.Label($"FLIGHT  {(flight != null && flight.GravityModeEnabled ? "GRAVITY / MOMENTUM" : "ASSISTED CRUISE")}", bodyStyle);
             GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
+            GUILayout.Label($"VIEW  {navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT"}", bodyStyle);
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
@@ -84,6 +88,16 @@ namespace ClustrGalaxy.UI
             GUI.DrawTexture(new Rect(center.x - 10, center.y - 1, 20, 2), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(center.x - 1, center.y - 10, 2, 20), Texture2D.whiteTexture);
             GUI.color = Color.white;
+
+            if (navigation != null && navigation.IsMapOpen)
+            {
+                var cursor = navigation.MapCursorPosition;
+                var point = new Vector2(cursor.x * Screen.width, (1f - cursor.y) * Screen.height);
+                GUI.color = new Color(1f, 0.8f, 0.2f, 0.95f);
+                GUI.DrawTexture(new Rect(point.x - 14, point.y - 2, 28, 4), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(point.x - 2, point.y - 14, 4, 28), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+            }
         }
 
         private void OnDestroy()
