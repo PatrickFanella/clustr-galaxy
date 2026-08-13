@@ -9,6 +9,7 @@ namespace ClustrGalaxy.Data
         private SpatialSceneClient client = null!;
         private SnapshotCache cache = null!;
         private string apiBase = string.Empty;
+        private bool offlineOnly;
         private bool started;
 
         public SpatialManifest Manifest { get; private set; } = null!;
@@ -21,7 +22,7 @@ namespace ClustrGalaxy.Data
         public event Action SceneLoaded = delegate { };
         public event Action<SpatialScene> ScopeLoaded = delegate { };
 
-        public void Initialize(string requestedApiBase)
+        public void Initialize(string requestedApiBase, bool startOfflineOnly = false)
         {
             if (started)
             {
@@ -30,6 +31,7 @@ namespace ClustrGalaxy.Data
 
             started = true;
             apiBase = requestedApiBase;
+            offlineOnly = startOfflineOnly;
             client = new SpatialSceneClient();
             cache = new SnapshotCache(SnapshotCache.DefaultRoot);
             StartCoroutine(LoadOverview());
@@ -73,10 +75,24 @@ namespace ClustrGalaxy.Data
             DataMode = GalaxyDataMode.Connecting;
             string manifestJson = null!;
             SpatialRequestFailure? manifestFailure = null;
-            yield return client.GetJson(
-                SpatialSceneRequestUris.Manifest(apiBase),
-                json => manifestJson = json,
-                failure => manifestFailure = failure);
+            if (offlineOnly)
+            {
+                if (!cache.TryRead("active-manifest", out manifestJson))
+                {
+                    IsOffline = true;
+                    Fail("OFFLINE CACHE UNAVAILABLE");
+                    yield break;
+                }
+
+                IsOffline = true;
+            }
+            else
+            {
+                yield return client.GetJson(
+                    SpatialSceneRequestUris.Manifest(apiBase),
+                    json => manifestJson = json,
+                    failure => manifestFailure = failure);
+            }
 
             var liveManifest = !string.IsNullOrWhiteSpace(manifestJson);
             if (!liveManifest && manifestFailure?.ResponseCode != 404)
@@ -118,7 +134,14 @@ namespace ClustrGalaxy.Data
             var overviewKey = Manifest == null ? string.Empty : ScopeCacheKey("overview", "root");
             string overviewJson = null!;
             SpatialRequestFailure? overviewFailure = null;
-            yield return client.GetJson(overviewUri, json => overviewJson = json, failure => overviewFailure = failure);
+            if (offlineOnly)
+            {
+                cache.TryRead(overviewKey, out overviewJson);
+            }
+            else
+            {
+                yield return client.GetJson(overviewUri, json => overviewJson = json, failure => overviewFailure = failure);
+            }
 
             if (string.IsNullOrWhiteSpace(overviewJson) && Manifest != null && cache.TryRead(overviewKey, out var cachedOverview))
             {

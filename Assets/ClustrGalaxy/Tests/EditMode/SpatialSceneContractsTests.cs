@@ -548,6 +548,15 @@ namespace ClustrGalaxy.Tests
                 Is.GreaterThanOrEqualTo(requiredClearance - 0.000001d));
         }
 
+        [Test]
+        public void LaunchOptions_RecognizeExplicitOfflineModeCaseInsensitively()
+        {
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "-clustr-offline" }), Is.True);
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "-CLUSTR-OFFLINE" }), Is.True);
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy" }), Is.False);
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(null), Is.False);
+        }
+
         private static SpatialManifest CompatibleManifest(long revision, long catalog) => new()
         {
             revision_id = revision,
