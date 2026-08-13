@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Generation;
+using ClustrGalaxy.Flight;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -13,11 +14,26 @@ namespace ClustrGalaxy.World
         private Transform layerRoot = null!;
         private Material landmarkMaterial = null!;
         private Material routeMaterial = null!;
+        private GalaxyNavigationController navigation = null!;
 
         public void Initialize(SpatialSceneLoader spatialSceneLoader)
         {
             loader = spatialSceneLoader;
             loader.SceneLoaded += RenderLoadedScene;
+        }
+
+        public void BindNavigation(GalaxyNavigationController controller)
+        {
+            navigation = controller;
+            navigation.ViewChanged += NavigationChanged;
+        }
+
+        private void NavigationChanged(GalaxyNavigationLevel level, string _) =>
+            SetLayerActive(level == GalaxyNavigationLevel.Galaxy);
+
+        public void SetLayerActive(bool active)
+        {
+            if (layerRoot != null) layerRoot.gameObject.SetActive(active);
         }
 
         private void RenderLoadedScene()
@@ -164,6 +180,7 @@ namespace ClustrGalaxy.World
             {
                 loader.SceneLoaded -= RenderLoadedScene;
             }
+            if (navigation != null) navigation.ViewChanged -= NavigationChanged;
             if (landmarkMaterial != null)
             {
                 Object.Destroy(landmarkMaterial);

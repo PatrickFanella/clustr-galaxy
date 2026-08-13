@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Simulation;
+using ClustrGalaxy.Flight;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -22,11 +23,21 @@ namespace ClustrGalaxy.World
         private Material commentMaterial = null!;
         private Material routeMaterial = null!;
         private Material trafficMaterial = null!;
+        private GalaxyNavigationController navigation = null!;
+        private GalacticOverviewRenderer overview = null!;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
         {
             loader = sceneLoader;
             loader.ScopeLoaded += Materialize;
+        }
+
+        public void BindNavigation(GalaxyNavigationController controller, GalacticOverviewRenderer overviewRenderer)
+        {
+            navigation = controller;
+            overview = overviewRenderer;
+            navigation.ViewChanged += NavigationChanged;
+            ApplyVisibility(navigation.Level);
         }
 
         private void Materialize(SpatialScene scene)
@@ -46,12 +57,33 @@ namespace ClustrGalaxy.World
                     MaterializeThread(scene);
                     break;
             }
+            if (navigation != null) ApplyVisibility(navigation.Level);
+        }
+
+        private void NavigationChanged(GalaxyNavigationLevel level, string _) => ApplyVisibility(level);
+
+        private void ApplyVisibility(GalaxyNavigationLevel level)
+        {
+            var visibility = GalaxyLayerVisibility.For(level,
+                regionRoot != null, systemRoot != null, discussionRoot != null, threadRoot != null);
+            overview?.SetLayerActive(visibility.Overview);
+            SetActive(regionRoot, visibility.Region);
+            SetActive(systemRoot, visibility.System);
+            SetActive(discussionRoot, visibility.Discussion);
+            SetActive(threadRoot, visibility.Thread);
+        }
+
+        private static void SetActive(Transform root, bool active)
+        {
+            if (root != null) root.gameObject.SetActive(active);
         }
 
         private void MaterializeRegion(SpatialScene scene)
         {
             DestroyRoot(ref regionRoot);
             DestroyRoot(ref systemRoot);
+            DestroyRoot(ref discussionRoot);
+            DestroyRoot(ref threadRoot);
             regionRoot = new GameObject($"Live Region {scene.root_id}").transform;
             regionRoot.SetParent(transform, false);
             EnsureMaterials();
@@ -114,6 +146,8 @@ namespace ClustrGalaxy.World
                 regionRoot.gameObject.SetActive(false);
             }
             DestroyRoot(ref systemRoot);
+            DestroyRoot(ref discussionRoot);
+            DestroyRoot(ref threadRoot);
             systemRoot = new GameObject($"Live System {scene.root_id}").transform;
             systemRoot.SetParent(transform, false);
             EnsureMaterials();
@@ -362,6 +396,7 @@ namespace ClustrGalaxy.World
         private void OnDestroy()
         {
             if (loader != null) loader.ScopeLoaded -= Materialize;
+            if (navigation != null) navigation.ViewChanged -= NavigationChanged;
             foreach (var material in new[] { starMaterial, planetMaterial, userMaterial, satelliteMaterial, commentMaterial, routeMaterial, trafficMaterial })
             {
                 if (material != null) Object.Destroy(material);

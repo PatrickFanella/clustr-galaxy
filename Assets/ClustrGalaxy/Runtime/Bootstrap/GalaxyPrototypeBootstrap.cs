@@ -76,6 +76,10 @@ namespace ClustrGalaxy.Bootstrap
             cameraObject.AddComponent<AudioListener>();
             var navigation = probe.AddComponent<GalaxyNavigationController>();
             navigation.Initialize(targeting, camera);
+            var materializer = dataLoader.GetComponent<LiveGalaxyMaterializer>();
+            var overview = dataLoader.GetComponent<GalacticOverviewRenderer>();
+            overview.BindNavigation(navigation);
+            materializer.BindNavigation(navigation, overview);
             probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
 
             var hud = probe.AddComponent<ProbeHud>();

@@ -266,6 +266,24 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void LayerVisibility_KeepsThePreviousLayerVisibleDuringPrefetch()
+        {
+            var loadingSystem = GalaxyLayerVisibility.For(
+                GalaxyNavigationLevel.System, hasRegion: true, hasSystem: false,
+                hasDiscussion: false, hasThread: false);
+            var inspectingThread = GalaxyLayerVisibility.For(
+                GalaxyNavigationLevel.Inspect, hasRegion: true, hasSystem: true,
+                hasDiscussion: true, hasThread: true);
+
+            Assert.That(loadingSystem.Region, Is.True);
+            Assert.That(loadingSystem.System, Is.False);
+            Assert.That(inspectingThread.Region, Is.False);
+            Assert.That(inspectingThread.System, Is.True);
+            Assert.That(inspectingThread.Discussion, Is.True);
+            Assert.That(inspectingThread.Thread, Is.True);
+        }
+
+        [Test]
         public void LandmarkProjection_IsStableAndAddsDepthToFlatLegacyCoordinates()
         {
             var bounds = new SpatialBounds
