@@ -24,7 +24,7 @@ namespace ClustrGalaxy.World
             EntityType = entityType;
             Value = value;
             gameObject.name = $"{entityType}: {displayName}";
-            if (!string.IsNullOrWhiteSpace(StableId))
+            if (isActiveAndEnabled && !string.IsNullOrWhiteSpace(StableId))
             {
                 Registry[StableId] = this;
             }
@@ -35,7 +35,25 @@ namespace ClustrGalaxy.World
 
         public static IEnumerable<GalaxyEntity> ActiveEntities => Registry.Values;
 
-        private void OnDestroy()
+        public void ClearIdentity()
+        {
+            RemoveFromRegistry();
+            StableId = string.Empty;
+            DisplayName = string.Empty;
+            EntityType = string.Empty;
+            Value = 0;
+        }
+
+        private void OnEnable()
+        {
+            if (!string.IsNullOrWhiteSpace(StableId)) Registry[StableId] = this;
+        }
+
+        private void OnDisable() => RemoveFromRegistry();
+
+        private void OnDestroy() => RemoveFromRegistry();
+
+        private void RemoveFromRegistry()
         {
             if (!string.IsNullOrWhiteSpace(StableId) && Registry.TryGetValue(StableId, out var current) && current == this)
             {

@@ -284,6 +284,31 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void EntityPool_ReusesObjectsAndRemovesReleasedIdsFromRegistry()
+        {
+            var owner = new GameObject("pool owner");
+            try
+            {
+                var pool = new GalaxyEntityPool(owner.transform);
+                var first = pool.Acquire(PrimitiveType.Sphere, owner.transform);
+                first.GetComponent<GalaxyEntity>().Initialize("post_old", "Old", "post planet", 1);
+
+                Assert.That(GalaxyEntity.TryGet("post_old", out _), Is.True);
+                pool.Release(first);
+                Assert.That(GalaxyEntity.TryGet("post_old", out _), Is.False);
+
+                var reused = pool.Acquire(PrimitiveType.Sphere, owner.transform);
+                Assert.That(reused, Is.SameAs(first));
+                reused.GetComponent<GalaxyEntity>().Initialize("post_new", "New", "post planet", 2);
+                Assert.That(GalaxyEntity.TryGet("post_new", out _), Is.True);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner);
+            }
+        }
+
+        [Test]
         public void LandmarkProjection_IsStableAndAddsDepthToFlatLegacyCoordinates()
         {
             var bounds = new SpatialBounds

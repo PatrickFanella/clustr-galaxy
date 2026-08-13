@@ -25,10 +25,12 @@ namespace ClustrGalaxy.World
         private Material trafficMaterial = null!;
         private GalaxyNavigationController navigation = null!;
         private GalacticOverviewRenderer overview = null!;
+        private GalaxyEntityPool entityPool = null!;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
         {
             loader = sceneLoader;
+            entityPool = new GalaxyEntityPool(transform);
             loader.ScopeLoaded += Materialize;
         }
 
@@ -161,7 +163,7 @@ namespace ClustrGalaxy.World
                 loader.Manifest.normalization_quantiles.subreddit, 16f, 34f);
             var star = CreateSphere(systemRoot, rootNode, "subreddit star", Vector3.zero, starRadius, starMaterial).transform;
             const double starMu = 720d;
-            star.gameObject.AddComponent<GravitySource>().Initialize(starMu, Math.Max(4d, starRadius * 0.55d), 12d);
+            GetOrAdd<GravitySource>(star.gameObject).Initialize(starMu, Math.Max(4d, starRadius * 0.55d), 12d);
 
             var posts = new List<SpatialNode>();
             var users = new List<SpatialNode>();
@@ -180,9 +182,9 @@ namespace ClustrGalaxy.World
                 var elements = StableOrbitGenerator.GeneratePlanet(
                     loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id, axis);
                 var planet = CreateSphere(systemRoot, node, "post planet", Vector3.zero, radius, planetMaterial);
-                planet.AddComponent<KeplerOrbit>().Initialize(star, elements, starMu, GalaxyScale.PlanetOrbitTimeScale);
+                GetOrAdd<KeplerOrbit>(planet).Initialize(star, elements, starMu, GalaxyScale.PlanetOrbitTimeScale);
                 var mu = Mathf.Lerp(180f, 420f, Mathf.InverseLerp(4f, 10f, radius));
-                planet.AddComponent<GravitySource>().Initialize(mu, Math.Max(1.5d, radius * 0.6d), 6d);
+                GetOrAdd<GravitySource>(planet).Initialize(mu, Math.Max(1.5d, radius * 0.6d), 6d);
             }
 
             users.Sort(CompareActivityThenId);
@@ -194,7 +196,7 @@ namespace ClustrGalaxy.World
                 var elements = StableOrbitGenerator.GeneratePlanet(
                     loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id,
                     420d + (index % 24) * 85d);
-                ship.AddComponent<KeplerOrbit>().Initialize(star, elements, starMu, GalaxyScale.ShipOrbitTimeScale);
+                GetOrAdd<KeplerOrbit>(ship).Initialize(star, elements, starMu, GalaxyScale.ShipOrbitTimeScale);
             }
         }
 
@@ -237,7 +239,7 @@ namespace ClustrGalaxy.World
                     var elements = StableOrbitGenerator.GenerateMoon(
                         loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id, axis);
                     var satellite = CreateSphere(discussionRoot, node, "discussion satellite", Vector3.zero, radius, satelliteMaterial);
-                    satellite.AddComponent<KeplerOrbit>().Initialize(planet.transform, elements, 300d, GalaxyScale.MoonOrbitTimeScale);
+                    GetOrAdd<KeplerOrbit>(satellite).Initialize(planet.transform, elements, 300d, GalaxyScale.MoonOrbitTimeScale);
                     satelliteCount++;
                     continue;
                 }
@@ -249,7 +251,7 @@ namespace ClustrGalaxy.World
                 var particle = CreateSphere(discussionRoot, node,
                     node.metrics.reply_count > 0 ? "parent comment particle" : "comment ring particle",
                     Vector3.zero, 0.35f + (ringIndex % 4) * 0.08f, commentMaterial);
-                particle.AddComponent<KeplerOrbit>().Initialize(planet.transform, ringElements, 300d, GalaxyScale.MoonOrbitTimeScale);
+                GetOrAdd<KeplerOrbit>(particle).Initialize(planet.transform, ringElements, 300d, GalaxyScale.MoonOrbitTimeScale);
                 ringIndex++;
             }
         }
@@ -332,10 +334,9 @@ namespace ClustrGalaxy.World
             return hash;
         }
 
-        private static GameObject CreateSphere(Transform parent, SpatialNode node, string type, Vector3 position, float radius, Material material)
+        private GameObject CreateSphere(Transform parent, SpatialNode node, string type, Vector3 position, float radius, Material material)
         {
-            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            body.transform.SetParent(parent, false);
+            var body = entityPool.Acquire(PrimitiveType.Sphere, parent);
             body.transform.localPosition = position;
             body.transform.localScale = Vector3.one * radius * 2f;
             body.GetComponent<MeshRenderer>().sharedMaterial = material;
@@ -343,10 +344,9 @@ namespace ClustrGalaxy.World
             return body;
         }
 
-        private static GameObject CreateCapsule(Transform parent, SpatialNode node, string type, Vector3 position, float radius, Material material)
+        private GameObject CreateCapsule(Transform parent, SpatialNode node, string type, Vector3 position, float radius, Material material)
         {
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.transform.SetParent(parent, false);
+            var body = entityPool.Acquire(PrimitiveType.Capsule, parent);
             body.transform.localPosition = position;
             body.transform.localScale = new Vector3(radius, radius * 1.8f, radius);
             body.GetComponent<MeshRenderer>().sharedMaterial = material;
@@ -356,9 +356,17 @@ namespace ClustrGalaxy.World
 
         private static void InitializeEntity(GameObject body, SpatialNode node, string type)
         {
-            body.AddComponent<GalaxyEntity>().Initialize(node.id,
+            body.GetComponent<GalaxyEntity>().Initialize(node.id,
                 string.IsNullOrWhiteSpace(node.name) ? node.id : node.name, type, node.val);
-            body.AddComponent<LiveEntityMetadata>().Initialize(node);
+            body.GetComponent<LiveEntityMetadata>().Initialize(node);
+        }
+
+        private static T GetOrAdd<T>(GameObject body) where T : Behaviour
+        {
+            var component = body.GetComponent<T>();
+            if (component == null) component = body.AddComponent<T>();
+            component.enabled = true;
+            return component;
         }
 
         private void EnsureMaterials()
@@ -384,10 +392,11 @@ namespace ClustrGalaxy.World
             return material;
         }
 
-        private static void DestroyRoot(ref Transform root)
+        private void DestroyRoot(ref Transform root)
         {
             if (root != null)
             {
+                entityPool.ReleaseDescendants(root);
                 Object.Destroy(root.gameObject);
                 root = null!;
             }

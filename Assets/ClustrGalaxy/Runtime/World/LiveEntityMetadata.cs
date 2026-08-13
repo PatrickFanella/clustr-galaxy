@@ -11,5 +11,7 @@ namespace ClustrGalaxy.World
         {
             Node = node;
         }
+
+        public void Clear() => Node = null!;
     }
 }
