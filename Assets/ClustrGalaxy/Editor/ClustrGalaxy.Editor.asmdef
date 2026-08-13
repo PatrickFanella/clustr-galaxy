@@ -1,0 +1,13 @@
+{
+  "name": "ClustrGalaxy.Editor",
+  "rootNamespace": "ClustrGalaxy.Editor",
+  "references": [
+    "ClustrGalaxy.Runtime",
+    "UnityEditor.TestRunner",
+    "Unity.RenderPipelines.Universal.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": true
+}
