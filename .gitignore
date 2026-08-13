@@ -8,6 +8,7 @@
 /[Uu]ser[Ss]ettings/
 /[Mm]emoryCaptures/
 /[Rr]ecordings/
+/ProjectSettings/SceneTemplateSettings.json
 
 # IDE-generated state
 /.idea/
@@ -22,4 +23,3 @@
 # Crash and profiling artifacts
 sysinfo.txt
 *.stackdump
-

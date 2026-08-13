@@ -16,6 +16,12 @@ namespace ClustrGalaxy.Bootstrap
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreatePrototype()
         {
+#if UNITY_EDITOR
+            if (UnityEditor.SessionState.GetBool("ClustrGalaxy.SuppressAutomaticBootstrap", false))
+            {
+                return;
+            }
+#endif
             if (Object.FindAnyObjectByType<ObserverProbeController>() != null)
             {
                 return;
