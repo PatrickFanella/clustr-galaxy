@@ -198,6 +198,22 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void DataStatus_DistinguishesLiveOfflineLegacyAndLocalModes()
+        {
+            var manifest = CompatibleManifest(revision: 9, catalog: 3);
+            manifest.published_at = "2026-08-12T23:42:00Z";
+
+            Assert.That(GalaxyDataStatus.Pinned(manifest, offline: false, 42),
+                Is.EqualTo("LIVE REV 9 / CAT 3  42 LANDMARKS"));
+            Assert.That(GalaxyDataStatus.Pinned(manifest, offline: true, 42),
+                Is.EqualTo("OFFLINE REV 9 / CAT 3  42 LANDMARKS  •  PUBLISHED 2026-08-12 23:42 UTC"));
+            Assert.That(GalaxyDataStatus.Legacy(42),
+                Is.EqualTo("DEMO / LEGACY / UNPINNED  42 LANDMARKS"));
+            Assert.That(GalaxyDataStatus.Fallback("ConnectionError: offline"),
+                Is.EqualTo("LOCAL DEMO FALLBACK  ConnectionError: offline"));
+        }
+
+        [Test]
         public void LandmarkProjection_IsStableAndAddsDepthToFlatLegacyCoordinates()
         {
             var bounds = new SpatialBounds

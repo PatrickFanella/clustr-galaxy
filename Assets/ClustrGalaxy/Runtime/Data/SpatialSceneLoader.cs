@@ -14,7 +14,8 @@ namespace ClustrGalaxy.Data
         public SpatialManifest Manifest { get; private set; } = null!;
         public SpatialScene Scene { get; private set; } = null!;
         public SpatialSceneStore Store { get; private set; } = null!;
-        public string StatusText { get; private set; } = "LOCAL PROTOTYPE";
+        public string StatusText { get; private set; } = "LOCAL DEMO";
+        public GalaxyDataMode DataMode { get; private set; } = GalaxyDataMode.LocalDemo;
         public bool IsOffline { get; private set; }
         public bool IsPinned => Manifest != null && Scene != null && Scene.BelongsTo(Manifest);
         public event Action SceneLoaded = delegate { };
@@ -46,6 +47,7 @@ namespace ClustrGalaxy.Data
             Scene = null!;
             Store = null!;
             IsOffline = false;
+            DataMode = GalaxyDataMode.Connecting;
             StartCoroutine(LoadOverview());
         }
 
@@ -68,6 +70,7 @@ namespace ClustrGalaxy.Data
         private IEnumerator LoadOverview()
         {
             StatusText = "CONNECTING TO CLUSTR";
+            DataMode = GalaxyDataMode.Connecting;
             string manifestJson = null!;
             SpatialRequestFailure? manifestFailure = null;
             yield return client.GetJson(
@@ -159,13 +162,15 @@ namespace ClustrGalaxy.Data
             var linkCount = Scene.links?.Length ?? 0;
             if (Manifest == null)
             {
-                StatusText = $"LEGACY / UNPINNED  {nodeCount} LANDMARKS";
+                DataMode = GalaxyDataMode.LegacyUnpinned;
+                StatusText = GalaxyDataStatus.Legacy(nodeCount);
                 Debug.Log($"[ClustrGalaxy.Data] Loaded public legacy overview: {nodeCount} nodes, {linkCount} links; no revision manifest is deployed.");
             }
             else
             {
+                DataMode = IsOffline ? GalaxyDataMode.OfflinePinned : GalaxyDataMode.LivePinned;
                 var mode = IsOffline ? "OFFLINE" : "LIVE";
-                StatusText = $"{mode} REV {Manifest.revision_id} / CAT {Manifest.spatial_catalog_id}  {nodeCount} LANDMARKS";
+                StatusText = GalaxyDataStatus.Pinned(Manifest, IsOffline, nodeCount);
                 Debug.Log($"[ClustrGalaxy.Data] Loaded {mode.ToLowerInvariant()} pinned overview revision {Manifest.revision_id}, catalog {Manifest.spatial_catalog_id}: {nodeCount} nodes, {linkCount} links.");
             }
             SceneLoaded();
@@ -220,6 +225,7 @@ namespace ClustrGalaxy.Data
             }
             Scene = loaded;
             IsOffline = offlineResult;
+            DataMode = offlineResult ? GalaxyDataMode.OfflinePinned : GalaxyDataMode.LivePinned;
             var suffix = loaded.truncated ? " / MORE AVAILABLE" : string.Empty;
             StatusText = $"{(offlineResult ? "OFFLINE" : "LIVE")} {loaded.scope.ToUpperInvariant()}  {loaded.nodes.Length} OBJECTS{suffix}";
             ScopeLoaded(loaded);
@@ -234,7 +240,8 @@ namespace ClustrGalaxy.Data
 
         private void Fail(string reason)
         {
-            StatusText = $"LOCAL FALLBACK  {reason}";
+            DataMode = GalaxyDataMode.Failed;
+            StatusText = GalaxyDataStatus.Fallback(reason);
             Debug.LogWarning($"[ClustrGalaxy.Data] {reason}; keeping deterministic local prototype.");
         }
 

@@ -59,7 +59,7 @@ namespace ClustrGalaxy.UI
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
             GUILayout.Label($"SPEED  {flight?.Speed ?? 0f:000.0}", bodyStyle);
             GUILayout.Label($"FLIGHT  {(flight != null && flight.GravityModeEnabled ? "GRAVITY / MOMENTUM" : "ASSISTED CRUISE")}", bodyStyle);
-            GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL PROTOTYPE"}", bodyStyle);
+            GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
