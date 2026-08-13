@@ -61,7 +61,6 @@ namespace ClustrGalaxy.Bootstrap
             probe.AddComponent<FloatingOrigin>();
             var targeting = probe.AddComponent<ProbeTargeting>();
             probe.AddComponent<CommentThreadController>().Initialize(targeting);
-            probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
 
@@ -75,7 +74,9 @@ namespace ClustrGalaxy.Bootstrap
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.002f, 0.004f, 0.012f);
             cameraObject.AddComponent<AudioListener>();
-            probe.AddComponent<GalaxyNavigationController>().Initialize(targeting, camera);
+            var navigation = probe.AddComponent<GalaxyNavigationController>();
+            navigation.Initialize(targeting, camera);
+            probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();

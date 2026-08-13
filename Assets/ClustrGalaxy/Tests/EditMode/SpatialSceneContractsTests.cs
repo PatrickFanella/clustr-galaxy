@@ -214,6 +214,31 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void NavigationHistory_ReturnsToTheExactPriorPoseAndHierarchy()
+        {
+            var galaxyPose = new NavigationPose(
+                new Vector3(10f, 20f, 30f), Quaternion.Euler(1f, 2f, 3f));
+            var regionPose = new NavigationPose(
+                new Vector3(110f, 120f, 130f), Quaternion.Euler(4f, 5f, 6f));
+            var history = new GalaxyNavigationHistory();
+
+            history.Enter(GalaxyNavigationLevel.Region, "community_7", galaxyPose);
+            history.Enter(GalaxyNavigationLevel.System, "subreddit_9", regionPose);
+
+            Assert.That(history.Level, Is.EqualTo(GalaxyNavigationLevel.System));
+            Assert.That(history.StableId, Is.EqualTo("subreddit_9"));
+            Assert.That(history.TryBack(out var restored), Is.True);
+            Assert.That(history.Level, Is.EqualTo(GalaxyNavigationLevel.Region));
+            Assert.That(history.StableId, Is.EqualTo("community_7"));
+            Assert.That(restored.Position, Is.EqualTo(regionPose.Position));
+            Assert.That(restored.Rotation, Is.EqualTo(regionPose.Rotation));
+            Assert.That(history.TryBack(out restored), Is.True);
+            Assert.That(history.Level, Is.EqualTo(GalaxyNavigationLevel.Galaxy));
+            Assert.That(restored.Position, Is.EqualTo(galaxyPose.Position));
+            Assert.That(history.TryBack(out _), Is.False);
+        }
+
+        [Test]
         public void LandmarkProjection_IsStableAndAddsDepthToFlatLegacyCoordinates()
         {
             var bounds = new SpatialBounds
