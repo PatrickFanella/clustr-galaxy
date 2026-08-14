@@ -39,7 +39,7 @@ namespace ClustrGalaxy.Tests.PlayMode
                 Assert.That(visibility.SurveySession.State.StartingSystemId.Value, Is.EqualTo("subreddit:technology"));
                 Assert.That(remote.activeSelf, Is.False);
                 Assert.That(File.ReadAllText(v1), Is.EqualTo("legacy-byte-sentinel"));
-                Assert.That(Directory.Exists(Path.Combine(root, "profiles", "v2")), Is.True);
+                Assert.That(Directory.Exists(Path.Combine(root, "ClustrGalaxy", "profiles", "v2")), Is.True);
                 yield return null;
             }
             finally

@@ -59,9 +59,9 @@ namespace ClustrGalaxy.Bootstrap
             if (!opened.Succeeded) throw new InvalidOperationException(opened.Error);
 
             flight.Initialize(Modes);
+            visibility.BindRegistry(Registry);
             visibility.Initialize(Modes, SpatialSceneLoader.DemoSurveySnapshotKey);
             visibility.BindGalaxySession(Session);
-            visibility.BindRegistry(Registry);
             visibility.BindDataLoader(loader);
             targeting.Initialize(visibility);
             visibility.BindTargeting(targeting);
