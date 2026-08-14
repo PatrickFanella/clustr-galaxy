@@ -7,6 +7,8 @@ using ClustrGalaxy.Simulation;
 using ClustrGalaxy.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Survey;
 
 namespace ClustrGalaxy.Flight
 {
@@ -29,8 +31,8 @@ namespace ClustrGalaxy.Flight
         private Vector3 storedAngularVelocity;
         private readonly GalaxyNavigationHistory history = new();
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private GalaxyEntityRegistry registry = null!;
         private FloatingOrigin floatingOrigin = null!;
-        private SurveyEventBus surveyEvents;
         private string pendingFastTravelId = string.Empty;
         private string plottedDestinationId = string.Empty;
         private bool autopilotArrived;
@@ -57,12 +59,11 @@ namespace ClustrGalaxy.Flight
         public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
         {
             discoveryVisibility = visibilityController;
+            registry = visibilityController?.Registry;
         }
 
-        public void BindSurveyEvents(SurveyEventBus sharedEventBus)
-        {
-            surveyEvents = sharedEventBus;
-        }
+        public void BindRegistry(GalaxyEntityRegistry entityRegistry) =>
+            registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
 
         private void Awake()
         {
@@ -203,7 +204,7 @@ namespace ClustrGalaxy.Flight
             }
 
             var candidates = new List<GalaxyMapCandidate>();
-            foreach (var entity in GalaxyEntity.ActiveEntities)
+            foreach (var entity in registry?.ActiveEntities ?? Array.Empty<GalaxyEntity>())
             {
                 var metadata = entity.GetComponent<LiveEntityMetadata>();
                 if (metadata?.Node == null)
@@ -211,14 +212,15 @@ namespace ClustrGalaxy.Flight
                     continue;
                 }
                 var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
-                candidates.Add(new GalaxyMapCandidate(entity.StableId, metadata.Node.type,
+                candidates.Add(new GalaxyMapCandidate(entity.StableId, entity.Kind,
                     new Vector2(viewport.x, viewport.y), viewport.z > 0f,
                     discoveryVisibility == null || discoveryVisibility.IsKnown(entity)));
             }
 
             var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
             var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition, candidates, 0.12f, worldMode);
-            if (GalaxyEntity.TryGet(selectedId, out var selected))
+            var selected = registry?.FindActiveEntity(selectedId);
+            if (selected != null)
             {
                 targeting.SelectTarget(selected);
             }
@@ -246,7 +248,7 @@ namespace ClustrGalaxy.Flight
             foreach (var system in discoveryVisibility.LoadedStartingSystems())
             {
                 var viewport = viewCamera.WorldToViewportPoint(system.transform.position);
-                candidates.Add(new GalaxyMapCandidate(system.StableId, "subreddit", new Vector2(viewport.x, viewport.y),
+                candidates.Add(new GalaxyMapCandidate(system.StableId, system.Kind, new Vector2(viewport.x, viewport.y),
                     viewport.z > 0f));
             }
             var selectedId = GalaxyMapSelection.NearestId(GalaxyNavigationLevel.Region, MapCursorPosition,
@@ -261,11 +263,9 @@ namespace ClustrGalaxy.Flight
                 return false;
             }
 
-            var metadata = entity.GetComponent<LiveEntityMetadata>();
-            var entityType = metadata?.Node?.type ?? entity.EntityType;
             var mode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
             var known = discoveryVisibility == null || discoveryVisibility.IsKnown(entity);
-            return GalaxyTravelRules.IsEligibleDestination(mode, known, entityType);
+            return GalaxyTravelRules.IsEligibleDestination(mode, known, entity.Kind);
         }
 
         public bool TryFastTravel(GalaxyEntity entity)
@@ -319,7 +319,8 @@ namespace ClustrGalaxy.Flight
             {
                 var destinationId = pendingFastTravelId;
                 pendingFastTravelId = string.Empty;
-                if (GalaxyEntity.TryGet(destinationId, out var destination) && CanTravelTo(destination))
+                var destination = registry?.FindActiveEntity(destinationId);
+                if (destination != null && CanTravelTo(destination))
                 {
                     ExecuteFastTravel(destination);
                 }
@@ -365,7 +366,8 @@ namespace ClustrGalaxy.Flight
             {
                 return;
             }
-            if (!GalaxyEntity.TryGet(plottedDestinationId, out var destination) || !CanTravelTo(destination))
+            var destination = registry?.FindActiveEntity(plottedDestinationId);
+            if (destination == null || !CanTravelTo(destination))
             {
                 flight.ClearAutopilotDesiredVelocity();
                 TravelStatus = "ROUTE LOST — DESTINATION NO LONGER AVAILABLE";
@@ -398,11 +400,12 @@ namespace ClustrGalaxy.Flight
             {
                 masteryArrivalReported = true;
                 TravelStatus = $"MASTERY ARRIVAL — {destination.DisplayName}";
-                var store = discoveryVisibility?.DiscoveryStore;
-                if (store != null)
+                var session = discoveryVisibility?.SurveySession;
+                if (session != null)
                 {
-                    surveyEvents?.Publish(SurveyEvent.PilotMasteryArrival(store.SnapshotKey,
-                        destination.StableId, DateTime.UtcNow));
+                    discoveryVisibility.ApplySurveyIntent(new PilotMasteryArrivalIntent(
+                        "mastery:" + destination.StableId, session.State.Snapshot, DateTime.UtcNow,
+                        (GalaxyEntityId)destination.StableId));
                 }
             }
         }
@@ -425,7 +428,8 @@ namespace ClustrGalaxy.Flight
             }
             blend = Mathf.MoveTowards(blend, IsMapOpen ? 1f : 0f, Time.unscaledDeltaTime / 0.8f);
             var eased = blend * blend * (3f - 2f * blend);
-            var focus = !string.IsNullOrWhiteSpace(history.StableId) && GalaxyEntity.TryGet(history.StableId, out var focused)
+            var focused = !string.IsNullOrWhiteSpace(history.StableId) ? registry?.FindActiveEntity(history.StableId) : null;
+            var focus = focused != null
                 ? focused.transform.position
                 : targeting != null && targeting.Target != null
                     ? targeting.Target.transform.position

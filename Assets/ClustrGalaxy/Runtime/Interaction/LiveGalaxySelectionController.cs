@@ -3,6 +3,7 @@ using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.World;
 using UnityEngine;
+using ClustrGalaxy.Core.Domain;
 
 namespace ClustrGalaxy.Interaction
 {
@@ -31,21 +32,21 @@ namespace ClustrGalaxy.Interaction
 
             try
             {
-                switch (metadata.Node.type)
+                switch (target.Kind)
                 {
-                    case "community":
+                    case GalaxyEntityKind.Community:
                         navigation.NavigateTo(GalaxyNavigationLevel.Region, metadata.Node.id);
                         loader.LoadCommunity(metadata.Node.id);
                         break;
-                    case "subreddit":
+                    case GalaxyEntityKind.Subreddit:
                         navigation.NavigateTo(GalaxyNavigationLevel.System, metadata.Node.id);
                         loader.LoadSystem(metadata.Node.id);
                         break;
-                    case "post":
+                    case GalaxyEntityKind.Post:
                         navigation.NavigateTo(GalaxyNavigationLevel.Inspect, metadata.Node.id);
                         loader.LoadDiscussion(metadata.Node.id);
                         break;
-                    case "comment" when metadata.Node.metrics.reply_count > 0:
+                    case GalaxyEntityKind.Comment when metadata.Node.metrics.reply_count > 0:
                         navigation.NavigateTo(GalaxyNavigationLevel.Inspect, metadata.Node.id);
                         loader.LoadThread(metadata.Node.id);
                         break;

@@ -3,23 +3,24 @@ using System.Collections.Generic;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.World;
 using UnityEngine;
+using ClustrGalaxy.Core.Domain;
 
 namespace ClustrGalaxy.Flight
 {
     public readonly struct GalaxyMapCandidate
     {
-        public GalaxyMapCandidate(string stableId, string entityType, Vector2 viewportPosition, bool inFront,
+        public GalaxyMapCandidate(string stableId, GalaxyEntityKind entityKind, Vector2 viewportPosition, bool inFront,
             bool known = true)
         {
             StableId = stableId;
-            EntityType = entityType;
+            EntityKind = entityKind;
             ViewportPosition = viewportPosition;
             InFront = inFront;
             Known = known;
         }
 
         public string StableId { get; }
-        public string EntityType { get; }
+        public GalaxyEntityKind EntityKind { get; }
         public Vector2 ViewportPosition { get; }
         public bool InFront { get; }
         public bool Known { get; }
@@ -27,18 +28,18 @@ namespace ClustrGalaxy.Flight
 
     public static class GalaxyMapSelection
     {
-        public static bool IsSelectable(GalaxyNavigationLevel level, string entityType) => level switch
+        public static bool IsSelectable(GalaxyNavigationLevel level, GalaxyEntityKind entityKind) => level switch
         {
-            GalaxyNavigationLevel.Galaxy => entityType == "community",
-            GalaxyNavigationLevel.Region => entityType == "subreddit",
-            GalaxyNavigationLevel.System => entityType == "post",
-            GalaxyNavigationLevel.Inspect => entityType == "comment",
+            GalaxyNavigationLevel.Galaxy => entityKind == GalaxyEntityKind.Community,
+            GalaxyNavigationLevel.Region => entityKind == GalaxyEntityKind.Subreddit,
+            GalaxyNavigationLevel.System => entityKind == GalaxyEntityKind.Post,
+            GalaxyNavigationLevel.Inspect => entityKind == GalaxyEntityKind.Comment,
             _ => false
         };
 
-        public static bool IsSelectable(GalaxyNavigationLevel level, string entityType,
+        public static bool IsSelectable(GalaxyNavigationLevel level, GalaxyEntityKind entityKind,
             GalaxyWorldMode worldMode, bool known) =>
-            IsSelectable(level, entityType) && GalaxyDiscoveryVisibility.CanTarget(worldMode, known);
+            IsSelectable(level, entityKind) && GalaxyDiscoveryVisibility.CanTarget(worldMode, known);
 
         public static string NearestId(
             GalaxyNavigationLevel level,
@@ -57,7 +58,7 @@ namespace ClustrGalaxy.Flight
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                if (!candidate.InFront || !IsSelectable(level, candidate.EntityType, worldMode, candidate.Known))
+                if (!candidate.InFront || !IsSelectable(level, candidate.EntityKind, worldMode, candidate.Known))
                 {
                     continue;
                 }

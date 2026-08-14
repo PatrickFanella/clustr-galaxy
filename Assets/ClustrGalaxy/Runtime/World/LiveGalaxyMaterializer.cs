@@ -7,6 +7,7 @@ using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Flight;
 using UnityEngine;
 using Object = UnityEngine.Object;
+using ClustrGalaxy.Core.Domain;
 
 namespace ClustrGalaxy.World
 {
@@ -29,6 +30,7 @@ namespace ClustrGalaxy.World
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
         private CommentThreadController threadInspection = null!;
         private string activeSystemId = string.Empty;
+        private GalaxyEntityRegistry registry = null!;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
         {
@@ -48,6 +50,7 @@ namespace ClustrGalaxy.World
         public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
         {
             discoveryVisibility = visibilityController;
+            registry = visibilityController?.Registry;
         }
 
         public void BindThreadInspection(CommentThreadController controller)
@@ -108,13 +111,14 @@ namespace ClustrGalaxy.World
             {
                 var position = ProjectRegionPosition(node.id, GalaxyTuning.SystemDistanceScale);
                 positions[node.id] = position;
-                if (node.type == "subreddit")
+                var kind = GalaxyKinds.ParseEntityKind(node.type);
+                if (kind == GalaxyEntityKind.Subreddit)
                 {
                     var radius = Radius(node.metrics.unique_users > 0 ? node.metrics.unique_users : node.val,
                         loader.Manifest.normalization_quantiles.subreddit, 12f, 30f);
                     CreateSphere(regionRoot, node, "subreddit star", position, radius, starMaterial);
                 }
-                else if (node.type == "user")
+                else if (kind == GalaxyEntityKind.User)
                 {
                     var ship = CreateCapsule(regionRoot, node, "user ship", position, 2.2f, userMaterial);
                     ship.transform.rotation = Quaternion.LookRotation(position.normalized, Vector3.up);
@@ -133,7 +137,7 @@ namespace ClustrGalaxy.World
                 var route = new GameObject($"Historical route {link.source} -> {link.target}");
                 route.transform.SetParent(regionRoot, false);
                 route.AddComponent<GalaxySurveyRoute>().Initialize($"{link.source}:{link.target}:{link.type}",
-                    link.source, link.target);
+                    link.source, link.target, registry);
                 var line = route.AddComponent<LineRenderer>();
                 line.useWorldSpace = false;
                 line.positionCount = 2;
@@ -182,8 +186,9 @@ namespace ClustrGalaxy.World
             var users = new List<SpatialNode>();
             foreach (var node in scene.nodes)
             {
-                if (node.type == "post") posts.Add(node);
-                else if (node.type == "user") users.Add(node);
+                var kind = GalaxyKinds.ParseEntityKind(node.type);
+                if (kind == GalaxyEntityKind.Post) posts.Add(node);
+                else if (kind == GalaxyEntityKind.User) users.Add(node);
             }
             posts.Sort(CompareActivityThenId);
             for (var index = 0; index < posts.Count; index++)
@@ -217,7 +222,8 @@ namespace ClustrGalaxy.World
 
         private void MaterializeDiscussion(SpatialScene scene)
         {
-            if (!GalaxyEntity.TryGet(scene.root_id, out var planet))
+            var planet = registry?.FindActiveEntity(scene.root_id);
+            if (planet == null)
             {
                 return;
             }
@@ -229,7 +235,7 @@ namespace ClustrGalaxy.World
             var comments = new List<SpatialNode>();
             foreach (var node in scene.nodes)
             {
-                if (node.type == "comment" && node.id != scene.root_id)
+                if (GalaxyKinds.ParseEntityKind(node.type) == GalaxyEntityKind.Comment && node.id != scene.root_id)
                 {
                     comments.Add(node);
                 }
@@ -351,10 +357,10 @@ namespace ClustrGalaxy.World
             return body;
         }
 
-        private static void InitializeEntity(GameObject body, SpatialNode node, string type)
+        private void InitializeEntity(GameObject body, SpatialNode node, string type)
         {
             body.GetComponent<GalaxyEntity>().Initialize(node.id,
-                string.IsNullOrWhiteSpace(node.name) ? node.id : node.name, type, node.val);
+                string.IsNullOrWhiteSpace(node.name) ? node.id : node.name, type, node.val, registry);
             body.GetComponent<LiveEntityMetadata>().Initialize(node);
         }
 

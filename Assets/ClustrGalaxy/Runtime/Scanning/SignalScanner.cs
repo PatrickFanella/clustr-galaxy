@@ -7,6 +7,8 @@ using ClustrGalaxy.Interaction;
 using ClustrGalaxy.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Survey;
 
 namespace ClustrGalaxy.Scanning
 {
@@ -25,7 +27,6 @@ namespace ClustrGalaxy.Scanning
         private GalaxyModeState modes = null!;
         private GalaxySurveyVisibilityController visibility = null!;
         private ProbeTargeting targeting = null!;
-        private SurveyEventBus eventBus = null!;
         private SpatialSceneLoader dataLoader = null!;
         private GalaxyEntityRegistry registry = null!;
         private bool holding;
@@ -52,12 +53,11 @@ namespace ClustrGalaxy.Scanning
         }
 
         public void Initialize(GalaxyModeState modeState, GalaxySurveyVisibilityController visibilityController,
-            ProbeTargeting targetController, SurveyEventBus sharedEventBus, IEnumerable<ScanRoute> initialRoutes = null)
+            ProbeTargeting targetController, IEnumerable<ScanRoute> initialRoutes = null)
         {
             modes = modeState ?? throw new ArgumentNullException(nameof(modeState));
             visibility = visibilityController ?? throw new ArgumentNullException(nameof(visibilityController));
             targeting = targetController ?? throw new ArgumentNullException(nameof(targetController));
-            eventBus = sharedEventBus ?? throw new ArgumentNullException(nameof(sharedEventBus));
             demoRoutes = initialRoutes?.ToArray() ?? Array.Empty<ScanRoute>();
             SetRoutes(demoRoutes);
         }
@@ -71,7 +71,6 @@ namespace ClustrGalaxy.Scanning
         public void BindRegistry(GalaxyEntityRegistry entityRegistry)
         {
             registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
-            registry.RefreshFromScene();
         }
 
         /// <summary>Uses exact renderer-compatible IDs: source:target:type.</summary>
@@ -165,44 +164,51 @@ namespace ClustrGalaxy.Scanning
         private void CompleteScan()
         {
             var target = targeting.Target;
-            var store = visibility.DiscoveryStore;
-            if (target == null || store == null || !store.IsEntityKnown(target.StableId))
+            var session = visibility.SurveySession;
+            if (target == null || session == null || !visibility.IsKnown(target))
             {
                 State = SignalScanState.NoSignal;
                 LastResult = ScanResult.NoSignal;
                 return;
             }
-            if (store.IsScanComplete(target.StableId))
+            if (session.State.IsScanComplete((GalaxyEntityId)target.StableId))
             {
                 State = SignalScanState.Complete;
                 LastResult = ScanResult.AlreadyScannedResult;
                 return;
             }
 
-            var result = ScanRules.Reveal(target.StableId, routes, store.State.scanner_level,
-                store.State.known_entity_ids, store.State.known_route_ids, LoadedPostIds(target), IsSystemComplete(target, store));
-            store.CompleteScan(target.StableId);
-            store.IdentifyEntity(target.StableId);
-            foreach (var entityId in result.RevealedEntityIds) store.DiscoverEntity(entityId);
-            foreach (var routeId in result.RevealedRouteIds) store.DiscoverRoute(routeId);
-            store.Save();
-            visibility.ApplyVisibility();
-            State = SignalScanState.Complete;
-            LastResult = result;
-            eventBus.Publish(SurveyEvent.ScanCompleted(store.SnapshotKey, target.StableId, result.RevealedEntityIds,
-                result.RevealedRouteIds, DateTime.UtcNow, store.State.scanner_level));
+            CompleteAtomicScan(target, session);
+        }
+
+        private void CompleteAtomicScan(GalaxyEntity target, SurveySession session)
+        {
             var membership = target.GetComponent<GalaxySurveyMembership>();
-            if (membership != null && target.EntityType == "post planet" &&
-                IsSystemComplete(membership.SystemStableId, store))
+            var systemId = membership == null || string.IsNullOrWhiteSpace(membership.SystemStableId)
+                ? default(GalaxyEntityId) : (GalaxyEntityId)membership.SystemStableId;
+            var completedNow = !systemId.IsEmpty && IsSystemCompleteAfter(target.StableId, systemId, session);
+            var intent = new CompleteScanIntent("scan:" + target.StableId, session.State.Snapshot, DateTime.UtcNow,
+                (GalaxyEntityId)target.StableId, target.Kind,
+                routes.Select(route => new SurveyRoute((GalaxyRouteId)route.Id, (GalaxyEntityId)route.SourceId,
+                    (GalaxyEntityId)route.TargetId, route.Weight)),
+                LoadedPostIds(target).Select(id => (GalaxyEntityId)id), systemId, completedNow);
+            var outcome = visibility.ApplySurveyIntent(intent);
+            if (!outcome.Succeeded)
             {
-                eventBus.Publish(SurveyEvent.SystemCompleted(store.SnapshotKey, membership.SystemStableId, DateTime.UtcNow));
+                State = SignalScanState.NoSignal;
+                LastResult = ScanResult.NoSignal;
+                return;
             }
+            State = SignalScanState.Complete;
+            LastResult = new ScanResult(State, !outcome.Changed,
+                outcome.RevealedEntities.Select(id => id.Value).ToArray(),
+                outcome.RevealedRoutes.Select(id => id.Value).ToArray());
         }
 
         private bool CanCharge(out SignalScanState failure)
         {
             if (modes == null || modes.WorldMode != GalaxyWorldMode.Survey || visibility == null ||
-                visibility.DiscoveryStore == null || targeting == null || targeting.Target == null ||
+                visibility.SurveySession == null || targeting == null || targeting.Target == null ||
                 !visibility.IsKnown(targeting.Target))
             {
                 failure = SignalScanState.NoSignal;
@@ -244,11 +250,10 @@ namespace ClustrGalaxy.Scanning
 
         private IEnumerable<string> LoadedPostIds(GalaxyEntity target)
         {
-            if (target == null || target.EntityType != "subreddit star") return Array.Empty<string>();
+            if (target == null || target.Kind != GalaxyEntityKind.Subreddit) return Array.Empty<string>();
             EnsureRegistry();
-            registry.RefreshFromScene();
             return registry.Entities
-                .Where(entity => entity.EntityType == "post planet" &&
+                .Where(entity => entity.Kind == GalaxyEntityKind.Post &&
                     entity.GetComponent<GalaxySurveyMembership>() != null &&
                     string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, target.StableId,
                         StringComparison.Ordinal))
@@ -257,21 +262,15 @@ namespace ClustrGalaxy.Scanning
                 .ToArray();
         }
 
-        private bool IsSystemComplete(GalaxyEntity target, SurveyDiscoveryStore store)
-        {
-            var membership = target?.GetComponent<GalaxySurveyMembership>();
-            return membership != null && IsSystemComplete(membership.SystemStableId, store);
-        }
-
-        private bool IsSystemComplete(string systemStableId, SurveyDiscoveryStore store)
+        private bool IsSystemCompleteAfter(string targetId, GalaxyEntityId systemId, SurveySession session)
         {
             EnsureRegistry();
-            registry.RefreshFromScene();
-            var children = registry.Entities
-                .Where(entity => entity.EntityType == "post planet" && entity.GetComponent<GalaxySurveyMembership>() != null &&
-                    string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, systemStableId, StringComparison.Ordinal))
-                .Select(entity => entity.StableId).OrderBy(id => id, StringComparer.Ordinal).ToArray();
-            return children.Length > 0 && children.All(store.IsScanComplete);
+            var children = registry.Entities.Where(entity => entity.Kind == GalaxyEntityKind.Post &&
+                    entity.GetComponent<GalaxySurveyMembership>() != null &&
+                    string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, systemId.Value,
+                        StringComparison.Ordinal))
+                .Select(entity => (GalaxyEntityId)entity.StableId).ToArray();
+            return children.Length > 0 && children.All(id => id.Value == targetId || session.State.IsScanComplete(id));
         }
 
         private void EnsureRegistry()

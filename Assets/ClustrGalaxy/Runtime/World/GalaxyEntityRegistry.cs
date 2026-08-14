@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 
 namespace ClustrGalaxy.World
 {
@@ -10,28 +9,44 @@ namespace ClustrGalaxy.World
     /// collections. The adapter owns the one-off scene enumeration; gameplay
     /// rules receive this registry instead of searching the entire scene.
     /// </summary>
-    public sealed class GalaxyEntityRegistry : MonoBehaviour
+    public sealed class GalaxyEntityRegistry
     {
-        private readonly List<GalaxyEntity> entities = new();
-        private readonly List<GalaxySurveyRoute> routes = new();
+        private readonly Dictionary<string, GalaxyEntity> entities = new(StringComparer.Ordinal);
+        private readonly HashSet<string> activeEntityIds = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, GalaxySurveyRoute> routes = new(StringComparer.Ordinal);
 
-        public IReadOnlyList<GalaxyEntity> Entities => entities;
-        public IReadOnlyList<GalaxySurveyRoute> Routes => routes;
+        public IReadOnlyList<GalaxyEntity> Entities => entities.Values.OrderBy(value => value.StableId, StringComparer.Ordinal).ToArray();
+        public IReadOnlyList<GalaxyEntity> ActiveEntities => activeEntityIds.Where(entities.ContainsKey)
+            .Select(id => entities[id]).OrderBy(value => value.StableId, StringComparer.Ordinal).ToArray();
+        public IReadOnlyList<GalaxySurveyRoute> Routes => routes.Values.OrderBy(value => value.StableId, StringComparer.Ordinal).ToArray();
 
-        public void RefreshFromScene()
+        public void Register(GalaxyEntity entity)
         {
-            entities.Clear();
-            entities.AddRange(UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include));
-            routes.Clear();
-            routes.AddRange(UnityEngine.Object.FindObjectsByType<GalaxySurveyRoute>(FindObjectsInactive.Include));
-            entities.Sort((left, right) => string.CompareOrdinal(left.StableId, right.StableId));
-            routes.Sort((left, right) => string.CompareOrdinal(left.StableId, right.StableId));
+            if (entity == null || string.IsNullOrWhiteSpace(entity.StableId)) return;
+            entities[entity.StableId] = entity;
+            if (entity.isActiveAndEnabled) activeEntityIds.Add(entity.StableId);
         }
+
+        public void MarkActive(GalaxyEntity entity) { Register(entity); if (entity != null) activeEntityIds.Add(entity.StableId); }
+        public void MarkInactive(GalaxyEntity entity) { if (entity != null) activeEntityIds.Remove(entity.StableId); }
+        public void Unregister(GalaxyEntity entity)
+        {
+            if (entity == null || string.IsNullOrWhiteSpace(entity.StableId)) return;
+            if (entities.TryGetValue(entity.StableId, out var current) && current == entity) entities.Remove(entity.StableId);
+            activeEntityIds.Remove(entity.StableId);
+        }
+        public void Register(GalaxySurveyRoute route)
+        { if (route != null && !string.IsNullOrWhiteSpace(route.StableId)) routes[route.StableId] = route; }
+        public void Unregister(GalaxySurveyRoute route)
+        { if (route != null && routes.TryGetValue(route.StableId, out var current) && current == route) routes.Remove(route.StableId); }
 
         public GalaxyEntity FindEntity(string stableId)
         {
             if (string.IsNullOrWhiteSpace(stableId)) return null;
-            return entities.FirstOrDefault(entity => string.Equals(entity.StableId, stableId, StringComparison.Ordinal));
+            return entities.TryGetValue(stableId, out var entity) ? entity : null;
         }
+
+        public GalaxyEntity FindActiveEntity(string stableId) =>
+            activeEntityIds.Contains(stableId) ? FindEntity(stableId) : null;
     }
 }

@@ -16,6 +16,7 @@ namespace ClustrGalaxy.World
         private Material routeMaterial = null!;
         private GalaxyNavigationController navigation = null!;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private GalaxyEntityRegistry registry = null!;
 
         public void Initialize(SpatialSceneLoader spatialSceneLoader)
         {
@@ -32,6 +33,7 @@ namespace ClustrGalaxy.World
         public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
         {
             discoveryVisibility = visibilityController;
+            registry = visibilityController?.Registry;
         }
 
         private void NavigationChanged(GalaxyNavigationLevel level, string _) =>
@@ -119,7 +121,8 @@ namespace ClustrGalaxy.World
                 node.id,
                 string.IsNullOrWhiteSpace(node.name) ? node.id : node.name,
                 "community region",
-                node.val);
+                node.val,
+                registry);
             landmark.AddComponent<LiveEntityMetadata>().Initialize(node);
 
             var color = LandmarkColor(node.id);
@@ -137,7 +140,7 @@ namespace ClustrGalaxy.World
         {
             var route = new GameObject("Community activity route");
             route.transform.SetParent(layerRoot, false);
-            route.AddComponent<GalaxySurveyRoute>().Initialize($"{sourceId}:{targetId}:{routeType}", sourceId, targetId);
+            route.AddComponent<GalaxySurveyRoute>().Initialize($"{sourceId}:{targetId}:{routeType}", sourceId, targetId, registry);
             var line = route.AddComponent<LineRenderer>();
             line.useWorldSpace = false;
             line.positionCount = 2;
