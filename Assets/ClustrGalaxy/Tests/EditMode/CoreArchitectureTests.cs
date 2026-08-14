@@ -106,8 +106,8 @@ namespace ClustrGalaxy.Tests
             var hidden = galaxy.ApplySurveyVisibility(false,
                 new[] { (GalaxyEntityId)"subreddit:technology" }, Array.Empty<GalaxyRouteId>());
 
-            Assert.That(galaxy.LoadedEntities, Has.Count.EqualTo(2));
-            Assert.That(galaxy.ActiveEntities, Has.Count.EqualTo(1));
+            Assert.That(galaxy.LoadedEntities.Count, Is.EqualTo(2));
+            Assert.That(galaxy.ActiveEntities.Count, Is.EqualTo(1));
             Assert.That(hidden.Deactivated, Is.EquivalentTo(new[] { (GalaxyEntityId)"post:hidden" }));
             galaxy.Release(scope);
             Assert.That(galaxy.LoadedEntities, Is.Empty);
