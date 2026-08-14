@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
+using ClustrGalaxy.Simulation;
 using ClustrGalaxy.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -21,16 +22,29 @@ namespace ClustrGalaxy.Flight
         private InputAction mapCursor = null!;
         private InputAction mapSelect = null!;
         private InputAction enterSurvey = null!;
+        private InputAction fastTravel = null!;
+        private InputAction plotAutopilot = null!;
         private float blend;
         private Vector3 storedVelocity;
         private Vector3 storedAngularVelocity;
         private readonly GalaxyNavigationHistory history = new();
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private FloatingOrigin floatingOrigin = null!;
+        private SurveyEventBus surveyEvents;
+        private string pendingFastTravelId = string.Empty;
+        private string plottedDestinationId = string.Empty;
+        private bool autopilotArrived;
+        private bool masteryArrivalReported;
+
+        private const float AutopilotAnchorTolerance = 2.5f;
 
         public bool IsMapOpen { get; private set; }
         public GalaxyNavigationLevel Level => history.Level;
         public string FocusedStableId => history.StableId;
         public Vector2 MapCursorPosition { get; private set; } = new(0.5f, 0.5f);
+        public string TravelStatus { get; private set; } = string.Empty;
+        public string PlottedDestinationId => plottedDestinationId;
+        public bool HasAutopilotArrival => autopilotArrived;
         public event Action<bool> ModeChanged = delegate { };
         public event Action<GalaxyNavigationLevel, string> ViewChanged = delegate { };
 
@@ -45,10 +59,16 @@ namespace ClustrGalaxy.Flight
             discoveryVisibility = visibilityController;
         }
 
+        public void BindSurveyEvents(SurveyEventBus sharedEventBus)
+        {
+            surveyEvents = sharedEventBus;
+        }
+
         private void Awake()
         {
             flight = GetComponent<ObserverProbeController>();
             body = GetComponent<Rigidbody>();
+            floatingOrigin = GetComponent<FloatingOrigin>();
             toggleMap = new InputAction("Galaxy Map", InputActionType.Button, "<Keyboard>/m");
             toggleMap.AddBinding("<Gamepad>/select");
             toggleMap.performed += _ => SetMapOpen(!IsMapOpen);
@@ -68,6 +88,12 @@ namespace ClustrGalaxy.Flight
             enterSurvey = new InputAction("Enter Survey", InputActionType.Button, "<Keyboard>/v");
             enterSurvey.AddBinding("<Gamepad>/dpad/up");
             enterSurvey.performed += _ => EnterSurvey();
+            fastTravel = new InputAction("Fast Travel", InputActionType.Button, "<Keyboard>/t");
+            fastTravel.AddBinding("<Gamepad>/dpad/down");
+            fastTravel.performed += _ => TryFastTravel(targeting?.Target);
+            plotAutopilot = new InputAction("Plot Autopilot", InputActionType.Button, "<Keyboard>/p");
+            plotAutopilot.AddBinding("<Gamepad>/rightStickPress");
+            plotAutopilot.performed += _ => PlotAutopilot(targeting?.Target);
         }
 
         private void OnEnable()
@@ -77,6 +103,8 @@ namespace ClustrGalaxy.Flight
             mapCursor?.Enable();
             mapSelect?.Enable();
             enterSurvey?.Enable();
+            fastTravel?.Enable();
+            plotAutopilot?.Enable();
         }
 
         private void OnDisable()
@@ -86,6 +114,8 @@ namespace ClustrGalaxy.Flight
             mapCursor?.Disable();
             mapSelect?.Disable();
             enterSurvey?.Disable();
+            fastTravel?.Disable();
+            plotAutopilot?.Disable();
         }
 
         public void SetMapOpen(bool open)
@@ -224,6 +254,166 @@ namespace ClustrGalaxy.Flight
             return !string.IsNullOrWhiteSpace(selectedId) && discoveryVisibility.StartAt(selectedId);
         }
 
+        public bool CanTravelTo(GalaxyEntity entity)
+        {
+            if (entity == null)
+            {
+                return false;
+            }
+
+            var metadata = entity.GetComponent<LiveEntityMetadata>();
+            var entityType = metadata?.Node?.type ?? entity.EntityType;
+            var mode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
+            var known = discoveryVisibility == null || discoveryVisibility.IsKnown(entity);
+            return GalaxyTravelRules.IsEligibleDestination(mode, known, entityType);
+        }
+
+        public bool TryFastTravel(GalaxyEntity entity)
+        {
+            if (!CanTravelTo(entity))
+            {
+                TravelStatus = "FAST TRAVEL UNAVAILABLE — SELECT A KNOWN SYSTEM";
+                return false;
+            }
+
+            pendingFastTravelId = entity.StableId;
+            TravelStatus = "FAST TRAVEL ARMED — EXECUTING ON PHYSICS TICK";
+            return true;
+        }
+
+        public bool PlotAutopilot(GalaxyEntity entity)
+        {
+            if (!CanTravelTo(entity))
+            {
+                TravelStatus = "AUTOPILOT UNAVAILABLE — SELECT A KNOWN SYSTEM";
+                return false;
+            }
+
+            plottedDestinationId = entity.StableId;
+            autopilotArrived = false;
+            masteryArrivalReported = false;
+            flight.ModeState.SetFlightMode(FlightControlMode.Autopilot);
+            TravelStatus = $"AUTOPILOT PLOTTED — {entity.DisplayName}";
+            return true;
+        }
+
+        /// <summary>Tracks an eligible system while the pilot flies manually.</summary>
+        public bool TrackMasteryDestination(GalaxyEntity entity)
+        {
+            if (!CanTravelTo(entity))
+            {
+                TravelStatus = "MASTERY DESTINATION UNAVAILABLE — SELECT A KNOWN SYSTEM";
+                return false;
+            }
+
+            plottedDestinationId = entity.StableId;
+            autopilotArrived = false;
+            masteryArrivalReported = false;
+            TravelStatus = $"MASTERY APPROACH SET — {entity.DisplayName}";
+            return true;
+        }
+
+        private void FixedUpdate()
+        {
+            if (!string.IsNullOrWhiteSpace(pendingFastTravelId))
+            {
+                var destinationId = pendingFastTravelId;
+                pendingFastTravelId = string.Empty;
+                if (GalaxyEntity.TryGet(destinationId, out var destination) && CanTravelTo(destination))
+                {
+                    ExecuteFastTravel(destination);
+                }
+                else
+                {
+                    TravelStatus = "FAST TRAVEL CANCELLED — DESTINATION NO LONGER AVAILABLE";
+                }
+            }
+
+            UpdatePlottedApproach();
+        }
+
+        private void ExecuteFastTravel(GalaxyEntity destination)
+        {
+            var arrival = ArrivalAnchor(destination, body.position);
+            // The map pauses the rigidbody by retaining its pre-map velocity.
+            // A jump is a hard docking transaction, so clear both the live and
+            // retained state before the map can ever restore old momentum.
+            storedVelocity = Vector3.zero;
+            storedAngularVelocity = Vector3.zero;
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            body.position = arrival;
+            transform.position = arrival;
+
+            // Rebase in the same physics transaction. This keeps the probe at
+            // a precise local origin while FloatingOrigin preserves the global
+            // double-precision coordinate of every scene root and orbit.
+            if (floatingOrigin != null)
+            {
+                floatingOrigin.Rebase(-arrival);
+            }
+            Physics.SyncTransforms();
+            TravelStatus = $"ARRIVED — {destination.DisplayName}";
+        }
+
+        private void UpdatePlottedApproach()
+        {
+            if (string.IsNullOrWhiteSpace(plottedDestinationId))
+            {
+                return;
+            }
+            if (!GalaxyEntity.TryGet(plottedDestinationId, out var destination) || !CanTravelTo(destination))
+            {
+                flight.ClearAutopilotDesiredVelocity();
+                TravelStatus = "ROUTE LOST — DESTINATION NO LONGER AVAILABLE";
+                plottedDestinationId = string.Empty;
+                return;
+            }
+
+            var anchor = ArrivalAnchor(destination, body.position);
+            var arrived = GalaxyTravelRules.HasArrived(body.position, anchor, body.linearVelocity,
+                AutopilotAnchorTolerance);
+            if (flight.ModeState.FlightMode == FlightControlMode.Autopilot)
+            {
+                flight.SetAutopilotDesiredVelocity(GalaxyTravelRules.AutopilotDesiredVelocity(
+                    body.position, anchor, body.linearVelocity, GalaxyTravelRules.AutopilotMaximumSpeed,
+                    GalaxyTuning.BrakeAcceleration, AutopilotAnchorTolerance));
+                if (arrived)
+                {
+                    flight.ClearAutopilotDesiredVelocity();
+                    autopilotArrived = true;
+                    TravelStatus = $"AUTOPILOT ARRIVED — {destination.DisplayName}";
+                }
+                return;
+            }
+
+            flight.ClearAutopilotDesiredVelocity();
+            // A prior automatic arrival is deliberately not reclassified as a
+            // Pilot Mastery arrival when the player switches modes afterwards.
+            if (!autopilotArrived && !masteryArrivalReported &&
+                flight.ModeState.FlightMode == FlightControlMode.PilotMastery && arrived)
+            {
+                masteryArrivalReported = true;
+                TravelStatus = $"MASTERY ARRIVAL — {destination.DisplayName}";
+                var store = discoveryVisibility?.DiscoveryStore;
+                if (store != null)
+                {
+                    surveyEvents?.Publish(SurveyEvent.PilotMasteryArrival(store.SnapshotKey,
+                        destination.StableId, DateTime.UtcNow));
+                }
+            }
+        }
+
+        private static Vector3 ArrivalAnchor(GalaxyEntity destination, Vector3 approachOrigin)
+        {
+            var collider = destination.GetComponent<Collider>();
+            var collisionRadius = collider != null ? collider.bounds.extents.magnitude : 0f;
+            var gravity = destination.GetComponent<GravitySource>();
+            var softening = gravity != null ? gravity.SofteningRadius : 0d;
+            var radius = GalaxyTravelRules.ArrivalRadius(collisionRadius, softening);
+            return GalaxyTravelRules.ArrivalAnchor(destination.transform.position, approachOrigin, radius);
+        }
+
         private void LateUpdate()
         {
             if (viewCamera == null)
@@ -261,6 +451,8 @@ namespace ClustrGalaxy.Flight
             mapCursor?.Dispose();
             mapSelect?.Dispose();
             enterSurvey?.Dispose();
+            fastTravel?.Dispose();
+            plotAutopilot?.Dispose();
         }
     }
 }

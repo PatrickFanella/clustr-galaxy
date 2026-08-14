@@ -350,6 +350,44 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void TravelEligibility_RequiresNavigableKnownSystemsInSurveyButNotExplore()
+        {
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Explore, false, "subreddit"), Is.True);
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Survey, true, "subreddit star"), Is.True);
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Survey, false, "subreddit"), Is.False);
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Explore, true, "post"), Is.False);
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Explore, true, "comment"), Is.False);
+            Assert.That(GalaxyTravelRules.IsEligibleDestination(GalaxyWorldMode.Explore, true, "discussion satellite"), Is.False);
+        }
+
+        [Test]
+        public void TravelArrival_UsesClearanceOutsideCollisionAndGravitySoftening()
+        {
+            var radius = GalaxyTravelRules.ArrivalRadius(collisionRadius: 12f, softeningRadius: 18d, clearance: 24f);
+            var anchor = GalaxyTravelRules.ArrivalAnchor(UnityEngine.Vector3.zero, UnityEngine.Vector3.forward * 100f, radius);
+
+            Assert.That(radius, Is.EqualTo(42f));
+            Assert.That(UnityEngine.Vector3.Distance(anchor, UnityEngine.Vector3.zero), Is.EqualTo(radius).Within(0.001f));
+        }
+
+        [Test]
+        public void AutopilotApproach_CapsSpeedAndBrakesAtTheArrivalEnvelopeWithoutTeleporting()
+        {
+            var desired = GalaxyTravelRules.AutopilotDesiredVelocity(
+                UnityEngine.Vector3.zero, UnityEngine.Vector3.forward * 200f, UnityEngine.Vector3.zero,
+                maximumSpeed: 92f, brakeAcceleration: 120f, arrivalRadius: 2.5f);
+            var stopped = GalaxyTravelRules.AutopilotDesiredVelocity(
+                UnityEngine.Vector3.forward * 200f, UnityEngine.Vector3.forward * 200f, UnityEngine.Vector3.forward,
+                maximumSpeed: 92f, brakeAcceleration: 120f, arrivalRadius: 2.5f);
+
+            Assert.That(desired.magnitude, Is.LessThanOrEqualTo(92f));
+            Assert.That(desired.z, Is.GreaterThan(0f));
+            Assert.That(stopped, Is.EqualTo(UnityEngine.Vector3.zero));
+            Assert.That(GalaxyTravelRules.HasArrived(UnityEngine.Vector3.forward * 200f,
+                UnityEngine.Vector3.forward * 200f, UnityEngine.Vector3.zero, 2.5f), Is.True);
+        }
+
+        [Test]
         public void GravityFlight_AssistAndMasteryPreserveLateralMomentumWhileApplyingThrust()
         {
             var current = new UnityEngine.Vector3(8f, 0f, 0f);

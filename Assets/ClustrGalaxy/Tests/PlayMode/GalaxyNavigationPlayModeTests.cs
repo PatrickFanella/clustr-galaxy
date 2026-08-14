@@ -183,10 +183,116 @@ namespace ClustrGalaxy.Tests
         }
 
         [UnityTest]
-        [Ignore("Enabled by the implementing task")]
         public IEnumerator ModeSwitch_PreservesIndependentSurveyProgress()
         {
-            yield break;
+            var probe = new GameObject("mode-aware travel probe");
+            var world = new GameObject("mode-aware travel world");
+            var storageRoot = Path.Combine(Path.GetTempPath(), "clustr-travel-playmode-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var body = probe.AddComponent<Rigidbody>();
+                var flight = probe.AddComponent<ObserverProbeController>();
+                var modes = new GalaxyModeState();
+                flight.Initialize(modes);
+                var targeting = probe.AddComponent<ProbeTargeting>();
+                var visibility = probe.AddComponent<GalaxySurveyVisibilityController>();
+                var store = SurveyDiscoveryStore.Open(storageRoot, "test-pilot", SurveySnapshotKey.Pinned(9, 3),
+                    "subreddit:technology");
+                visibility.Initialize(modes, store);
+                visibility.BindTargeting(targeting);
+                var technology = CreateSurveyEntity(world.transform, "subreddit:technology", "subreddit star",
+                    "subreddit:technology");
+                var remote = CreateSurveyEntity(world.transform, "subreddit:remote", "subreddit star", "subreddit:remote");
+                var comment = CreateSurveyEntity(world.transform, "comment:remote", "discussion satellite", "subreddit:remote");
+                var cameraObject = new GameObject("mode-aware travel camera");
+                cameraObject.transform.SetParent(probe.transform, false);
+                var navigation = probe.AddComponent<GalaxyNavigationController>();
+                navigation.Initialize(targeting, cameraObject.AddComponent<Camera>());
+                navigation.BindDiscoveryVisibility(visibility);
+
+                modes.SetWorldMode(GalaxyWorldMode.Survey);
+                Assert.That(visibility.StartAt(technology.StableId), Is.True);
+                yield return null;
+                Assert.That(navigation.CanTravelTo(technology), Is.True);
+                Assert.That(navigation.CanTravelTo(remote), Is.False);
+                Assert.That(navigation.CanTravelTo(comment), Is.False);
+                Assert.That(navigation.PlotAutopilot(remote), Is.False);
+
+                modes.SetWorldMode(GalaxyWorldMode.Explore);
+                yield return null;
+                Assert.That(navigation.CanTravelTo(remote), Is.True);
+                Assert.That(navigation.PlotAutopilot(remote), Is.True);
+
+                // Place the probe on the deterministic approach anchor; this
+                // verifies that an actual completed auto approach does not
+                // lock out a freely chosen Mastery mode.
+                body.position = GalaxyTravelRules.ArrivalAnchor(remote.transform.position,
+                    remote.transform.position + Vector3.forward * 100f,
+                    GalaxyTravelRules.ArrivalRadius(1f, 0d));
+                body.linearVelocity = Vector3.zero;
+                yield return new WaitForFixedUpdate();
+                Assert.That(navigation.HasAutopilotArrival, Is.True);
+                modes.SetFlightMode(FlightControlMode.PilotMastery);
+                Assert.That(modes.FlightMode, Is.EqualTo(FlightControlMode.PilotMastery));
+
+                modes.SetWorldMode(GalaxyWorldMode.Survey);
+                yield return null;
+                Assert.That(store.IsEntityKnown(remote.StableId), Is.False);
+                Assert.That(remote.gameObject.activeSelf, Is.False);
+
+                navigation.NavigateTo(GalaxyNavigationLevel.Region, technology.StableId);
+                navigation.NavigateTo(GalaxyNavigationLevel.System, technology.StableId);
+                navigation.NavigateBack();
+                Assert.That(navigation.Level, Is.EqualTo(GalaxyNavigationLevel.Region));
+            }
+            finally
+            {
+                Object.Destroy(probe);
+                Object.Destroy(world);
+                if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator FastTravel_FromOpenMapClearsStoredMomentumAndMaintainsSafeArrival()
+        {
+            var probe = new GameObject("fast travel map probe");
+            var world = new GameObject("fast travel map world");
+            try
+            {
+                var body = probe.AddComponent<Rigidbody>();
+                var flight = probe.AddComponent<ObserverProbeController>();
+                flight.Initialize(new GalaxyModeState());
+                var targeting = probe.AddComponent<ProbeTargeting>();
+                var target = CreateSurveyEntity(world.transform, "subreddit:destination", "subreddit star",
+                    "subreddit:destination");
+                target.transform.position = new Vector3(0f, 0f, 240f);
+                var cameraObject = new GameObject("fast travel map camera");
+                cameraObject.transform.SetParent(probe.transform, false);
+                var navigation = probe.AddComponent<GalaxyNavigationController>();
+                navigation.Initialize(targeting, cameraObject.AddComponent<Camera>());
+
+                body.linearVelocity = new Vector3(35f, -2f, 11f);
+                body.angularVelocity = new Vector3(0.4f, 0.8f, -0.6f);
+                navigation.SetMapOpen(true);
+                Assert.That(body.isKinematic, Is.True);
+                Assert.That(navigation.TryFastTravel(target), Is.True);
+                yield return new WaitForFixedUpdate();
+
+                navigation.SetMapOpen(false);
+                Assert.That(body.isKinematic, Is.False);
+                Assert.That(body.linearVelocity, Is.EqualTo(Vector3.zero));
+                Assert.That(body.angularVelocity, Is.EqualTo(Vector3.zero));
+                var collider = target.GetComponent<Collider>();
+                var minimumDistance = GalaxyTravelRules.ArrivalRadius(collider.bounds.extents.magnitude, 0d);
+                Assert.That(Vector3.Distance(body.position, target.transform.position),
+                    Is.GreaterThanOrEqualTo(minimumDistance - 0.001f));
+            }
+            finally
+            {
+                Object.Destroy(probe);
+                Object.Destroy(world);
+            }
         }
 
         [UnityTest]

@@ -108,6 +108,7 @@ namespace ClustrGalaxy.Bootstrap
             var navigation = probe.AddComponent<GalaxyNavigationController>();
             navigation.Initialize(targeting, camera);
             navigation.BindDiscoveryVisibility(discoveryVisibility);
+            navigation.BindSurveyEvents(surveyEvents);
             var materializer = dataLoader.GetComponent<LiveGalaxyMaterializer>();
             var overview = dataLoader.GetComponent<GalacticOverviewRenderer>();
             overview.BindNavigation(navigation);

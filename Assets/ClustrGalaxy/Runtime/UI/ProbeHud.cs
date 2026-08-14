@@ -105,7 +105,7 @@ namespace ClustrGalaxy.UI
         private void OnGUI()
         {
             EnsureStyles();
-            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 330 : 680);
+            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 370 : 760);
             GUI.DrawTexture(panel, panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
@@ -134,7 +134,11 @@ namespace ClustrGalaxy.UI
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
             }
             GUILayout.Space(5);
-            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nG or Y/Triangle: gravity flight", bodyStyle);
+            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nT/d-pad down: fast travel  •  P/R3: plot autopilot\nG or Y/Triangle: gravity flight", bodyStyle);
+            if (!string.IsNullOrWhiteSpace(navigation?.TravelStatus))
+            {
+                GUILayout.Label($"TRAVEL  {navigation.TravelStatus}", bodyStyle);
+            }
             GUILayout.Space(5);
             if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Explore)
             {
@@ -174,6 +178,29 @@ namespace ClustrGalaxy.UI
                 {
                     GUILayout.Label("TARGET  UNIDENTIFIED SIGNAL", titleStyle);
                     GUILayout.Label("Scan to identify this destination.", bodyStyle);
+                }
+                if (navigation != null)
+                {
+                    if (navigation.CanTravelTo(targeting.Target))
+                    {
+                        if (GUILayout.Button("FAST TRAVEL TO SYSTEM"))
+                        {
+                            navigation.TryFastTravel(targeting.Target);
+                        }
+                        if (GUILayout.Button("PLOT AUTOPILOT APPROACH"))
+                        {
+                            navigation.PlotAutopilot(targeting.Target);
+                        }
+                        if (modeState != null && modeState.FlightMode == FlightControlMode.PilotMastery &&
+                            GUILayout.Button("TRACK MASTERY APPROACH"))
+                        {
+                            navigation.TrackMasteryDestination(targeting.Target);
+                        }
+                    }
+                    else
+                    {
+                        GUILayout.Label("TRAVEL  INSPECT TARGETS AND UNKNOWN SIGNALS ARE NOT DESTINATIONS", bodyStyle);
+                    }
                 }
                 RenderThreadInspection(threadInspection?.DisplayedModel);
             }
