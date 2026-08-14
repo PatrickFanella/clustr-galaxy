@@ -97,8 +97,17 @@ namespace ClustrGalaxy.World
         private string persistentDataRoot = string.Empty;
         private ProbeTargeting targeting = null!;
         private SpatialSceneLoader dataLoader = null!;
+        private GalaxyEntityRegistry registry = null!;
 
         public SurveyDiscoveryStore DiscoveryStore => discoveryStore;
+        public GalaxyEntityRegistry Registry
+        {
+            get
+            {
+                EnsureRegistry();
+                return registry;
+            }
+        }
         public SurveySnapshotKey PendingSnapshotKey => snapshotKey;
         public GalaxyWorldMode WorldMode => modes?.WorldMode ?? GalaxyWorldMode.Explore;
         public bool RequiresStartingSystemChoice =>
@@ -138,6 +147,13 @@ namespace ClustrGalaxy.World
             ApplyVisibility();
         }
 
+        public void BindRegistry(GalaxyEntityRegistry entityRegistry)
+        {
+            registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
+            registry.RefreshFromScene();
+            ApplyVisibility();
+        }
+
         public void BindDataLoader(SpatialSceneLoader sceneLoader)
         {
             if (dataLoader != null) dataLoader.SceneLoaded -= UpdatePendingSnapshotKey;
@@ -158,6 +174,8 @@ namespace ClustrGalaxy.World
 
         public bool StartAt(string systemStableId)
         {
+            EnsureRegistry();
+            registry.RefreshFromScene();
             if (!TryGetLoadedSubreddit(systemStableId, out _))
             {
                 return false;
@@ -179,10 +197,10 @@ namespace ClustrGalaxy.World
                 return false;
             }
 
-            var entities = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            for (var index = 0; index < entities.Length; index++)
+            EnsureRegistry();
+            for (var index = 0; index < registry.Entities.Count; index++)
             {
-                var entity = entities[index];
+                var entity = registry.Entities[index];
                 if (BelongsToSystem(entity, systemStableId) && CanSeedStartingKnowledge(entity))
                 {
                     discoveryStore.IdentifyEntity(entity.StableId);
@@ -209,13 +227,13 @@ namespace ClustrGalaxy.World
 
         public GalaxyEntity[] LoadedStartingSystems()
         {
-            var candidates = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             var systems = new System.Collections.Generic.List<GalaxyEntity>();
-            for (var index = 0; index < candidates.Length; index++)
+            EnsureRegistry();
+            for (var index = 0; index < registry.Entities.Count; index++)
             {
-                if (IsSubreddit(candidates[index]))
+                if (IsSubreddit(registry.Entities[index]))
                 {
-                    systems.Add(candidates[index]);
+                    systems.Add(registry.Entities[index]);
                 }
             }
             systems.Sort((left, right) => string.CompareOrdinal(left.StableId, right.StableId));
@@ -224,11 +242,11 @@ namespace ClustrGalaxy.World
 
         public void ApplyVisibility()
         {
-            var entities = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include,
-                FindObjectsSortMode.None);
-            for (var index = 0; index < entities.Length; index++)
+            EnsureRegistry();
+            registry.RefreshFromScene();
+            for (var index = 0; index < registry.Entities.Count; index++)
             {
-                var entity = entities[index];
+                var entity = registry.Entities[index];
                 if (string.IsNullOrWhiteSpace(entity.StableId))
                 {
                     continue;
@@ -246,11 +264,9 @@ namespace ClustrGalaxy.World
                 targeting.SelectTarget(null);
             }
 
-            var routes = UnityEngine.Object.FindObjectsByType<GalaxySurveyRoute>(FindObjectsInactive.Include,
-                FindObjectsSortMode.None);
-            for (var index = 0; index < routes.Length; index++)
+            for (var index = 0; index < registry.Routes.Count; index++)
             {
-                var route = routes[index];
+                var route = registry.Routes[index];
                 var known = discoveryStore != null && discoveryStore.IsRouteKnown(route.StableId);
                 var visible = GalaxyDiscoveryVisibility.CanRender(modes?.WorldMode ?? GalaxyWorldMode.Explore, known);
                 if (route.gameObject.activeSelf != visible)
@@ -282,7 +298,7 @@ namespace ClustrGalaxy.World
                 dataLoader != null ? dataLoader.PinnedSurveySnapshotKey : null);
         }
 
-        private static bool TryGetLoadedSubreddit(string stableId, out GalaxyEntity entity)
+        private bool TryGetLoadedSubreddit(string stableId, out GalaxyEntity entity)
         {
             entity = null;
             if (string.IsNullOrWhiteSpace(stableId))
@@ -290,16 +306,8 @@ namespace ClustrGalaxy.World
                 return false;
             }
 
-            var candidates = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            GalaxyEntity candidate = null;
-            for (var index = 0; index < candidates.Length; index++)
-            {
-                if (string.Equals(candidates[index].StableId, stableId, StringComparison.Ordinal))
-                {
-                    candidate = candidates[index];
-                    break;
-                }
-            }
+            EnsureRegistry();
+            var candidate = registry.FindEntity(stableId);
             if (candidate == null)
             {
                 return false;
@@ -324,6 +332,18 @@ namespace ClustrGalaxy.World
         }
 
         private void OnWorldModeChanged(GalaxyWorldMode _) => ApplyVisibility();
+
+        private void EnsureRegistry()
+        {
+            if (registry == null)
+            {
+                // Compatibility for isolated PlayMode fixtures. Runtime setup
+                // always injects the shared registry through the composition root.
+                registry = GetComponent<GalaxyEntityRegistry>();
+                if (registry == null) registry = gameObject.AddComponent<GalaxyEntityRegistry>();
+                registry.RefreshFromScene();
+            }
+        }
 
         private void Unsubscribe()
         {

@@ -6,9 +6,6 @@ using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Scanning;
-using ClustrGalaxy.Constellations;
-using ClustrGalaxy.Discovery;
-using ClustrGalaxy.Progression;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -27,11 +24,6 @@ namespace ClustrGalaxy.Bootstrap
                 return;
             }
 #endif
-            if (Object.FindAnyObjectByType<ObserverProbeController>() != null)
-            {
-                return;
-            }
-
             RenderSettings.ambientLight = new Color(0.06f, 0.075f, 0.11f);
             RenderSettings.fog = true;
             RenderSettings.fogColor = new Color(0.004f, 0.008f, 0.018f);
@@ -42,8 +34,11 @@ namespace ClustrGalaxy.Bootstrap
             CreateSystem();
             CreateSurveySignalDestination();
             var dataLoader = CreateDataLoader();
-            CreateProbe(dataLoader, starfield);
-            var entityCount = Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Exclude).Length;
+            var registryRoot = new GameObject("Galaxy Entity Registry");
+            var registry = registryRoot.AddComponent<GalaxyEntityRegistry>();
+            registry.RefreshFromScene();
+            CreateProbe(dataLoader, starfield, registry);
+            var entityCount = registry.Entities.Count;
             Debug.Log($"[ClustrGalaxy] Prototype ready: observer probe, {entityCount} targetable entities, and deterministic Kepler orbits loaded.");
         }
 
@@ -59,7 +54,8 @@ namespace ClustrGalaxy.Bootstrap
             return loader;
         }
 
-        private static void CreateProbe(SpatialSceneLoader dataLoader, InstancedStarfield starfield)
+        private static void CreateProbe(SpatialSceneLoader dataLoader, InstancedStarfield starfield,
+            GalaxyEntityRegistry registry)
         {
             var existingCamera = Camera.main;
             if (existingCamera != null)
@@ -73,26 +69,11 @@ namespace ClustrGalaxy.Bootstrap
             var rigidbody = probe.AddComponent<Rigidbody>();
             rigidbody.mass = 1f;
             var flight = probe.AddComponent<ObserverProbeController>();
-            var modeState = new GalaxyModeState();
-            flight.Initialize(modeState);
             probe.AddComponent<FloatingOrigin>();
             var discoveryVisibility = probe.AddComponent<GalaxySurveyVisibilityController>();
-            discoveryVisibility.Initialize(modeState, SpatialSceneLoader.DemoSurveySnapshotKey);
-            discoveryVisibility.BindDataLoader(dataLoader);
             var targeting = probe.AddComponent<ProbeTargeting>();
-            discoveryVisibility.BindTargeting(targeting);
-            var surveyEvents = new SurveyEventBus();
             var scanner = probe.AddComponent<SignalScanner>();
-            scanner.Initialize(modeState, discoveryVisibility, targeting, surveyEvents, new[]
-            {
-                new ScanRoute("route:technology-signal-horizon", "subreddit:technology",
-                    "subreddit:signal-horizon", 8f),
-                new ScanRoute("route:technology-weak-archive", "subreddit:technology",
-                    "subreddit:weak-archive", 2f)
-            });
-            scanner.BindDataLoader(dataLoader);
             var threadInspection = probe.AddComponent<CommentThreadController>();
-            threadInspection.Initialize(targeting);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
 
@@ -107,41 +88,26 @@ namespace ClustrGalaxy.Bootstrap
             camera.backgroundColor = new Color(0.002f, 0.004f, 0.012f);
             cameraObject.AddComponent<AudioListener>();
             var navigation = probe.AddComponent<GalaxyNavigationController>();
-            navigation.Initialize(targeting, camera);
-            navigation.BindDiscoveryVisibility(discoveryVisibility);
-            navigation.BindSurveyEvents(surveyEvents);
             var materializer = dataLoader.GetComponent<LiveGalaxyMaterializer>();
             var overview = dataLoader.GetComponent<GalacticOverviewRenderer>();
+            probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
+
+            var hud = probe.AddComponent<ProbeHud>();
+            probe.AddComponent<GalaxyPerformanceMonitor>();
+            var gameplay = probe.AddComponent<GalaxyGameplayBootstrap>();
+            gameplay.Initialize(flight, targeting, dataLoader, navigation, discoveryVisibility, scanner,
+                threadInspection, hud, starfield, registry, new[]
+                {
+                    new ScanRoute("route:technology-signal-horizon", "subreddit:technology",
+                        "subreddit:signal-horizon", 8f),
+                    new ScanRoute("route:technology-weak-archive", "subreddit:technology",
+                        "subreddit:weak-archive", 2f)
+                });
             overview.BindNavigation(navigation);
             overview.BindDiscoveryVisibility(discoveryVisibility);
             materializer.BindNavigation(navigation, overview);
             materializer.BindDiscoveryVisibility(discoveryVisibility);
             materializer.BindThreadInspection(threadInspection);
-            threadInspection.BindNavigation(navigation);
-            probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
-
-            var hud = probe.AddComponent<ProbeHud>();
-            probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner,
-                threadInspection);
-            ConstellationTracker tracker = null;
-            SurveyProgression progression = null;
-            EasterEggTracker easterEggs = null;
-            discoveryVisibility.SurveyStarted += store =>
-            {
-                tracker?.Dispose();
-                progression?.Dispose();
-                easterEggs?.Dispose();
-                tracker = new ConstellationTracker(store, surveyEvents, new[] { ConstellationDefinition.Example },
-                    ConstellationDefinition.Example.MemberStableIds);
-                progression = new SurveyProgression(store, surveyEvents);
-                easterEggs = new EasterEggTracker(store, modeState, surveyEvents,
-                    new[] { EasterEggDefinition.SignalAfterimage });
-                var personal = PersonalConstellationStore.OpenDefault(store.ProfileId, store.SnapshotKey, surveyEvents);
-                hud.ConfigureConstellations(tracker, personal, new ConstellationSubmissionOutbox(personal));
-                hud.ConfigureProgression(progression);
-                hud.ConfigureEasterEggs(easterEggs, starfield);
-            };
         }
 
         private static void CreateSystem()

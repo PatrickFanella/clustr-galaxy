@@ -27,6 +27,7 @@ namespace ClustrGalaxy.Scanning
         private ProbeTargeting targeting = null!;
         private SurveyEventBus eventBus = null!;
         private SpatialSceneLoader dataLoader = null!;
+        private GalaxyEntityRegistry registry = null!;
         private bool holding;
         private float chargeSeconds;
 
@@ -65,6 +66,12 @@ namespace ClustrGalaxy.Scanning
         {
             routes.Clear();
             if (scanRoutes != null) routes.AddRange(scanRoutes.Where(route => !string.IsNullOrWhiteSpace(route.Id)));
+        }
+
+        public void BindRegistry(GalaxyEntityRegistry entityRegistry)
+        {
+            registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
+            registry.RefreshFromScene();
         }
 
         /// <summary>Uses exact renderer-compatible IDs: source:target:type.</summary>
@@ -235,10 +242,12 @@ namespace ClustrGalaxy.Scanning
 
         private void OnScopeLoaded(SpatialScene _) => RebuildPinnedRoutes();
 
-        private static IEnumerable<string> LoadedPostIds(GalaxyEntity target)
+        private IEnumerable<string> LoadedPostIds(GalaxyEntity target)
         {
             if (target == null || target.EntityType != "subreddit star") return Array.Empty<string>();
-            return UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include)
+            EnsureRegistry();
+            registry.RefreshFromScene();
+            return registry.Entities
                 .Where(entity => entity.EntityType == "post planet" &&
                     entity.GetComponent<GalaxySurveyMembership>() != null &&
                     string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, target.StableId,
@@ -248,19 +257,33 @@ namespace ClustrGalaxy.Scanning
                 .ToArray();
         }
 
-        private static bool IsSystemComplete(GalaxyEntity target, SurveyDiscoveryStore store)
+        private bool IsSystemComplete(GalaxyEntity target, SurveyDiscoveryStore store)
         {
             var membership = target?.GetComponent<GalaxySurveyMembership>();
             return membership != null && IsSystemComplete(membership.SystemStableId, store);
         }
 
-        private static bool IsSystemComplete(string systemStableId, SurveyDiscoveryStore store)
+        private bool IsSystemComplete(string systemStableId, SurveyDiscoveryStore store)
         {
-            var children = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include)
+            EnsureRegistry();
+            registry.RefreshFromScene();
+            var children = registry.Entities
                 .Where(entity => entity.EntityType == "post planet" && entity.GetComponent<GalaxySurveyMembership>() != null &&
                     string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, systemStableId, StringComparison.Ordinal))
                 .Select(entity => entity.StableId).OrderBy(id => id, StringComparer.Ordinal).ToArray();
             return children.Length > 0 && children.All(store.IsScanComplete);
+        }
+
+        private void EnsureRegistry()
+        {
+            if (registry == null)
+            {
+                registry = visibility?.Registry;
+                if (registry == null)
+                {
+                    throw new InvalidOperationException("Signal scanner requires a survey visibility registry.");
+                }
+            }
         }
 
         private void OnDestroy()

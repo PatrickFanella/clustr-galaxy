@@ -340,8 +340,11 @@ namespace ClustrGalaxy.Flight
             // retained state before the map can ever restore old momentum.
             storedVelocity = Vector3.zero;
             storedAngularVelocity = Vector3.zero;
-            body.linearVelocity = Vector3.zero;
-            body.angularVelocity = Vector3.zero;
+            if (!body.isKinematic)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
             body.position = arrival;
             transform.position = arrival;
 

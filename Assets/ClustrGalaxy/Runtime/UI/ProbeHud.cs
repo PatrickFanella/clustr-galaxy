@@ -36,6 +36,7 @@ namespace ClustrGalaxy.UI
         private EasterEggDiscovery latestEasterEgg;
         private bool hasEasterEggTransmission;
         private string progressionNotification = string.Empty;
+        private bool developerPerformanceVisible;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -117,6 +118,10 @@ namespace ClustrGalaxy.UI
 
         private void OnGUI()
         {
+            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.F10)
+            {
+                developerPerformanceVisible = !developerPerformanceVisible;
+            }
             EnsureStyles();
             var panel = new Rect(18, 18, 365, targeting?.Target == null ? 370 : 760);
             GUI.DrawTexture(panel, panelTexture);
@@ -146,6 +151,10 @@ namespace ClustrGalaxy.UI
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
+                if (developerPerformanceVisible)
+                {
+                    GUILayout.Label($"DEV PERF  ACTIVE {performance.ActiveEntityCount}  •  POOLED {performance.PooledEntityCount}  •  VISIBLE {performance.VisibleNodeCount}  •  KNOWN {performance.KnownNodeCount}\nSCAN EVENTS {performance.ScanEventCount}  •  GC {performance.SteadyStateGcBytes} B/frame  •  MAIN {performance.MainThreadMilliseconds:0.00} ms", bodyStyle);
+                }
             }
             GUILayout.Space(5);
             GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nT/d-pad down: fast travel  •  P/R3: plot autopilot\nG or Y/Triangle: gravity flight", bodyStyle);

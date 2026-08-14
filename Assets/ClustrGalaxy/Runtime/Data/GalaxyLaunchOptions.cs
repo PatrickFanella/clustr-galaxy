@@ -5,6 +5,7 @@ namespace ClustrGalaxy.Data
     public static class GalaxyLaunchOptions
     {
         private const string OfflineArgument = "-clustr-offline";
+        private const string LongOfflineArgument = "--clustr-offline";
 
         public static bool IsOfflineOnly(string[] arguments)
         {
@@ -15,7 +16,8 @@ namespace ClustrGalaxy.Data
 
             foreach (var argument in arguments)
             {
-                if (string.Equals(argument, OfflineArgument, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(argument, OfflineArgument, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(argument, LongOfflineArgument, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }

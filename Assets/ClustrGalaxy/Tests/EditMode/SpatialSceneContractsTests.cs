@@ -547,6 +547,7 @@ namespace ClustrGalaxy.Tests
         {
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "-clustr-offline" }), Is.True);
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "-CLUSTR-OFFLINE" }), Is.True);
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "--clustr-offline" }), Is.True);
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy" }), Is.False);
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(null), Is.False);
         }
