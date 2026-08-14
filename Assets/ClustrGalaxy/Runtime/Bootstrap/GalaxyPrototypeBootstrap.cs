@@ -88,7 +88,8 @@ namespace ClustrGalaxy.Bootstrap
                     "subreddit:weak-archive", 2f)
             });
             scanner.BindDataLoader(dataLoader);
-            probe.AddComponent<CommentThreadController>().Initialize(targeting);
+            var threadInspection = probe.AddComponent<CommentThreadController>();
+            threadInspection.Initialize(targeting);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
 
@@ -111,11 +112,14 @@ namespace ClustrGalaxy.Bootstrap
             overview.BindDiscoveryVisibility(discoveryVisibility);
             materializer.BindNavigation(navigation, overview);
             materializer.BindDiscoveryVisibility(discoveryVisibility);
+            materializer.BindThreadInspection(threadInspection);
+            threadInspection.BindNavigation(navigation);
             probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner);
+            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner,
+                threadInspection);
         }
 
         private static void CreateSystem()
@@ -233,7 +237,7 @@ namespace ClustrGalaxy.Bootstrap
                     AttachVisual(moon, visualCatalog.discussionSatellitePrefab, moonRadius * 2f);
                 }
                 moon.gameObject.AddComponent<KeplerOrbit>().Initialize(planet, elements, planetMu, timeScale);
-                AttachPrototypeThread(systemRoot, moon, post, index, planetMu, timeScale);
+                AttachPrototypeThread(moon, post, index);
                 CreateOrbitLine(systemRoot, planet, elements, planetMu,
                     new Color(post.Color.r, post.Color.g, post.Color.b, 0.22f), 0.035f);
                 created++;
@@ -360,43 +364,47 @@ namespace ClustrGalaxy.Bootstrap
                 particle.AddComponent<GalaxyEntity>().Initialize(
                     id, $"Parent comment {index + 1}", "parent comment", Math.Max(1, post.CommentCount / parentCount));
                 particle.AddComponent<KeplerOrbit>().Initialize(planet, elements, planetMu, timeScale);
-                AttachPrototypeThread(systemRoot, particle.transform, post, index + 10, planetMu, timeScale);
+                AttachPrototypeThread(particle.transform, post, index + 10);
             }
         }
 
-        private static void AttachPrototypeThread(
-            Transform systemRoot,
-            Transform parentComment,
-            PostSeed post,
-            int parentIndex,
-            double parentMu,
-            float timeScale)
+        private static void AttachPrototypeThread(Transform parentComment, PostSeed post, int parentIndex)
         {
-            var thread = new GameObject($"Thread for {parentComment.name}");
-            thread.transform.SetParent(systemRoot, false);
-            thread.AddComponent<OrbitAnchorFollower>().Initialize(parentComment);
             var replyCount = 2 + parentIndex % 4;
-            var material = CreateMaterial(Color.Lerp(post.Color, Color.white, 0.65f), true);
+            var parent = parentComment.GetComponent<GalaxyEntity>();
+            var nodes = new SpatialNode[replyCount + 1];
+            nodes[0] = new SpatialNode
+            {
+                id = parent.StableId,
+                type = "comment",
+                author_name = "prototype parent",
+                metrics = new SpatialNodeMetrics { reply_count = replyCount }
+            };
             for (var replyIndex = 0; replyIndex < replyCount; replyIndex++)
             {
-                var reply = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                reply.transform.SetParent(thread.transform, false);
-                var angle = (replyIndex - (replyCount - 1) * 0.5f) * 0.52f;
-                var distance = 3.5f + replyIndex * 2.2f;
-                reply.transform.localPosition = new Vector3(
-                    Mathf.Cos(angle) * distance,
-                    (replyIndex - 1) * 0.22f,
-                    Mathf.Sin(angle) * distance);
-                reply.transform.localScale = Vector3.one * 0.5f;
-                reply.GetComponent<MeshRenderer>().sharedMaterial = material;
-                reply.AddComponent<GalaxyEntity>().Initialize(
-                    $"{parentComment.GetComponent<GalaxyEntity>().StableId}-reply-{replyIndex + 1}",
-                    $"Reply {replyIndex + 1}",
-                    $"reply depth {(replyIndex % 3) + 1}",
-                    replyCount - replyIndex);
+                var parentId = replyIndex < 2 ? parent.StableId :
+                    $"{parent.StableId}-reply-{replyIndex}";
+                nodes[replyIndex + 1] = new SpatialNode
+                {
+                    id = $"{parent.StableId}-reply-{replyIndex + 1}",
+                    type = "comment",
+                    parent_id = parentId,
+                    author_name = $"prototype_user_{parentIndex + replyIndex:00}",
+                    excerpt = $"Prototype reply {replyIndex + 1} in {post.Title}.",
+                    metrics = new SpatialNodeMetrics
+                    {
+                        score = replyCount - replyIndex,
+                        reply_count = replyIndex + 1 < replyCount ? 1 : 0
+                    }
+                };
             }
-
-            parentComment.gameObject.AddComponent<CommentThreadNode>().Initialize(thread, replyCount);
+            var model = ThreadInspectionModel.Build(new SpatialScene
+            {
+                scope = "thread",
+                root_id = parent.StableId,
+                nodes = nodes
+            });
+            parentComment.gameObject.AddComponent<CommentThreadNode>().Initialize(replyCount, model);
         }
 
         private static void CreateStarfield()

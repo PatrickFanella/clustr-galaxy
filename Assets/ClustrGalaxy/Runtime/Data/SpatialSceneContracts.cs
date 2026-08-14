@@ -109,6 +109,9 @@ namespace ClustrGalaxy.Data
         public string community_id = string.Empty;
         public string position_provenance = string.Empty;
         public string source_updated_at = string.Empty;
+        // Optional discussion text fields. Older graph responses omit both.
+        public string body = string.Empty;
+        public string excerpt = string.Empty;
         public SpatialNodeMetrics metrics = new();
         public float x;
         public float y;

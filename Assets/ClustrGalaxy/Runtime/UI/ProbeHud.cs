@@ -21,6 +21,9 @@ namespace ClustrGalaxy.UI
         private GalaxyModeState modeState = null!;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
         private SignalScanner scanner = null!;
+        private CommentThreadController threadInspection = null!;
+        private Vector2 threadScrollPosition;
+        private ThreadInspectionModel observedThreadModel = null!;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -29,7 +32,8 @@ namespace ClustrGalaxy.UI
             GalaxyNavigationController navigationController,
             GalaxyModeState galaxyModeState,
             GalaxySurveyVisibilityController visibilityController,
-            SignalScanner signalScanner = null)
+            SignalScanner signalScanner = null,
+            CommentThreadController commentThreadInspection = null)
         {
             flight = flightController;
             targeting = targetController;
@@ -38,6 +42,15 @@ namespace ClustrGalaxy.UI
             modeState = galaxyModeState;
             discoveryVisibility = visibilityController;
             scanner = signalScanner;
+            if (threadInspection != null)
+            {
+                threadInspection.ModelChanged -= OnThreadModelChanged;
+            }
+            threadInspection = commentThreadInspection;
+            if (threadInspection != null)
+            {
+                threadInspection.ModelChanged += OnThreadModelChanged;
+            }
             performance = GetComponent<GalaxyPerformanceMonitor>();
         }
 
@@ -68,7 +81,7 @@ namespace ClustrGalaxy.UI
         private void OnGUI()
         {
             EnsureStyles();
-            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 330 : 410);
+            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 330 : 680);
             GUI.DrawTexture(panel, panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
@@ -136,11 +149,7 @@ namespace ClustrGalaxy.UI
                     GUILayout.Label("TARGET  UNIDENTIFIED SIGNAL", titleStyle);
                     GUILayout.Label("Scan to identify this destination.", bodyStyle);
                 }
-                var thread = targeting.Target.GetComponent<CommentThreadNode>();
-                if (thread != null)
-                {
-                    GUILayout.Label($"THREAD  {thread.ReplyCount} replies expanded", bodyStyle);
-                }
+                RenderThreadInspection(threadInspection?.DisplayedModel);
             }
             GUILayout.EndArea();
 
@@ -163,10 +172,54 @@ namespace ClustrGalaxy.UI
 
         private void OnDestroy()
         {
+            if (threadInspection != null)
+            {
+                threadInspection.ModelChanged -= OnThreadModelChanged;
+            }
             if (panelTexture != null)
             {
                 Destroy(panelTexture);
             }
+        }
+
+        private void RenderThreadInspection(ThreadInspectionModel model)
+        {
+            if (model != observedThreadModel)
+            {
+                observedThreadModel = model;
+                threadScrollPosition = Vector2.zero;
+            }
+            if (model == null || model.NodeCount == 0)
+            {
+                return;
+            }
+
+            var presentation = model.Presentation();
+            GUILayout.Space(6);
+            var partial = presentation.IsPartial ? "  •  PARTIAL" : string.Empty;
+            GUILayout.Label($"THREAD  SHOWING {presentation.Rows.Count} OF {presentation.TotalNodeCount}{partial}", titleStyle);
+            threadScrollPosition = GUILayout.BeginScrollView(threadScrollPosition, GUILayout.Height(225f));
+            foreach (var row in presentation.Rows)
+            {
+                RenderThreadRow(row);
+            }
+            GUILayout.EndScrollView();
+        }
+
+        private void RenderThreadRow(ThreadInspectionPresentationRow row)
+        {
+            var entry = row.Entry;
+            var indent = new string(' ', Mathf.Max(0, entry.Depth - 1) * 2);
+            var author = string.IsNullOrWhiteSpace(entry.Author) ? "unknown" : entry.Author;
+            var suffix = entry.HasMore ? "  •  MORE" : string.Empty;
+            var excerpt = string.IsNullOrWhiteSpace(row.Excerpt) ? string.Empty : $" — {row.Excerpt}";
+            GUILayout.Label($"{indent}↳ {author}  ▲{entry.Score}  ↩{entry.ReplyCount}{suffix}{excerpt}", bodyStyle);
+        }
+
+        private void OnThreadModelChanged(ThreadInspectionModel model)
+        {
+            observedThreadModel = model;
+            threadScrollPosition = Vector2.zero;
         }
 
         private static string FormatWorldMode(GalaxyWorldMode mode)

@@ -6,6 +6,7 @@ using ClustrGalaxy.Generation;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Scanning;
+using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 
@@ -71,6 +72,114 @@ namespace ClustrGalaxy.Tests
 
     public sealed class SurveyGameplayTests
     {
+        [Test]
+        public void ThreadInspection_BuildsOnlyOrderedDescendantsWithinTheDisplayDepth()
+        {
+            var rootId = "comment:parent";
+            var scene = new SpatialScene
+            {
+                scope = "thread",
+                root_id = rootId,
+                nodes = new[]
+                {
+                    CommentNode(rootId, string.Empty, 50, 4),
+                    CommentNode("comment:low", rootId, 3, 1),
+                    CommentNode("comment:high-b", rootId, 9, 0),
+                    CommentNode("comment:high-a", rootId, 9, 0, "author-a", "A useful excerpt."),
+                    CommentNode("comment:grandchild", "comment:low", 7, 1),
+                    CommentNode("comment:great-grandchild", "comment:grandchild", 5, 1),
+                    CommentNode("comment:too-deep", "comment:great-grandchild", 99, 0),
+                    CommentNode("comment:unrelated", "comment:other-parent", 100, 0)
+                }
+            };
+
+            var model = ThreadInspectionModel.Build(scene, maxDepth: 3, maxNodes: 250);
+
+            Assert.That(model.RootId, Is.EqualTo(rootId));
+            Assert.That(model.NodeCount, Is.EqualTo(5));
+            Assert.That(model.Entries.Select(entry => entry.StableId), Is.EqualTo(new[]
+            {
+                "comment:high-a", "comment:high-b", "comment:low"
+            }));
+            Assert.That(model.Entries[0].Author, Is.EqualTo("author-a"));
+            Assert.That(model.Entries[0].BodyExcerpt, Is.EqualTo("A useful excerpt."));
+            Assert.That(model.Entries[2].Children[0].Children[0].Depth, Is.EqualTo(3));
+            Assert.That(model.Entries[2].Children[0].Children[0].HasMore, Is.True);
+            Assert.That(model.Truncated, Is.True);
+        }
+
+        [Test]
+        public void ThreadInspection_EnforcesTheGlobalNodeCapAndRetainsReplyHints()
+        {
+            var scene = new SpatialScene
+            {
+                scope = "thread",
+                root_id = "comment:parent",
+                nodes = new[]
+                {
+                    CommentNode("comment:parent", string.Empty, 0, 3),
+                    CommentNode("comment:first", "comment:parent", 10, 2),
+                    CommentNode("comment:child", "comment:first", 5, 1),
+                    CommentNode("comment:second", "comment:parent", 9, 0),
+                    CommentNode("comment:third", "comment:parent", 8, 0)
+                }
+            };
+
+            var model = ThreadInspectionModel.Build(scene, maxDepth: 3, maxNodes: 2);
+
+            Assert.That(model.NodeCount, Is.EqualTo(2));
+            Assert.That(model.Truncated, Is.True);
+            Assert.That(model.Entries[0].StableId, Is.EqualTo("comment:first"));
+            Assert.That(model.Entries[0].HasMore, Is.True);
+            Assert.That(model.Entries[0].ReplyCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ThreadInspection_PresentationFlattensDepthFirstAndCapsHudRowsWithoutDroppingModelData()
+        {
+            var model = ThreadInspectionModel.Build(new SpatialScene
+            {
+                scope = "thread",
+                root_id = "comment:parent",
+                nodes = new[]
+                {
+                    CommentNode("comment:parent", string.Empty, 0, 3),
+                    CommentNode("comment:high", "comment:parent", 9, 1,
+                        excerpt: "This is intentionally much longer than the HUD excerpt cap."),
+                    CommentNode("comment:high-child", "comment:high", 8, 0),
+                    CommentNode("comment:middle", "comment:parent", 5, 0),
+                    CommentNode("comment:low", "comment:parent", 1, 0)
+                }
+            });
+
+            var presentation = model.Presentation(maximumRows: 3, maximumExcerptCharacters: 20);
+
+            Assert.That(model.NodeCount, Is.EqualTo(4));
+            Assert.That(presentation.TotalNodeCount, Is.EqualTo(4));
+            Assert.That(presentation.Rows.Select(row => row.StableId), Is.EqualTo(new[]
+            {
+                "comment:high", "comment:high-child", "comment:middle"
+            }));
+            Assert.That(presentation.IsRenderCapped, Is.True);
+            Assert.That(presentation.IsPartial, Is.True);
+            Assert.That(presentation.Rows[0].Excerpt.Length, Is.LessThanOrEqualTo(20));
+        }
+
+        private static SpatialNode CommentNode(string id, string parentId, long score, long replyCount,
+            string author = "pilot", string excerpt = "") => new()
+        {
+            id = id,
+            type = "comment",
+            parent_id = parentId,
+            author_name = author,
+            excerpt = excerpt,
+            metrics = new SpatialNodeMetrics
+            {
+                score = score,
+                reply_count = replyCount
+            }
+        };
+
         [Test]
         public void Modes_AreOrthogonalAndFreelyChangeable()
         {

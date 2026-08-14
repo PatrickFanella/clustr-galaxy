@@ -354,26 +354,20 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
-        public void CommentThread_RepliesStayHiddenUntilTheParentIsExpanded()
+        public void CommentThread_StoresReplyMetadataWithoutCreatingAWorldVisual()
         {
             var parent = new GameObject("parent comment");
-            var replies = new GameObject("reply thread");
             try
             {
                 var thread = parent.AddComponent<CommentThreadNode>();
-                thread.Initialize(replies, 4);
+                thread.Initialize(4);
 
-                Assert.That(replies.activeSelf, Is.False);
                 Assert.That(thread.ReplyCount, Is.EqualTo(4));
-                thread.SetExpanded(true);
-                Assert.That(replies.activeSelf, Is.True);
-                thread.SetExpanded(false);
-                Assert.That(replies.activeSelf, Is.False);
+                Assert.That(thread.DemoModel, Is.Null);
             }
             finally
             {
                 UnityEngine.Object.DestroyImmediate(parent);
-                UnityEngine.Object.DestroyImmediate(replies);
             }
         }
 

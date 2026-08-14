@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Generation;
+using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Flight;
 using UnityEngine;
@@ -15,7 +16,6 @@ namespace ClustrGalaxy.World
         private Transform regionRoot = null!;
         private Transform systemRoot = null!;
         private Transform discussionRoot = null!;
-        private Transform threadRoot = null!;
         private Material starMaterial = null!;
         private Material planetMaterial = null!;
         private Material userMaterial = null!;
@@ -27,6 +27,7 @@ namespace ClustrGalaxy.World
         private GalacticOverviewRenderer overview = null!;
         private GalaxyEntityPool entityPool = null!;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private CommentThreadController threadInspection = null!;
         private string activeSystemId = string.Empty;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
@@ -47,6 +48,11 @@ namespace ClustrGalaxy.World
         public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
         {
             discoveryVisibility = visibilityController;
+        }
+
+        public void BindThreadInspection(CommentThreadController controller)
+        {
+            threadInspection = controller;
         }
 
         private void Materialize(SpatialScene scene)
@@ -75,12 +81,11 @@ namespace ClustrGalaxy.World
         private void ApplyVisibility(GalaxyNavigationLevel level)
         {
             var visibility = GalaxyLayerVisibility.For(level,
-                regionRoot != null, systemRoot != null, discussionRoot != null, threadRoot != null);
+                regionRoot != null, systemRoot != null, discussionRoot != null, false);
             overview?.SetLayerActive(visibility.Overview);
             SetActive(regionRoot, visibility.Region);
             SetActive(systemRoot, visibility.System);
             SetActive(discussionRoot, visibility.Discussion);
-            SetActive(threadRoot, visibility.Thread);
         }
 
         private static void SetActive(Transform root, bool active)
@@ -93,7 +98,6 @@ namespace ClustrGalaxy.World
             DestroyRoot(ref regionRoot);
             DestroyRoot(ref systemRoot);
             DestroyRoot(ref discussionRoot);
-            DestroyRoot(ref threadRoot);
             regionRoot = new GameObject($"Live Region {scene.root_id}").transform;
             regionRoot.SetParent(transform, false);
             EnsureMaterials();
@@ -159,7 +163,6 @@ namespace ClustrGalaxy.World
             }
             DestroyRoot(ref systemRoot);
             DestroyRoot(ref discussionRoot);
-            DestroyRoot(ref threadRoot);
             systemRoot = new GameObject($"Live System {scene.root_id}").transform;
             systemRoot.SetParent(transform, false);
             EnsureMaterials();
@@ -219,7 +222,6 @@ namespace ClustrGalaxy.World
                 return;
             }
             DestroyRoot(ref discussionRoot);
-            DestroyRoot(ref threadRoot);
             discussionRoot = new GameObject($"Discussion {scene.root_id}").transform;
             discussionRoot.SetParent(systemRoot != null ? systemRoot : transform, false);
             EnsureMaterials();
@@ -252,6 +254,7 @@ namespace ClustrGalaxy.World
                     var elements = StableOrbitGenerator.GenerateMoon(
                         loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id, axis);
                     var satellite = CreateSphere(discussionRoot, node, "discussion satellite", Vector3.zero, radius, satelliteMaterial);
+                    satellite.AddComponent<CommentThreadNode>().Initialize(node.metrics.reply_count);
                     GetOrAdd<KeplerOrbit>(satellite).Initialize(planet.transform, elements, 300d, GalaxyScale.MoonOrbitTimeScale);
                     satelliteCount++;
                     continue;
@@ -265,6 +268,10 @@ namespace ClustrGalaxy.World
                 var particle = CreateSphere(discussionRoot, node,
                     node.metrics.reply_count > 0 ? "parent comment particle" : "comment ring particle",
                     Vector3.zero, 0.35f + (ringIndex % 4) * 0.08f, commentMaterial);
+                if (node.metrics.reply_count > 0)
+                {
+                    particle.AddComponent<CommentThreadNode>().Initialize(node.metrics.reply_count);
+                }
                 GetOrAdd<KeplerOrbit>(particle).Initialize(planet.transform, ringElements, 300d, GalaxyScale.MoonOrbitTimeScale);
                 ringIndex++;
             }
@@ -273,34 +280,7 @@ namespace ClustrGalaxy.World
 
         private void MaterializeThread(SpatialScene scene)
         {
-            if (!GalaxyEntity.TryGet(scene.root_id, out var parent))
-            {
-                return;
-            }
-            DestroyRoot(ref threadRoot);
-            threadRoot = new GameObject($"Thread {scene.root_id}").transform;
-            threadRoot.SetParent(systemRoot != null ? systemRoot : transform, false);
-            threadRoot.gameObject.AddComponent<OrbitAnchorFollower>().Initialize(parent.transform);
-            EnsureMaterials();
-
-            var index = 0;
-            foreach (var node in scene.nodes)
-            {
-                if (node.id == scene.root_id || node.type != "comment")
-                {
-                    continue;
-                }
-                var depth = Mathf.Clamp(node.metrics.depth, 1, 3);
-                var angle = CommentRingLayout.AngleRadians(node.id);
-                var distance = 4f + depth * 3.5f + (index % 7) * 0.8f;
-                var position = new Vector3(
-                    Mathf.Cos((float)angle) * distance,
-                    (depth - 2) * 0.5f,
-                    Mathf.Sin((float)angle) * distance);
-                CreateSphere(threadRoot, node, $"reply depth {depth}", position, 0.5f, commentMaterial);
-                index++;
-            }
-            GalaxySurveyMembership.InitializeDescendants(threadRoot, activeSystemId);
+            threadInspection?.PresentThread(scene);
         }
 
         private static SpatialNode FindNode(SpatialScene scene, string id)

@@ -1,25 +1,17 @@
+using ClustrGalaxy.UI;
 using UnityEngine;
 
 namespace ClustrGalaxy.Interaction
 {
     public sealed class CommentThreadNode : MonoBehaviour
     {
-        private GameObject threadVisual = null!;
-        public int ReplyCount { get; private set; }
+        public long ReplyCount { get; private set; }
+        public ThreadInspectionModel DemoModel { get; private set; } = null!;
 
-        public void Initialize(GameObject visual, int replyCount = 0)
+        public void Initialize(long replyCount = 0, ThreadInspectionModel demoModel = null)
         {
-            threadVisual = visual;
-            ReplyCount = Mathf.Max(0, replyCount);
-            threadVisual.SetActive(false);
-        }
-
-        public void SetExpanded(bool expanded)
-        {
-            if (threadVisual != null)
-            {
-                threadVisual.SetActive(expanded);
-            }
+            ReplyCount = System.Math.Max(0L, replyCount);
+            DemoModel = demoModel;
         }
     }
 }

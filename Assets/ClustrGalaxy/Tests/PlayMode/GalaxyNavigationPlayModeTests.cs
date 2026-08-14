@@ -1,9 +1,12 @@
 using System.Collections;
 using System.IO;
+using System.Linq;
+using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Scanning;
+using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 using UnityEngine;
@@ -13,6 +16,55 @@ namespace ClustrGalaxy.Tests
 {
     public sealed class GalaxyNavigationPlayModeTests
     {
+        [UnityTest]
+        public IEnumerator ThreadInspection_ChangesTheHudModelWithoutCreatingReplyEntities()
+        {
+            var root = new GameObject("thread inspection test root");
+            try
+            {
+                var targeting = root.AddComponent<ProbeTargeting>();
+                var inspection = root.AddComponent<CommentThreadController>();
+                inspection.Initialize(targeting);
+                var parent = CreateSurveyEntity(root.transform, "comment:parent", "discussion satellite",
+                    "subreddit:technology");
+                parent.gameObject.AddComponent<CommentThreadNode>().Initialize(2);
+                var before = GalaxyEntity.ActiveEntities.Count();
+
+                targeting.SelectTarget(parent);
+                inspection.PresentThread(new SpatialScene
+                {
+                    scope = "thread",
+                    root_id = parent.StableId,
+                    nodes = new[]
+                    {
+                        new SpatialNode { id = parent.StableId, type = "comment" },
+                        new SpatialNode
+                        {
+                            id = "comment:reply-a", type = "comment", parent_id = parent.StableId,
+                            author_name = "a", metrics = new SpatialNodeMetrics { score = 3, reply_count = 0 }
+                        },
+                        new SpatialNode
+                        {
+                            id = "comment:reply-b", type = "comment", parent_id = parent.StableId,
+                            author_name = "b", metrics = new SpatialNodeMetrics { score = 2, reply_count = 0 }
+                        }
+                    }
+                });
+                yield return null;
+
+                Assert.That(inspection.DisplayedModel, Is.Not.Null);
+                Assert.That(inspection.DisplayedModel.NodeCount, Is.EqualTo(2));
+                Assert.That(GalaxyEntity.ActiveEntities.Count(), Is.EqualTo(before));
+
+                targeting.SelectTarget(null);
+                Assert.That(inspection.DisplayedModel, Is.Null);
+            }
+            finally
+            {
+                Object.Destroy(root);
+            }
+        }
+
         [UnityTest]
         public IEnumerator SurveyStart_HidesEverythingOutsideTheStartingSystem()
         {
