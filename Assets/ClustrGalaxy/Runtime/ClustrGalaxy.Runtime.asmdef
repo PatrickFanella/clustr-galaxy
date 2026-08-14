@@ -1,0 +1,9 @@
+{
+  "name": "ClustrGalaxy.Unity",
+  "rootNamespace": "ClustrGalaxy",
+  "references": [
+    "ClustrGalaxy.Core",
+    "Unity.InputSystem"
+  ],
+  "autoReferenced": true
+}
