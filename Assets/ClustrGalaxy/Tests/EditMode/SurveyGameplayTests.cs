@@ -9,6 +9,7 @@ using ClustrGalaxy.Scanning;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Discovery;
 using ClustrGalaxy.Progression;
 using NUnit.Framework;
 
@@ -74,6 +75,100 @@ namespace ClustrGalaxy.Tests
 
     public sealed class SurveyGameplayTests
     {
+        [Test]
+        public void EasterEggs_OrderedTriggerRequiresTheExactScanSequenceAndResetsAfterWrongOrder()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var modes = new GalaxyModeState();
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            var bus = new SurveyEventBus();
+            var definition = new EasterEggDefinition("egg:ordered", EasterEggTriggerKind.OrderedScanSequence,
+                new[] { "subreddit:technology", "post:retro-computing", "post:open-source-ai" },
+                "Afterimage", "A local transmission.", "cosmetic:afterimage-pulse");
+            using var tracker = new EasterEggTracker(store, modes, bus, new[] { definition });
+
+            PublishScan(bus, "subreddit:technology");
+            PublishScan(bus, "post:open-source-ai");
+            PublishScan(bus, "post:retro-computing");
+            Assert.That(tracker.IsDiscovered(definition.Id), Is.False);
+
+            PublishScan(bus, "subreddit:technology");
+            PublishScan(bus, "post:retro-computing");
+            PublishScan(bus, "post:open-source-ai");
+
+            Assert.That(tracker.IsDiscovered(definition.Id), Is.True);
+            Assert.That(tracker.AwardCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void EasterEggs_UnorderedTriggerAcceptsAnyScanOrderAndExposesAuthoredProvenance()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var modes = new GalaxyModeState();
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            var bus = new SurveyEventBus();
+            var definition = new EasterEggDefinition("egg:unordered", EasterEggTriggerKind.UnorderedScanSet,
+                new[] { "post:privacy-tools", "post:right-to-repair" }, "Pair", "A local transmission.");
+            using var tracker = new EasterEggTracker(store, modes, bus, new[] { definition });
+
+            PublishScan(bus, "post:right-to-repair");
+            PublishScan(bus, "post:privacy-tools");
+
+            Assert.That(tracker.IsDiscovered(definition.Id), Is.True);
+            Assert.That(tracker.LastDiscovery.Provenance, Is.EqualTo(EasterEggDefinition.AuthoredProvenance));
+            Assert.That(tracker.LastDiscovery.Provenance, Is.EqualTo("Authored discovery — not source data"));
+        }
+
+        [Test]
+        public void EasterEggs_AwardExactlyOnceAndPersistAcrossReloadWithinTheSameSnapshot()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var modes = new GalaxyModeState();
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            var bus = new SurveyEventBus();
+            var definition = new EasterEggDefinition("egg:once", EasterEggTriggerKind.UnorderedScanSet,
+                new[] { "post:linux-handhelds" }, "Once", "A local transmission.");
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            using (var tracker = new EasterEggTracker(store, modes, bus, new[] { definition }))
+            {
+                PublishScan(bus, "post:linux-handhelds");
+                PublishScan(bus, "post:linux-handhelds");
+                Assert.That(tracker.AwardCount, Is.EqualTo(1));
+            }
+
+            var restored = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            using var reloaded = new EasterEggTracker(restored, modes, bus, new[] { definition });
+            PublishScan(bus, "post:linux-handhelds");
+            Assert.That(reloaded.IsDiscovered(definition.Id), Is.True);
+            Assert.That(reloaded.AwardCount, Is.Zero);
+        }
+
+        [Test]
+        public void EasterEggs_AreIsolatedBySnapshotAndIgnoreExploreOrNonScanEvents()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var surveyStore = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var otherStore = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+            var modes = new GalaxyModeState();
+            var bus = new SurveyEventBus();
+            var definition = new EasterEggDefinition("egg:survey-only", EasterEggTriggerKind.UnorderedScanSet,
+                new[] { "post:open-source-ai" }, "Survey only", "A local transmission.");
+            using var survey = new EasterEggTracker(surveyStore, modes, bus, new[] { definition });
+            using var other = new EasterEggTracker(otherStore, modes, bus, new[] { definition });
+
+            PublishScan(bus, "post:open-source-ai");
+            bus.Publish(SurveyEvent.SystemCompleted(SurveySnapshotKey.Demo, "post:open-source-ai", DateTime.UtcNow));
+            Assert.That(survey.IsDiscovered(definition.Id), Is.False);
+
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Pinned(9, 3), "post:open-source-ai",
+                Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            Assert.That(survey.IsDiscovered(definition.Id), Is.False);
+            Assert.That(other.IsDiscovered(definition.Id), Is.True);
+        }
+
         [Test]
         public void AuthoredConstellation_ReportsOneOfSixAndCompletesExactlyOnce()
         {
@@ -265,6 +360,10 @@ namespace ClustrGalaxy.Tests
             Assert.That(presentation.IsPartial, Is.True);
             Assert.That(presentation.Rows[0].Excerpt.Length, Is.LessThanOrEqualTo(20));
         }
+
+        private static void PublishScan(SurveyEventBus bus, string stableId) =>
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, stableId,
+                Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
 
         private static SpatialNode CommentNode(string id, string parentId, long score, long replyCount,
             string author = "pilot", string excerpt = "") => new()

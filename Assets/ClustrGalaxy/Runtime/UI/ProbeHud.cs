@@ -4,6 +4,7 @@ using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Discovery;
 using ClustrGalaxy.Progression;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -30,6 +31,10 @@ namespace ClustrGalaxy.UI
         private PersonalConstellationStore personalConstellations;
         private ConstellationSubmissionOutbox constellationOutbox;
         private SurveyProgression progression;
+        private EasterEggTracker easterEggTracker;
+        private InstancedStarfield starfield;
+        private EasterEggDiscovery latestEasterEgg;
+        private bool hasEasterEggTransmission;
         private string progressionNotification = string.Empty;
 
         public void Initialize(
@@ -76,6 +81,14 @@ namespace ClustrGalaxy.UI
             if (progression != null) progression.Notification -= OnProgressionNotification;
             progression = value;
             if (progression != null) progression.Notification += OnProgressionNotification;
+        }
+
+        public void ConfigureEasterEggs(EasterEggTracker tracker, InstancedStarfield value)
+        {
+            if (easterEggTracker != null) easterEggTracker.Discovered -= OnEasterEggDiscovered;
+            easterEggTracker = tracker;
+            starfield = value;
+            if (easterEggTracker != null) easterEggTracker.Discovered += OnEasterEggDiscovered;
         }
 
         private void EnsureStyles()
@@ -128,6 +141,7 @@ namespace ClustrGalaxy.UI
                 }
             }
             RenderConstellationStatus();
+            RenderAuthoredDiscoveryTransmission();
             RenderSurveyObjectives();
             if (performance != null)
             {
@@ -231,6 +245,7 @@ namespace ClustrGalaxy.UI
             }
             if (constellationTracker != null) constellationTracker.Progressed -= OnConstellationProgressed;
             if (progression != null) progression.Notification -= OnProgressionNotification;
+            if (easterEggTracker != null) easterEggTracker.Discovered -= OnEasterEggDiscovered;
             if (panelTexture != null)
             {
                 Destroy(panelTexture);
@@ -321,6 +336,23 @@ namespace ClustrGalaxy.UI
         }
 
         private void OnProgressionNotification(string message) => progressionNotification = message ?? string.Empty;
+
+        private void OnEasterEggDiscovered(EasterEggDiscovery discovery)
+        {
+            latestEasterEgg = discovery;
+            hasEasterEggTransmission = !string.IsNullOrWhiteSpace(discovery.Id);
+            if (!string.IsNullOrWhiteSpace(discovery.LocalCosmeticReward))
+            {
+                starfield?.TriggerAuthoredColorPulse(new Color(0.72f, 0.42f, 1f));
+            }
+        }
+
+        private void RenderAuthoredDiscoveryTransmission()
+        {
+            GUILayout.Label(EasterEggDefinition.AuthoredProvenance, bodyStyle);
+            if (!hasEasterEggTransmission) return;
+            GUILayout.Label($"TRANSMISSION  {latestEasterEgg.Title}: {latestEasterEgg.Message}", titleStyle);
+        }
 
         private static string FormatWorldMode(GalaxyWorldMode mode)
         {

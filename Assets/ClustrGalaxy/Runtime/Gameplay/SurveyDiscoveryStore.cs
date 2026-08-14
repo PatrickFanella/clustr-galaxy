@@ -67,6 +67,7 @@ namespace ClustrGalaxy.Gameplay
         public bool IsRouteKnown(string stableId) => Contains(State.known_route_ids, stableId);
         public bool IsScanComplete(string stableId) => Contains(State.completed_scan_ids, stableId);
         public bool IsConstellationMemberRecorded(string stableId) => Contains(State.constellation_member_ids, stableId);
+        public bool IsEasterEggDiscovered(string stableId) => Contains(State.discovered_easter_egg_ids, stableId);
         public bool IsContractComplete(string stableId) => Contains(State.completed_contract_ids, stableId);
         public bool IsAchievementUnlocked(string stableId) => Contains(State.achievement_ids, stableId);
         public bool IsProgressEventProcessed(string eventId) => Contains(State.processed_progress_event_ids, eventId);
@@ -81,6 +82,7 @@ namespace ClustrGalaxy.Gameplay
         public bool DiscoverRoute(string stableId) => Add(ref State.known_route_ids, stableId);
         public bool CompleteScan(string stableId) => Add(ref State.completed_scan_ids, stableId);
         public bool RecordConstellationMember(string stableId) => Add(ref State.constellation_member_ids, stableId);
+        public bool DiscoverEasterEgg(string stableId) => Add(ref State.discovered_easter_egg_ids, stableId);
         public bool CompleteContract(string stableId) => Add(ref State.completed_contract_ids, stableId);
         public bool UnlockAchievement(string stableId) => Add(ref State.achievement_ids, stableId);
         public bool RecordProgressEvent(string eventId) => Add(ref State.processed_progress_event_ids, eventId);

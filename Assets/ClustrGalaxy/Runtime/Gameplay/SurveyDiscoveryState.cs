@@ -31,6 +31,9 @@ namespace ClustrGalaxy.Gameplay
         // A completion is distinct from its member scans: two authored overlays
         // can share members, and a completed overlay must award only once.
         public string[] completed_constellation_ids = Array.Empty<string>();
+        // Authored local overlays remain explicitly separate from graph facts,
+        // source metrics, and route/entity discovery.
+        public string[] discovered_easter_egg_ids = Array.Empty<string>();
         public string[] completed_contract_ids = Array.Empty<string>();
         public string[] achievement_ids = Array.Empty<string>();
         // Event identities make local progression idempotent even when a UI or
@@ -72,6 +75,7 @@ namespace ClustrGalaxy.Gameplay
             completed_scan_ids = Normalize(completed_scan_ids);
             constellation_member_ids = Normalize(constellation_member_ids);
             completed_constellation_ids = Normalize(completed_constellation_ids);
+            discovered_easter_egg_ids = Normalize(discovered_easter_egg_ids);
             completed_contract_ids = Normalize(completed_contract_ids);
             achievement_ids = Normalize(achievement_ids);
             processed_progress_event_ids = Normalize(processed_progress_event_ids);

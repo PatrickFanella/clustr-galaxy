@@ -7,6 +7,7 @@ using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Discovery;
 using ClustrGalaxy.Progression;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
@@ -37,11 +38,11 @@ namespace ClustrGalaxy.Bootstrap
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = 0.0012f;
 
-            CreateStarfield();
+            var starfield = CreateStarfield();
             CreateSystem();
             CreateSurveySignalDestination();
             var dataLoader = CreateDataLoader();
-            CreateProbe(dataLoader);
+            CreateProbe(dataLoader, starfield);
             var entityCount = Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Exclude).Length;
             Debug.Log($"[ClustrGalaxy] Prototype ready: observer probe, {entityCount} targetable entities, and deterministic Kepler orbits loaded.");
         }
@@ -58,7 +59,7 @@ namespace ClustrGalaxy.Bootstrap
             return loader;
         }
 
-        private static void CreateProbe(SpatialSceneLoader dataLoader)
+        private static void CreateProbe(SpatialSceneLoader dataLoader, InstancedStarfield starfield)
         {
             var existingCamera = Camera.main;
             if (existingCamera != null)
@@ -125,16 +126,21 @@ namespace ClustrGalaxy.Bootstrap
                 threadInspection);
             ConstellationTracker tracker = null;
             SurveyProgression progression = null;
+            EasterEggTracker easterEggs = null;
             discoveryVisibility.SurveyStarted += store =>
             {
                 tracker?.Dispose();
                 progression?.Dispose();
+                easterEggs?.Dispose();
                 tracker = new ConstellationTracker(store, surveyEvents, new[] { ConstellationDefinition.Example },
                     ConstellationDefinition.Example.MemberStableIds);
                 progression = new SurveyProgression(store, surveyEvents);
+                easterEggs = new EasterEggTracker(store, modeState, surveyEvents,
+                    new[] { EasterEggDefinition.SignalAfterimage });
                 var personal = PersonalConstellationStore.OpenDefault(store.ProfileId, store.SnapshotKey, surveyEvents);
                 hud.ConfigureConstellations(tracker, personal, new ConstellationSubmissionOutbox(personal));
                 hud.ConfigureProgression(progression);
+                hud.ConfigureEasterEggs(easterEggs, starfield);
             };
         }
 
@@ -423,7 +429,7 @@ namespace ClustrGalaxy.Bootstrap
             parentComment.gameObject.AddComponent<CommentThreadNode>().Initialize(replyCount, model);
         }
 
-        private static void CreateStarfield()
+        private static InstancedStarfield CreateStarfield()
         {
             var stars = new GameObject("Distant Starfield");
             var random = new System.Random(64103);
@@ -439,7 +445,9 @@ namespace ClustrGalaxy.Bootstrap
                 var scale = Vector3.one * (1.5f + (float)random.NextDouble() * 5f);
                 matrices[i] = Matrix4x4.TRS(direction * distance, Quaternion.identity, scale);
             }
-            stars.AddComponent<InstancedStarfield>().Initialize(mesh, material, matrices);
+            var starfield = stars.AddComponent<InstancedStarfield>();
+            starfield.Initialize(mesh, material, matrices);
+            return starfield;
         }
 
         private static Vector3 RandomDirection(System.Random random)
