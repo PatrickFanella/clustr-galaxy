@@ -56,9 +56,16 @@ a local outbox record marked
 `QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE`; no network request, account
 identity, credentials, or automatic publication is involved.
 
-The player-facing personal-constellation authoring and explicit queue controls
-are not yet exposed in the HUD. They remain a beta gap even though the local
-storage and outbox contracts are implemented and tested.
+In Survey, open **AUTHOR PERSONAL CONSTELLATION** in the compact left HUD to
+add the current identified target, review up to 12 member rows, and enter a
+local name and reason. A constellation needs 3–12 unique known entities.
+**SAVE LOCALLY** is the only action that writes a constellation. Queuing is a
+separate two-step action: **QUEUE FOR REVIEW**, then **CONFIRM LOCAL QUEUE**.
+The confirmation writes only the local outbox and displays
+`QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE`; it never makes a network
+request or publishes anything. Text fields deliberately use keyboard/mouse
+entry. Controller flight, targeting, scanning, and navigation remain usable,
+but controller text entry is not currently claimed or implemented.
 
 Comment replies are an inspection HUD tree, bounded to three depths. Replies
 are not physical planets, moons, or constellation entities.

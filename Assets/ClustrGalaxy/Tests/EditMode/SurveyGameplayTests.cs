@@ -269,6 +269,60 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void PersonalConstellationDraft_OnlyAcceptsUniqueKnownMembersWithinItsLimit()
+        {
+            var known = Enumerable.Range(0, 13).Select(index => $"post:known-{index}").ToArray();
+            var draft = new PersonalConstellationDraft(() => known);
+
+            Assert.That(draft.TryAdd(known[0], "Technology"), Is.True);
+            Assert.That(draft.TryAdd(known[0], "Technology"), Is.False);
+            Assert.That(draft.Error, Does.Contain("already"));
+            Assert.That(draft.TryAdd("post:unknown"), Is.False);
+            Assert.That(draft.Error, Does.Contain("identified"));
+
+            for (var index = 1; index < PersonalConstellationDraft.MaximumMembers; index++)
+            {
+                Assert.That(draft.TryAdd(known[index]), Is.True);
+            }
+            Assert.That(draft.Members.Count, Is.EqualTo(PersonalConstellationDraft.MaximumMembers));
+            Assert.That(draft.TryAdd(known[12]), Is.False);
+            Assert.That(draft.Error, Does.Contain("at most 12"));
+            Assert.That(draft.Remove(known[0]), Is.True);
+            Assert.That(draft.Members.Count, Is.EqualTo(PersonalConstellationDraft.MaximumMembers - 1));
+            draft.Clear();
+            Assert.That(draft.Members, Is.Empty);
+        }
+
+        [Test]
+        public void PersonalConstellationDraft_ValidatesSavesAndQueuesOnlyAfterTwoExplicitActions()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var known = SurveyFixture.ConstellationMembers;
+            var store = PersonalConstellationStore.Open(fixture.Root, "draft-pilot", SurveySnapshotKey.Demo);
+            var outbox = new ConstellationSubmissionOutbox(store);
+            var draft = new PersonalConstellationDraft(() => known);
+
+            draft.SetName(" ");
+            draft.SetReason("reason");
+            foreach (var member in known.Take(3)) Assert.That(draft.TryAdd(member), Is.True);
+            Assert.That(draft.TrySaveLocally(store), Is.False);
+            Assert.That(draft.Error, Is.Not.Empty);
+
+            draft.SetName("Portable systems");
+            draft.SetReason("A locally authored link between known systems.");
+            Assert.That(draft.TrySaveLocally(store), Is.True);
+            Assert.That(draft.Status, Is.EqualTo("SAVED LOCALLY"));
+            Assert.That(outbox.Submissions, Is.Empty);
+            Assert.That(draft.ConfirmLocalQueue(outbox), Is.False);
+            Assert.That(outbox.Submissions, Is.Empty);
+            Assert.That(draft.RequestLocalQueueConfirmation(), Is.True);
+            Assert.That(draft.AwaitingQueueConfirmation, Is.True);
+            Assert.That(draft.ConfirmLocalQueue(outbox), Is.True);
+            Assert.That(draft.Status, Is.EqualTo(PersonalConstellationDraft.QueuedLocallyStatus));
+            Assert.That(outbox.Submissions, Has.Length.EqualTo(1));
+        }
+
+        [Test]
         public void ThreadInspection_BuildsOnlyOrderedDescendantsWithinTheDisplayDepth()
         {
             var rootId = "comment:parent";
@@ -713,6 +767,13 @@ namespace ClustrGalaxy.Tests
                 restored.IsEntityKnown("subreddit:signal-horizon")), Is.True);
             Assert.That(GalaxyDiscoveryVisibility.CanLabel(GalaxyWorldMode.Survey,
                 restored.IsEntityIdentified("subreddit:signal-horizon")), Is.False);
+
+            var silhouetteDraft = new PersonalConstellationDraft(() => restored.State.identified_entity_ids);
+            Assert.That(silhouetteDraft.TryAdd("subreddit:signal-horizon"), Is.False);
+            Assert.That(silhouetteDraft.Error, Does.Contain("identified"));
+            restored.IdentifyEntity("subreddit:signal-horizon");
+            var identifiedDraft = new PersonalConstellationDraft(() => restored.State.identified_entity_ids);
+            Assert.That(identifiedDraft.TryAdd("subreddit:signal-horizon"), Is.True);
         }
 
         [Test]

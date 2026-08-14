@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
@@ -30,6 +32,7 @@ namespace ClustrGalaxy.UI
         private ConstellationTracker constellationTracker;
         private PersonalConstellationStore personalConstellations;
         private ConstellationSubmissionOutbox constellationOutbox;
+        private PersonalConstellationDraft personalConstellationDraft;
         private SurveyProgression progression;
         private EasterEggTracker easterEggTracker;
         private InstancedStarfield starfield;
@@ -37,6 +40,8 @@ namespace ClustrGalaxy.UI
         private bool hasEasterEggTransmission;
         private string progressionNotification = string.Empty;
         private bool developerPerformanceVisible;
+        private bool constellationAuthoringExpanded;
+        private Vector2 constellationMemberScrollPosition;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -74,6 +79,8 @@ namespace ClustrGalaxy.UI
             constellationTracker = tracker;
             personalConstellations = personalStore;
             constellationOutbox = outbox;
+            personalConstellationDraft = personalStore == null ? null : new PersonalConstellationDraft(() =>
+                discoveryVisibility?.DiscoveryStore?.State.identified_entity_ids ?? Array.Empty<string>());
             if (constellationTracker != null) constellationTracker.Progressed += OnConstellationProgressed;
         }
 
@@ -123,7 +130,8 @@ namespace ClustrGalaxy.UI
                 developerPerformanceVisible = !developerPerformanceVisible;
             }
             EnsureStyles();
-            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 370 : 760);
+            var panelHeight = constellationAuthoringExpanded ? 920 : (targeting?.Target == null ? 370 : 760);
+            var panel = new Rect(18, 18, 365, panelHeight);
             GUI.DrawTexture(panel, panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
@@ -146,6 +154,7 @@ namespace ClustrGalaxy.UI
                 }
             }
             RenderConstellationStatus();
+            RenderPersonalConstellationAuthoring();
             RenderAuthoredDiscoveryTransmission();
             RenderSurveyObjectives();
             if (performance != null)
@@ -319,11 +328,76 @@ namespace ClustrGalaxy.UI
             }
             if (hasConstellationProgress) GUILayout.Label($"SIGNAL FINDING  {latestConstellationProgress.Message}", titleStyle);
             if (personalConstellations == null) return;
-            foreach (var personal in personalConstellations.Constellations)
+            foreach (var personal in personalConstellations.Constellations.Take(3))
             {
                 var queued = constellationOutbox?.IsQueued(personal.id) == true;
                 GUILayout.Label($"{personal.name}  {(queued ? "QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE" : "SAVED LOCALLY")}", bodyStyle);
             }
+        }
+
+        private void RenderPersonalConstellationAuthoring()
+        {
+            if (modeState == null || modeState.WorldMode != GalaxyWorldMode.Survey ||
+                personalConstellations == null || constellationOutbox == null || personalConstellationDraft == null)
+                return;
+
+            GUILayout.Space(5);
+            var action = constellationAuthoringExpanded ? "HIDE" : "AUTHOR";
+            if (GUILayout.Button($"{action} PERSONAL CONSTELLATION"))
+            {
+                constellationAuthoringExpanded = !constellationAuthoringExpanded;
+            }
+            if (!constellationAuthoringExpanded) return;
+
+            GUILayout.Label($"PERSONAL CONSTELLATION  {personalConstellationDraft.Members.Count}/12", titleStyle);
+            var target = targeting?.Target;
+            var canAddTarget = target != null && discoveryVisibility != null && discoveryVisibility.IsIdentified(target);
+            if (canAddTarget)
+            {
+                if (GUILayout.Button($"ADD TARGET  {target.DisplayName}"))
+                {
+                    personalConstellationDraft.TryAdd(target.StableId, target.DisplayName);
+                }
+            }
+            else
+            {
+                GUILayout.Label("TARGET AN IDENTIFIED SURVEY ENTITY TO ADD IT", bodyStyle);
+            }
+
+            constellationMemberScrollPosition = GUILayout.BeginScrollView(constellationMemberScrollPosition, GUILayout.Height(112f));
+            foreach (var member in personalConstellationDraft.Members.ToArray())
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"{member.DisplayLabel}\n{member.StableId}", bodyStyle);
+                if (GUILayout.Button("REMOVE", GUILayout.Width(72f)))
+                {
+                    personalConstellationDraft.Remove(member.StableId);
+                }
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView();
+            if (GUILayout.Button("CLEAR DRAFT")) personalConstellationDraft.Clear();
+
+            GUILayout.Label("NAME (1–60)", bodyStyle);
+            personalConstellationDraft.SetName(GUILayout.TextField(personalConstellationDraft.Name, 60));
+            GUILayout.Label("REASON (1–500) — keyboard/mouse text entry", bodyStyle);
+            personalConstellationDraft.SetReason(GUILayout.TextArea(personalConstellationDraft.Reason, 500, GUILayout.Height(48f)));
+            if (GUILayout.Button("SAVE LOCALLY")) personalConstellationDraft.TrySaveLocally(personalConstellations);
+
+            if (personalConstellationDraft.HasSavedConstellation && !personalConstellationDraft.AwaitingQueueConfirmation)
+            {
+                if (GUILayout.Button("QUEUE FOR REVIEW")) personalConstellationDraft.RequestLocalQueueConfirmation();
+            }
+            if (personalConstellationDraft.AwaitingQueueConfirmation)
+            {
+                GUILayout.Label("LOCAL ONLY — nothing will be sent over the network.", bodyStyle);
+                if (GUILayout.Button("CONFIRM LOCAL QUEUE")) personalConstellationDraft.ConfirmLocalQueue(constellationOutbox);
+                if (GUILayout.Button("CANCEL LOCAL QUEUE")) personalConstellationDraft.CancelLocalQueueConfirmation();
+            }
+            if (!string.IsNullOrWhiteSpace(personalConstellationDraft.Error))
+                GUILayout.Label(personalConstellationDraft.Error, titleStyle);
+            if (!string.IsNullOrWhiteSpace(personalConstellationDraft.Status))
+                GUILayout.Label(personalConstellationDraft.Status, bodyStyle);
         }
 
         private void RenderSurveyObjectives()
