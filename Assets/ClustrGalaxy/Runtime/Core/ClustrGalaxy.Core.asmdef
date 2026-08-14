@@ -1,0 +1,7 @@
+{
+  "name": "ClustrGalaxy.Core",
+  "rootNamespace": "ClustrGalaxy.Core",
+  "references": [],
+  "autoReferenced": true,
+  "noEngineReferences": true
+}

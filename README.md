@@ -23,6 +23,27 @@ and stability rules are defined in [`docs/galaxy-world-model.md`](docs/galaxy-wo
 In Unity Hub, choose **Add > Add project from disk** and select this directory.
 Use editor version `6000.4.10f1` when prompted.
 
+## Architecture
+
+Runtime code is split into two dependency-directed assemblies:
+
+- `ClustrGalaxy.Core` contains snapshot, resident-galaxy, Survey, navigation,
+  galaxy-session, persistence-port, and HUD-presentation state machines. It has
+  no Unity lifecycle, scene search, input action, or `MonoBehaviour` dependency.
+- `ClustrGalaxy.Unity` contains the thin networking, file-format, input,
+  rendering, physics, camera, and IMGUI adapters. `GalaxySessionBehaviour` owns
+  their lifetime and the plain-C# `GalaxySession` composition root.
+
+Survey transitions are atomic intents. A successful intent produces one
+immutable outcome and exactly one durable write; presentation observers cannot
+start nested mutations. Loaded graph facts and active/targetable projections
+are separate resident-galaxy queries. See [`CONTEXT.md`](CONTEXT.md) and the
+ADRs in [`docs/adr`](docs/adr).
+
+This release intentionally starts clean storage under `ClustrGalaxy/profiles/v2`
+and `ClustrGalaxy/cache/v2`. It never reads, migrates, overwrites, or deletes v1
+profile/cache files.
+
 ## Current milestone: offline Survey gameplay beta
 
 The local vertical slice provides an offline-safe exploration loop. It has
@@ -56,7 +77,7 @@ a local outbox record marked
 `QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE`; no network request, account
 identity, credentials, or automatic publication is involved.
 
-In Survey, open **AUTHOR PERSONAL CONSTELLATION** in the compact left HUD to
+In Survey, use **ADD CONSTELLATION MEMBER** in the compact left HUD to
 add the current identified target, review up to 12 member rows, and enter a
 local name and reason. A constellation needs 3–12 unique known entities.
 **SAVE LOCALLY** is the only action that writes a constellation. Queuing is a

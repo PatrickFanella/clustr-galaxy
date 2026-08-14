@@ -2,7 +2,8 @@
   "name": "ClustrGalaxy.PlayModeTests",
   "rootNamespace": "ClustrGalaxy.Tests",
   "references": [
-    "ClustrGalaxy.Runtime",
+    "ClustrGalaxy.Unity",
+    "ClustrGalaxy.Core",
     "Unity.InputSystem"
   ],
   "includePlatforms": [],

@@ -2,7 +2,8 @@
   "name": "ClustrGalaxy.EditModeTests",
   "rootNamespace": "ClustrGalaxy.Tests",
   "references": [
-    "ClustrGalaxy.Runtime"
+    "ClustrGalaxy.Unity",
+    "ClustrGalaxy.Core"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"
@@ -12,4 +13,3 @@
   ],
   "autoReferenced": false
 }
-
