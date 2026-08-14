@@ -11,6 +11,27 @@ namespace ClustrGalaxy.Tests
     public sealed class GalaxyNavigationPlayModeTests
     {
         [UnityTest]
+        [Ignore("Enabled by the implementing task")]
+        public IEnumerator SurveyStart_HidesEverythingOutsideTheStartingSystem()
+        {
+            yield break;
+        }
+
+        [UnityTest]
+        [Ignore("Enabled by the implementing task")]
+        public IEnumerator Scan_RevealsConnectedRouteAndDestination()
+        {
+            yield break;
+        }
+
+        [UnityTest]
+        [Ignore("Enabled by the implementing task")]
+        public IEnumerator ModeSwitch_PreservesIndependentSurveyProgress()
+        {
+            yield break;
+        }
+
+        [UnityTest]
         public IEnumerator HierarchicalBack_RestoresTheExactRuntimeProbePose()
         {
             var probe = new GameObject("navigation test probe");
