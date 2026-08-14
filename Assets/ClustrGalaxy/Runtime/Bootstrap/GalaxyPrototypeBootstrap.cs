@@ -62,7 +62,8 @@ namespace ClustrGalaxy.Bootstrap
             }
 
             var probe = new GameObject("Observer Probe");
-            probe.transform.SetPositionAndRotation(new Vector3(0f, 45f, -650f), Quaternion.identity);
+            probe.transform.SetPositionAndRotation(
+                new Vector3(0f, 45f, (float)-GalaxyScale.FirstPlanetAxis), Quaternion.identity);
             var rigidbody = probe.AddComponent<Rigidbody>();
             rigidbody.mass = 1f;
             var flight = probe.AddComponent<ObserverProbeController>();
@@ -153,7 +154,7 @@ namespace ClustrGalaxy.Bootstrap
             }
 
             CreateTravelers(root.transform, star, starMu, revisionId, catalogId, timeScale,
-                previousElements.SemiMajorAxis + 300d);
+                previousElements.SemiMajorAxis + GalaxyScale.TravelerOrbitOffset);
         }
 
         private static void CreateComments(
@@ -172,7 +173,8 @@ namespace ClustrGalaxy.Bootstrap
             var maximumMoonAxis = OrbitStability.MaximumProgradeMoonAxis(
                 planetElements.SemiMajorAxis, planetMu, starMu);
             var namedMoonCount = Math.Min(3, 1 + (int)(MetricNormalizer.NormalizeLog(post.CommentCount, 1, 2000) * 3d));
-            var nextAxis = Math.Max(planetVisualRadius + 35d, 2d * (physicalPlanetRadius + 0.8d));
+            var nextAxis = Math.Max(planetVisualRadius + GalaxyScale.MoonInitialGap,
+                2d * (physicalPlanetRadius + 0.8d));
             var created = 0;
 
             for (var index = 0; index < namedMoonCount; index++)
@@ -182,7 +184,7 @@ namespace ClustrGalaxy.Bootstrap
                 var trial = StableOrbitGenerator.GenerateMoon(
                     revisionId, catalogId, post.Id, commentId, 1d);
                 nextAxis = Math.Max(nextAxis, OrbitStability.MinimumVisualMoonAxis(
-                    planetVisualRadius, moonRadius, trial.Eccentricity, 18d));
+                    planetVisualRadius, moonRadius, trial.Eccentricity, GalaxyScale.MoonVisualGap));
                 var elements = StableOrbitGenerator.GenerateMoon(
                     revisionId, catalogId, post.Id, commentId, nextAxis);
                 if (elements.SemiMajorAxis * (1d + elements.Eccentricity) > maximumMoonAxis)
@@ -204,12 +206,13 @@ namespace ClustrGalaxy.Bootstrap
                 CreateOrbitLine(systemRoot, planet, elements, planetMu,
                     new Color(post.Color.r, post.Color.g, post.Color.b, 0.22f), 0.035f);
                 created++;
-                nextAxis = elements.SemiMajorAxis * (1d + elements.Eccentricity) + 14d + 3d * moonRadius;
+                nextAxis = elements.SemiMajorAxis * (1d + elements.Eccentricity) +
+                    GalaxyScale.MoonLaneGap + 3d * moonRadius;
             }
 
             if (post.CommentCount > created)
             {
-                var minimumRingAxis = planetVisualRadius + 75d;
+                var minimumRingAxis = planetVisualRadius + GalaxyScale.RingInnerGap;
                 var ringAxis = Math.Min(maximumMoonAxis * 0.9d,
                     Math.Max(minimumRingAxis, nextAxis));
                 if (ringAxis >= minimumRingAxis)
@@ -252,7 +255,8 @@ namespace ClustrGalaxy.Bootstrap
                     fallback.GetComponent<MeshRenderer>().material = CreateMaterial(new Color(0.38f, 0.72f, 1f), true);
                 }
                 var elements = StableOrbitGenerator.GeneratePlanet(
-                    revisionId, catalogId, "subreddit:technology", id, innerAxis + index * 5d);
+                    revisionId, catalogId, "subreddit:technology", id,
+                    innerAxis + index * GalaxyScale.TravelerLaneGap);
                 ship.AddComponent<KeplerOrbit>().Initialize(star, elements, starMu, GalaxyScale.ShipOrbitTimeScale);
             }
         }

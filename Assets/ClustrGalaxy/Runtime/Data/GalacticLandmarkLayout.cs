@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using ClustrGalaxy.Generation;
 using UnityEngine;
 
 namespace ClustrGalaxy.Data
@@ -21,10 +22,11 @@ namespace ClustrGalaxy.Data
                 bearing = StableUnit(node.id, "bearing") * Mathf.PI * 2f;
             }
 
-            var radius = InnerRadius + sourceRadius * RadialSpan;
+            var radius = (InnerRadius + sourceRadius * RadialSpan) * GalaxyTuning.RegionDistanceScale;
             var elevation = bounds.max_z > bounds.min_z
                 ? (Normalize(node.z, bounds.min_z, bounds.max_z) - 0.5f) * ElevationSpan * 2f
                 : (StableUnit(node.id, "elevation") - 0.5f) * ElevationSpan * 2f;
+            elevation *= GalaxyTuning.RegionDistanceScale;
             return new Vector3(Mathf.Cos(bearing) * radius, elevation, Mathf.Sin(bearing) * radius);
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ClustrGalaxy.Generation;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -187,10 +188,10 @@ namespace ClustrGalaxy.Flight
                 : transform.position + transform.forward * 240f;
             var distance = history.Level switch
             {
-                GalaxyNavigationLevel.Region => 3200f,
-                GalaxyNavigationLevel.System => 1500f,
-                GalaxyNavigationLevel.Inspect => 180f,
-                _ => 5200f
+                GalaxyNavigationLevel.Region => 3200f * GalaxyTuning.RegionDistanceScale,
+                GalaxyNavigationLevel.System => 1500f * GalaxyTuning.SystemDistanceScale,
+                GalaxyNavigationLevel.Inspect => 180f * GalaxyTuning.MoonOrbitScale,
+                _ => 5200f * GalaxyTuning.RegionDistanceScale
             };
             var mapPosition = focus + new Vector3(0f, distance * 0.3f, -distance);
             var mapRotation = Quaternion.LookRotation(focus - mapPosition, Vector3.up);

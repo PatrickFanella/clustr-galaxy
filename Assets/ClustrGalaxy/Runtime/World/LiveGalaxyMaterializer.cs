@@ -94,7 +94,7 @@ namespace ClustrGalaxy.World
 
             foreach (var node in scene.nodes)
             {
-                var position = RegionPosition(node.id);
+                var position = ProjectRegionPosition(node.id, GalaxyTuning.SystemDistanceScale);
                 positions[node.id] = position;
                 if (node.type == "subreddit")
                 {
@@ -195,7 +195,7 @@ namespace ClustrGalaxy.World
                 var ship = CreateCapsule(systemRoot, node, "user ship", Vector3.zero, 1.8f, userMaterial);
                 var elements = StableOrbitGenerator.GeneratePlanet(
                     loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id,
-                    420d + (index % 24) * 85d);
+                    GalaxyScale.FirstLiveShipAxis + (index % 24) * GalaxyScale.LiveShipLaneGap);
                 GetOrAdd<KeplerOrbit>(ship).Initialize(star, elements, starMu, GalaxyScale.ShipOrbitTimeScale);
             }
         }
@@ -235,7 +235,8 @@ namespace ClustrGalaxy.World
                 {
                     var radius = Mathf.Min(planetRadius * 0.25f,
                         Mathf.Lerp(0.8f, 2.4f, Mathf.Clamp01(Mathf.Log10(node.metrics.reply_count + 1) / 3f)));
-                    var axis = planetRadius + 42d + satelliteCount * Math.Max(10d, radius * 4d);
+                    var axis = planetRadius + GalaxyScale.MoonInitialGap +
+                        satelliteCount * Math.Max(GalaxyScale.MoonLaneGap, radius * 4d);
                     var elements = StableOrbitGenerator.GenerateMoon(
                         loader.Manifest.revision_id, loader.Manifest.spatial_catalog_id, scene.root_id, node.id, axis);
                     var satellite = CreateSphere(discussionRoot, node, "discussion satellite", Vector3.zero, radius, satelliteMaterial);
@@ -245,7 +246,8 @@ namespace ClustrGalaxy.World
                 }
 
                 var anomaly = CommentRingLayout.AngleRadians(node.id);
-                var ringAxis = planetRadius + 95d + (ringIndex % 9) * 4.5d;
+                var ringAxis = planetRadius + GalaxyScale.RingInnerGap +
+                    (ringIndex % 9) * (4.5d * GalaxyTuning.MoonOrbitScale);
                 var ringElements = new OrbitalElements(ringAxis, 0.01d, (ringIndex % 4) * 1.5d * Mathf.Deg2Rad,
                     0.35d, 0d, anomaly);
                 var particle = CreateSphere(discussionRoot, node,
@@ -315,13 +317,14 @@ namespace ClustrGalaxy.World
             return Mathf.Lerp(minimum, maximum, Mathf.Pow((float)normalized, 0.65f));
         }
 
-        private static Vector3 RegionPosition(string stableId)
+        public static Vector3 ProjectRegionPosition(string stableId, float distanceScale = 1f)
         {
             var hash = StableHash(stableId);
             var angle = (hash % 10000) / 10000f * Mathf.PI * 2f;
             var radius = 420f + ((hash >> 14) % 1200);
             var height = ((hash >> 27) % 5000) / 5000f * 420f - 210f;
-            return new Vector3(Mathf.Cos(angle) * radius, height, 1800f + Mathf.Sin(angle) * radius);
+            return new Vector3(Mathf.Cos(angle) * radius, height, 1800f + Mathf.Sin(angle) * radius) *
+                Mathf.Max(0f, distanceScale);
         }
 
         private static uint StableHash(string value)

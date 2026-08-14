@@ -1,9 +1,16 @@
 using UnityEngine;
+using ClustrGalaxy.Generation;
 
 namespace ClustrGalaxy.Flight
 {
     public static class ProbeFlightModel
     {
+        public static float DesiredSpeed(float cruiseSpeed, float boostMultiplier, bool boost) =>
+            Mathf.Max(0f, cruiseSpeed) * (boost ? Mathf.Max(1f, boostMultiplier) : 1f);
+
+        public static float DesiredSpeed(bool boost) =>
+            DesiredSpeed(GalaxyTuning.CruiseSpeed, GalaxyTuning.BoostMultiplier, boost);
+
         public static Vector3 MoveTowardsVelocity(
             Vector3 currentVelocity,
             Vector3 desiredVelocity,

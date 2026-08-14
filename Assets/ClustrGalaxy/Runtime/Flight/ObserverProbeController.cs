@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using ClustrGalaxy.Generation;
 using ClustrGalaxy.Simulation;
 
 namespace ClustrGalaxy.Flight
@@ -8,10 +9,10 @@ namespace ClustrGalaxy.Flight
     public sealed class ObserverProbeController : MonoBehaviour
     {
         [Header("Translation")]
-        [SerializeField] private float cruiseSpeed = 260f;
-        [SerializeField] private float boostMultiplier = 5f;
-        [SerializeField] private float acceleration = 190f;
-        [SerializeField] private float brakeAcceleration = 420f;
+        [SerializeField] private float cruiseSpeed = GalaxyTuning.CruiseSpeed;
+        [SerializeField] private float boostMultiplier = GalaxyTuning.BoostMultiplier;
+        [SerializeField] private float acceleration = GalaxyTuning.Acceleration;
+        [SerializeField] private float brakeAcceleration = GalaxyTuning.BrakeAcceleration;
 
         [Header("Rotation")]
         [SerializeField] private float pitchRate = 75f;
@@ -103,7 +104,7 @@ namespace ClustrGalaxy.Flight
             var vertical = ProbeFlightModel.ApplyDeadzone(lift.ReadValue<float>());
             var localIntent = Vector3.ClampMagnitude(
                 new Vector3(translation.x, vertical, translation.y), 1f);
-            var speed = cruiseSpeed * (boost.IsPressed() ? boostMultiplier : 1f);
+            var speed = ProbeFlightModel.DesiredSpeed(cruiseSpeed, boostMultiplier, boost.IsPressed());
             if (GravityModeEnabled)
             {
                 if (brake.IsPressed())

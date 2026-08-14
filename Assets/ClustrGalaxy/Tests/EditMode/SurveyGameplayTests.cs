@@ -1,3 +1,8 @@
+using ClustrGalaxy.Generation;
+using ClustrGalaxy.Flight;
+using ClustrGalaxy.World;
+using NUnit.Framework;
+
 namespace ClustrGalaxy.Tests
 {
     /// <summary>
@@ -55,6 +60,55 @@ namespace ClustrGalaxy.Tests
 
             public string StableId { get; }
             public SurveyThreadNode Child { get; }
+        }
+    }
+
+    public sealed class SurveyGameplayTests
+    {
+        [Test]
+        public void BetaTuning_ExpandsSpaceAndSlowsTheProbe()
+        {
+            Assert.That(GalaxyTuning.RegionDistanceScale, Is.EqualTo(5f));
+            Assert.That(GalaxyTuning.SystemDistanceScale, Is.EqualTo(4f));
+            Assert.That(GalaxyTuning.PlanetOrbitScale, Is.EqualTo(3f));
+            Assert.That(GalaxyTuning.MoonOrbitScale, Is.InRange(2f, 2.5f));
+            Assert.That(GalaxyTuning.OrbitSimulationTimeScale, Is.EqualTo(0.1f));
+            Assert.That(GalaxyTuning.OrbitPeriodScale * GalaxyTuning.OrbitSimulationTimeScale,
+                Is.EqualTo(1f));
+            Assert.That(GalaxyScale.PlanetOrbitTimeScale, Is.EqualTo(0.1f));
+            Assert.That(GalaxyScale.FirstPlanetAxis, Is.EqualTo(1500d));
+            Assert.That(GalaxyScale.PlanetLaneGap, Is.EqualTo(360d));
+            Assert.That(GalaxyTuning.CruiseSpeed, Is.InRange(78f, 104f));
+            Assert.That(GalaxyTuning.Acceleration, Is.InRange(38f, 57f));
+            Assert.That(GalaxyTuning.BrakeAcceleration, Is.EqualTo(120f));
+            Assert.That(GalaxyTuning.BoostMultiplier, Is.EqualTo(1.75f));
+        }
+
+        [Test]
+        public void BetaTuning_KeepsNeighborPlanetTravelReadable()
+        {
+            var seconds = GalaxyTuning.EstimatedTravelSeconds(3000f);
+
+            Assert.That(seconds, Is.InRange(20f, 45f));
+        }
+
+        [Test]
+        public void BetaTuning_UsesTheSameCruiseAndBoostForFlight()
+        {
+            Assert.That(ProbeFlightModel.DesiredSpeed(false), Is.EqualTo(GalaxyTuning.CruiseSpeed));
+            Assert.That(ProbeFlightModel.DesiredSpeed(true),
+                Is.EqualTo(GalaxyTuning.CruiseSpeed * GalaxyTuning.BoostMultiplier));
+        }
+
+        [Test]
+        public void BetaTuning_ScalesTheCompleteRegionSystemPosition()
+        {
+            var stableId = "subreddit:technology";
+            var basePosition = LiveGalaxyMaterializer.ProjectRegionPosition(stableId, 1f);
+            var scaledPosition = LiveGalaxyMaterializer.ProjectRegionPosition(
+                stableId, GalaxyTuning.SystemDistanceScale);
+
+            Assert.That(scaledPosition, Is.EqualTo(basePosition * GalaxyTuning.SystemDistanceScale));
         }
     }
 }
