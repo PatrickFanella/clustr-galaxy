@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using ClustrGalaxy.Gameplay;
 using UnityEngine;
 
 namespace ClustrGalaxy.Data
@@ -19,6 +20,12 @@ namespace ClustrGalaxy.Data
         public GalaxyDataMode DataMode { get; private set; } = GalaxyDataMode.LocalDemo;
         public bool IsOffline { get; private set; }
         public bool IsPinned => Manifest != null && Scene != null && Scene.BelongsTo(Manifest);
+        /// <summary>
+        /// Available only after the manifest and matching overview have both
+        /// validated, so a Survey session cannot begin on a mixed snapshot.
+        /// </summary>
+        public SurveySnapshotKey? PinnedSurveySnapshotKey { get; private set; }
+        public static SurveySnapshotKey DemoSurveySnapshotKey => SurveySnapshotKey.Demo;
         public event Action SceneLoaded = delegate { };
         public event Action<SpatialScene> ScopeLoaded = delegate { };
 
@@ -48,6 +55,7 @@ namespace ClustrGalaxy.Data
             Manifest = null!;
             Scene = null!;
             Store = null!;
+            PinnedSurveySnapshotKey = null;
             IsOffline = false;
             DataMode = GalaxyDataMode.Connecting;
             StartCoroutine(LoadOverview());
@@ -174,6 +182,8 @@ namespace ClustrGalaxy.Data
             {
                 Store = new SpatialSceneStore(Manifest);
                 Store.Merge(Scene);
+                PinnedSurveySnapshotKey = SurveySnapshotKey.Pinned(
+                    Manifest.revision_id, Manifest.spatial_catalog_id);
                 cache.Write(overviewKey, overviewJson, pinnedBase: true);
                 if (liveManifest)
                 {

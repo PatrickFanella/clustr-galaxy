@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using ClustrGalaxy.Data;
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
@@ -210,5 +213,152 @@ namespace ClustrGalaxy.Tests
 
             Assert.That(scaledPosition, Is.EqualTo(basePosition * GalaxyTuning.SystemDistanceScale));
         }
+
+        [Test]
+        public void Discovery_RoundTripsAProfileWithinItsPinnedSnapshot()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var key = SurveySnapshotKey.Pinned(SurveyFixture.RevisionId, SurveyFixture.CatalogId);
+            var first = fixture.Open(key, SurveyFixture.StartingSystemId);
+
+            first.DiscoverEntity("post:open-source-ai");
+            first.DiscoverRoute("route:technology-open-source-ai");
+            first.Save();
+
+            var restored = fixture.Open(key, SurveyFixture.StartingSystemId);
+            Assert.That(restored.IsEntityKnown("post:open-source-ai"), Is.True);
+            Assert.That(restored.IsRouteKnown("route:technology-open-source-ai"), Is.True);
+            Assert.That(restored.StartingSystemId, Is.EqualTo(SurveyFixture.StartingSystemId));
+            Assert.That(restored.SnapshotKey, Is.EqualTo(key));
+        }
+
+        [Test]
+        public void Discovery_DeduplicatesMutationsAndWritesOrdinallySortedJson()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+
+            Assert.That(store.DiscoverEntity("post:zeta"), Is.True);
+            Assert.That(store.DiscoverEntity("post:alpha"), Is.True);
+            Assert.That(store.DiscoverEntity("post:zeta"), Is.False);
+            Assert.That(store.CompleteScan("scan:zeta"), Is.True);
+            Assert.That(store.CompleteScan("scan:alpha"), Is.True);
+            Assert.That(store.CompleteScan("scan:zeta"), Is.False);
+            store.Save();
+
+            var json = File.ReadAllText(store.StoragePath);
+            var expectedEntities = new[]
+            {
+                "post:alpha", "post:zeta", SurveyFixture.StartingSystemId
+            };
+            Array.Sort(expectedEntities, StringComparer.Ordinal);
+            Assert.That(store.State.known_entity_ids, Is.EqualTo(expectedEntities));
+            Assert.That(store.State.completed_scan_ids, Is.EqualTo(new[] { "scan:alpha", "scan:zeta" }));
+            Assert.That(json.IndexOf("post:alpha", StringComparison.Ordinal),
+                Is.LessThan(json.IndexOf("post:zeta", StringComparison.Ordinal)));
+            Assert.That(json.IndexOf("scan:alpha", StringComparison.Ordinal),
+                Is.LessThan(json.IndexOf("scan:zeta", StringComparison.Ordinal)));
+        }
+
+        [Test]
+        public void Discovery_CorruptFileReturnsFreshStateAndPreservesEvidence()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var key = SurveySnapshotKey.Pinned(9, 3);
+            var original = fixture.Open(key, SurveyFixture.StartingSystemId);
+            Directory.CreateDirectory(Path.GetDirectoryName(original.StoragePath));
+            const string corruptJson = "{ truncated";
+            File.WriteAllText(original.StoragePath, corruptJson);
+
+            var recovered = fixture.Open(key, SurveyFixture.StartingSystemId);
+
+            Assert.That(recovered.IsEntityKnown(SurveyFixture.StartingSystemId), Is.True);
+            Assert.That(recovered.IsEntityKnown("post:open-source-ai"), Is.False);
+            Assert.That(File.ReadAllText(original.StoragePath), Is.EqualTo(corruptJson));
+        }
+
+        [Test]
+        public void Discovery_IsolatedByProfileSnapshotAndExplicitDemoNamespace()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var pinned = SurveySnapshotKey.Pinned(9, 3);
+            var demo = SurveySnapshotKey.Demo;
+            var first = fixture.Open(pinned, SurveyFixture.StartingSystemId);
+            first.DiscoverEntity("post:open-source-ai");
+            first.Save();
+
+            Assert.That(fixture.Open(SurveySnapshotKey.Pinned(10, 4), SurveyFixture.StartingSystemId)
+                .IsEntityKnown("post:open-source-ai"), Is.False);
+            Assert.That(fixture.Open(demo, SurveyFixture.StartingSystemId)
+                .IsEntityKnown("post:open-source-ai"), Is.False);
+            Assert.That(fixture.OpenAs("second-pilot", pinned, SurveyFixture.StartingSystemId)
+                .IsEntityKnown("post:open-source-ai"), Is.False);
+            Assert.That(first.StoragePath, Does.Not.EqualTo(fixture.Open(demo, SurveyFixture.StartingSystemId).StoragePath));
+            Assert.That(SpatialSceneLoader.DemoSurveySnapshotKey, Is.EqualTo(demo));
+        }
+
+        [Test]
+        public void Discovery_OpenOrExploreDoesNotWriteWithoutAnExplicitSave()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+            var modes = new GalaxyModeState();
+
+            modes.SetWorldMode(GalaxyWorldMode.Explore);
+
+            Assert.That(File.Exists(store.StoragePath), Is.False);
+            Assert.That(store.IsEntityKnown(SurveyFixture.StartingSystemId), Is.True);
+        }
+
+        [Test]
+        public void Discovery_PersistsEverySurveyProgressCollection()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+            store.DiscoverRoute("route:technology-open-source-ai");
+            store.CompleteScan("subreddit:technology");
+            store.RecordConstellationMember("post:open-source-ai");
+            store.CompleteContract("contract:first-signal");
+            store.UnlockAchievement("achievement:surveyor");
+            store.SetScannerLevel(2);
+            store.Save();
+
+            var restored = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+            Assert.That(restored.IsRouteKnown("route:technology-open-source-ai"), Is.True);
+            Assert.That(restored.IsScanComplete("subreddit:technology"), Is.True);
+            Assert.That(restored.IsConstellationMemberRecorded("post:open-source-ai"), Is.True);
+            Assert.That(restored.IsContractComplete("contract:first-signal"), Is.True);
+            Assert.That(restored.IsAchievementUnlocked("achievement:surveyor"), Is.True);
+            Assert.That(restored.State.scanner_level, Is.EqualTo(2));
+            Assert.That(restored.State.last_saved_utc, Is.Not.Empty);
+        }
+
+        private sealed class SurveyStoreFixture : IDisposable
+        {
+            private readonly string root;
+
+            private SurveyStoreFixture(string root)
+            {
+                this.root = root;
+            }
+
+            public static SurveyStoreFixture Create() => new SurveyStoreFixture(
+                Path.Combine(Path.GetTempPath(), "clustr-survey-test-" + Guid.NewGuid().ToString("N")));
+
+            public SurveyDiscoveryStore Open(SurveySnapshotKey key, string startingSystemId) =>
+                SurveyDiscoveryStore.Open(root, "test-pilot", key, startingSystemId);
+
+            public SurveyDiscoveryStore OpenAs(string profileId, SurveySnapshotKey key, string startingSystemId) =>
+                SurveyDiscoveryStore.Open(root, profileId, key, startingSystemId);
+
+            public void Dispose()
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, recursive: true);
+                }
+            }
+        }
+
     }
 }
