@@ -36,7 +36,7 @@ namespace ClustrGalaxy.World
         {
             loader = sceneLoader;
             entityPool = new GalaxyEntityPool(transform);
-            loader.ScopeLoaded += Materialize;
+            loader.SceneCommitted += Materialize;
         }
 
         public void BindNavigation(GalaxyNavigationController controller, GalacticOverviewRenderer overviewRenderer)
@@ -407,7 +407,7 @@ namespace ClustrGalaxy.World
 
         private void OnDestroy()
         {
-            if (loader != null) loader.ScopeLoaded -= Materialize;
+            if (loader != null) loader.SceneCommitted -= Materialize;
             if (navigation != null) navigation.ViewChanged -= NavigationChanged;
             foreach (var material in new[] { starMaterial, planetMaterial, userMaterial, satelliteMaterial, commentMaterial, routeMaterial, trafficMaterial })
             {

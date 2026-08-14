@@ -26,8 +26,7 @@ namespace ClustrGalaxy.Data
         /// </summary>
         public SurveySnapshotKey? PinnedSurveySnapshotKey { get; private set; }
         public static SurveySnapshotKey DemoSurveySnapshotKey => SurveySnapshotKey.Demo;
-        public event Action SceneLoaded = delegate { };
-        public event Action<SpatialScene> ScopeLoaded = delegate { };
+        public event Action<SpatialScene> SceneCommitted = delegate { };
 
         public void Initialize(string requestedApiBase, bool startOfflineOnly = false)
         {
@@ -206,7 +205,7 @@ namespace ClustrGalaxy.Data
                 StatusText = GalaxyDataStatus.Pinned(Manifest, IsOffline, nodeCount);
                 Debug.Log($"[ClustrGalaxy.Data] Loaded {mode.ToLowerInvariant()} pinned overview revision {Manifest.revision_id}, catalog {Manifest.spatial_catalog_id}: {nodeCount} nodes, {linkCount} links.");
             }
-            SceneLoaded();
+            SceneCommitted(Scene);
         }
 
         private void BeginScopeLoad(string uri, string cacheKey, string status)
@@ -261,8 +260,7 @@ namespace ClustrGalaxy.Data
             DataMode = offlineResult ? GalaxyDataMode.OfflinePinned : GalaxyDataMode.LivePinned;
             var suffix = loaded.truncated ? " / MORE AVAILABLE" : string.Empty;
             StatusText = $"{(offlineResult ? "OFFLINE" : "LIVE")} {loaded.scope.ToUpperInvariant()}  {loaded.nodes.Length} OBJECTS{suffix}";
-            ScopeLoaded(loaded);
-            SceneLoaded();
+            SceneCommitted(loaded);
         }
 
         private SpatialManifest RequireManifest() =>

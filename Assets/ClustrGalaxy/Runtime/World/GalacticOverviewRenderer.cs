@@ -21,7 +21,7 @@ namespace ClustrGalaxy.World
         public void Initialize(SpatialSceneLoader spatialSceneLoader)
         {
             loader = spatialSceneLoader;
-            loader.SceneLoaded += RenderLoadedScene;
+            loader.SceneCommitted += RenderLoadedScene;
         }
 
         public void BindNavigation(GalaxyNavigationController controller)
@@ -44,9 +44,8 @@ namespace ClustrGalaxy.World
             if (layerRoot != null) layerRoot.gameObject.SetActive(active);
         }
 
-        private void RenderLoadedScene()
+        private void RenderLoadedScene(SpatialScene scene)
         {
-            var scene = loader.Scene;
             if (scene == null || scene.nodes == null || scene.nodes.Length == 0)
             {
                 return;
@@ -190,7 +189,7 @@ namespace ClustrGalaxy.World
         {
             if (loader != null)
             {
-                loader.SceneLoaded -= RenderLoadedScene;
+                loader.SceneCommitted -= RenderLoadedScene;
             }
             if (navigation != null) navigation.ViewChanged -= NavigationChanged;
             if (landmarkMaterial != null)

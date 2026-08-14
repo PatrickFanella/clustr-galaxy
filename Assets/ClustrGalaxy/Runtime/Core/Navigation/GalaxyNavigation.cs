@@ -79,6 +79,13 @@ namespace ClustrGalaxy.Core.Navigation
     { public InspectNavigationTargetIntent(NavigationTarget target, NavigationPose pose) { Target = target; Pose = pose; }
         public NavigationTarget Target { get; } public NavigationPose Pose { get; } }
     public sealed class EnterSurveyNavigationIntent : NavigationIntent { }
+    public sealed class SetSurveyModeIntent : NavigationIntent
+    {
+        public SetSurveyModeIntent(bool survey, bool requiresStart)
+        { Survey = survey; RequiresStart = survey && requiresStart; }
+        public bool Survey { get; }
+        public bool RequiresStart { get; }
+    }
     public sealed class ChooseSurveyStartIntent : NavigationIntent
     { public ChooseSurveyStartIntent(GalaxyEntityId id) { Id = id; } public GalaxyEntityId Id { get; } }
     public sealed class FastTravelIntent : NavigationIntent
@@ -139,6 +146,10 @@ namespace ClustrGalaxy.Core.Navigation
                 case InspectNavigationTargetIntent inspect: return Inspect(inspect);
                 case EnterSurveyNavigationIntent _:
                     state = Copy(mapOpen: true, survey: true, requiresStart: true, status: "CHOOSE A STARTING SYSTEM");
+                    return Success();
+                case SetSurveyModeIntent mode:
+                    state = Copy(survey: mode.Survey, requiresStart: mode.RequiresStart,
+                        status: mode.Survey && mode.RequiresStart ? "CHOOSE A STARTING SYSTEM" : state.Status);
                     return Success();
                 case ChooseSurveyStartIntent start:
                     state = Copy(survey: true, requiresStart: false, focused: start.Id, status: "SURVEY STARTED");

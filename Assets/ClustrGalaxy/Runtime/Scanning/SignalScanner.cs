@@ -95,14 +95,12 @@ namespace ClustrGalaxy.Scanning
         {
             if (dataLoader != null)
             {
-                dataLoader.SceneLoaded -= RebuildPinnedRoutes;
-                dataLoader.ScopeLoaded -= OnScopeLoaded;
+                dataLoader.SceneCommitted -= OnSceneCommitted;
             }
             dataLoader = loader;
             if (dataLoader != null)
             {
-                dataLoader.SceneLoaded += RebuildPinnedRoutes;
-                dataLoader.ScopeLoaded += OnScopeLoaded;
+                dataLoader.SceneCommitted += OnSceneCommitted;
                 RebuildPinnedRoutes();
             }
         }
@@ -246,7 +244,7 @@ namespace ClustrGalaxy.Scanning
             SetRoutes(BuildPinnedRoutes(dataLoader.Store));
         }
 
-        private void OnScopeLoaded(SpatialScene _) => RebuildPinnedRoutes();
+        private void OnSceneCommitted(SpatialScene _) => RebuildPinnedRoutes();
 
         private IEnumerable<string> LoadedPostIds(GalaxyEntity target)
         {
@@ -289,8 +287,7 @@ namespace ClustrGalaxy.Scanning
         {
             if (dataLoader != null)
             {
-                dataLoader.SceneLoaded -= RebuildPinnedRoutes;
-                dataLoader.ScopeLoaded -= OnScopeLoaded;
+                dataLoader.SceneCommitted -= OnSceneCommitted;
             }
             scanAction?.Dispose();
         }

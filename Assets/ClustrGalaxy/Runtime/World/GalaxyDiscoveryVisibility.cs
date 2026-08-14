@@ -162,11 +162,11 @@ namespace ClustrGalaxy.World
 
         public void BindDataLoader(SpatialSceneLoader sceneLoader)
         {
-            if (dataLoader != null) dataLoader.SceneLoaded -= UpdatePendingSnapshotKey;
+            if (dataLoader != null) dataLoader.SceneCommitted -= UpdatePendingSnapshotKey;
             dataLoader = sceneLoader;
             if (dataLoader != null)
             {
-                dataLoader.SceneLoaded += UpdatePendingSnapshotKey;
+                dataLoader.SceneCommitted += UpdatePendingSnapshotKey;
                 UpdatePendingSnapshotKey();
             }
         }
@@ -325,7 +325,7 @@ namespace ClustrGalaxy.World
             return SurveyStartingKnowledge.CanSeed(entity.Kind, membership != null && membership.IsNavigationAnchor);
         }
 
-        private void UpdatePendingSnapshotKey()
+        private void UpdatePendingSnapshotKey(SpatialScene _ = null)
         {
             snapshotKey = SelectPendingSnapshotKey(snapshotKey, SurveySession != null,
                 dataLoader != null ? dataLoader.PinnedSurveySnapshotKey : null);
@@ -386,7 +386,7 @@ namespace ClustrGalaxy.World
         private void OnDestroy()
         {
             Unsubscribe();
-            if (dataLoader != null) dataLoader.SceneLoaded -= UpdatePendingSnapshotKey;
+            if (dataLoader != null) dataLoader.SceneCommitted -= UpdatePendingSnapshotKey;
         }
     }
 }
