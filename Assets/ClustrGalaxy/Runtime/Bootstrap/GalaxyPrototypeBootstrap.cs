@@ -6,6 +6,7 @@ using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Scanning;
+using ClustrGalaxy.Constellations;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -120,6 +121,15 @@ namespace ClustrGalaxy.Bootstrap
             probe.AddComponent<GalaxyPerformanceMonitor>();
             hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner,
                 threadInspection);
+            ConstellationTracker tracker = null;
+            discoveryVisibility.SurveyStarted += store =>
+            {
+                tracker?.Dispose();
+                tracker = new ConstellationTracker(store, surveyEvents, new[] { ConstellationDefinition.Example },
+                    ConstellationDefinition.Example.MemberStableIds);
+                var personal = PersonalConstellationStore.OpenDefault(store.ProfileId, store.SnapshotKey);
+                hud.ConfigureConstellations(tracker, personal, new ConstellationSubmissionOutbox(personal));
+            };
         }
 
         private static void CreateSystem()

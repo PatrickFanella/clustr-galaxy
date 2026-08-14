@@ -8,6 +8,7 @@ using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
+using ClustrGalaxy.Constellations;
 using NUnit.Framework;
 
 namespace ClustrGalaxy.Tests
@@ -72,6 +73,105 @@ namespace ClustrGalaxy.Tests
 
     public sealed class SurveyGameplayTests
     {
+        [Test]
+        public void AuthoredConstellation_ReportsOneOfSixAndCompletesExactlyOnce()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var bus = new SurveyEventBus();
+            using var tracker = new ConstellationTracker(store, bus, new[] { ConstellationDefinition.Example },
+                SurveyFixture.ConstellationMembers);
+
+            var first = tracker.RecordScan("post:open-source-ai");
+            Assert.That(first.Message, Is.EqualTo("Example Constellation 1/6"));
+            foreach (var id in SurveyFixture.ConstellationMembers) tracker.RecordScan(id);
+            Assert.That(tracker.IsComplete("example-constellation"), Is.True);
+            Assert.That(tracker.CompletionAwards, Is.EqualTo(1));
+            Assert.That(tracker.RecordScan("post:open-source-ai").CompletedNow, Is.False);
+            Assert.That(tracker.CompletionAwards, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void AuthoredConstellation_UnresolvedMemberMakesOverlayUnavailableWithoutChangingDenominator()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            using var tracker = new ConstellationTracker(store, new SurveyEventBus(),
+                new[] { ConstellationDefinition.Example }, SurveyFixture.ConstellationMembers.Take(5));
+
+            var progress = tracker.ProgressOf("example-constellation");
+            Assert.That(progress.Available, Is.False);
+            Assert.That(progress.Total, Is.EqualTo(6));
+            Assert.That(progress.Message, Is.EqualTo("Example Constellation UNAVAILABLE"));
+        }
+
+        [Test]
+        public void AuthoredConstellation_OnlySharedSnapshotScanEventsAdvanceProgress()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var bus = new SurveyEventBus();
+            using var tracker = new ConstellationTracker(store, bus, new[] { ConstellationDefinition.Example }, SurveyFixture.ConstellationMembers);
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Pinned(9, 3), "post:open-source-ai", Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            Assert.That(tracker.ProgressOf("example-constellation").Found, Is.Zero);
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, "post:open-source-ai", Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            Assert.That(tracker.ProgressOf("example-constellation").Found, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void PersonalConstellations_SaveReloadAndQueueOnlyAfterExplicitConfirmation()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var key = SurveySnapshotKey.Demo;
+            var members = SurveyFixture.ConstellationMembers.Take(3).ToArray();
+            var personal = PersonalConstellationStore.Open(fixture.Root, "test-pilot", key);
+            var saved = personal.Save("Portable systems", "A local reason for preserving this pattern.", members, SurveyFixture.ConstellationMembers,
+                "personal:portable-systems");
+            Assert.That(File.Exists(personal.StoragePath), Is.True);
+            var reloaded = PersonalConstellationStore.Open(fixture.Root, "test-pilot", key);
+            Assert.That(reloaded.Get(saved.id).member_stable_ids, Is.EqualTo(members.OrderBy(value => value, StringComparer.Ordinal)));
+            var outbox = new ConstellationSubmissionOutbox(reloaded);
+            Assert.Throws<InvalidOperationException>(() => outbox.QueueForSubmission(saved.id, confirmed: false));
+            var queued = outbox.QueueForSubmission(saved.id, confirmed: true);
+            Assert.That(queued.state, Is.EqualTo(ConstellationSubmissionState.AwaitingBackend));
+            Assert.That(queued.member_stable_ids, Is.EqualTo(members.OrderBy(value => value, StringComparer.Ordinal)));
+            Assert.That(outbox.IsQueued(saved.id), Is.True);
+            Assert.That(outbox.QueueForSubmission(saved.id, confirmed: true).submission_id, Is.EqualTo(queued.submission_id));
+        }
+
+        [Test]
+        public void PersonalConstellations_QueuedStatusUsesTheWholeLocalPayloadIdentity()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var members = SurveyFixture.ConstellationMembers.Take(3).ToArray();
+            var demo = PersonalConstellationStore.Open(fixture.Root, "test-pilot", SurveySnapshotKey.Demo);
+            var queuedPersonal = demo.Save("Same words", "Same local note", members, SurveyFixture.ConstellationMembers,
+                "personal:demo-queued");
+            var demoOutbox = new ConstellationSubmissionOutbox(demo);
+            demoOutbox.QueueForSubmission(queuedPersonal.id, confirmed: true);
+
+            var changedMembers = demo.Save("Same words", "Same local note",
+                new[] { SurveyFixture.ConstellationMembers[0], SurveyFixture.ConstellationMembers[1], SurveyFixture.ConstellationMembers[3] },
+                SurveyFixture.ConstellationMembers, "personal:demo-other-members");
+            Assert.That(demoOutbox.IsQueued(changedMembers.id), Is.False);
+
+            var pinned = PersonalConstellationStore.Open(fixture.Root, "test-pilot", SurveySnapshotKey.Pinned(9, 3));
+            var otherNamespace = pinned.Save("Same words", "Same local note", members, SurveyFixture.ConstellationMembers,
+                "personal:pinned-same-payload");
+            Assert.That(new ConstellationSubmissionOutbox(pinned).IsQueued(otherNamespace.id), Is.False);
+        }
+
+        [Test]
+        public void PersonalConstellations_RejectInvalidLocalContentAndUnknownSurveyMembers()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var personal = PersonalConstellationStore.Open(fixture.Root, "test-pilot", SurveySnapshotKey.Demo);
+            Assert.Throws<ArgumentException>(() => personal.Save(" ", "reason", SurveyFixture.ConstellationMembers.Take(3), SurveyFixture.ConstellationMembers));
+            Assert.Throws<ArgumentException>(() => personal.Save("Valid", "\n", SurveyFixture.ConstellationMembers.Take(3), SurveyFixture.ConstellationMembers));
+            Assert.Throws<ArgumentException>(() => personal.Save("Valid", "reason", new[] { "a", "a", "b" }, new[] { "a", "b", "c" }));
+            Assert.Throws<ArgumentException>(() => personal.Save("Valid", "reason", new[] { "a", "b", "unknown" }, new[] { "a", "b", "c" }));
+        }
+
         [Test]
         public void ThreadInspection_BuildsOnlyOrderedDescendantsWithinTheDisplayDepth()
         {
@@ -618,6 +718,8 @@ namespace ClustrGalaxy.Tests
 
             public static SurveyStoreFixture Create() => new SurveyStoreFixture(
                 Path.Combine(Path.GetTempPath(), "clustr-survey-test-" + Guid.NewGuid().ToString("N")));
+
+            public string Root => root;
 
             public SurveyDiscoveryStore Open(SurveySnapshotKey key, string startingSystemId) =>
                 SurveyDiscoveryStore.Open(root, "test-pilot", key, startingSystemId);

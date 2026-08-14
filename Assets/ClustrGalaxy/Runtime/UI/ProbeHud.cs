@@ -3,6 +3,7 @@ using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Scanning;
+using ClustrGalaxy.Constellations;
 using ClustrGalaxy.World;
 using UnityEngine;
 
@@ -24,6 +25,9 @@ namespace ClustrGalaxy.UI
         private CommentThreadController threadInspection = null!;
         private Vector2 threadScrollPosition;
         private ThreadInspectionModel observedThreadModel = null!;
+        private ConstellationTracker constellationTracker;
+        private PersonalConstellationStore personalConstellations;
+        private ConstellationSubmissionOutbox constellationOutbox;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -52,6 +56,16 @@ namespace ClustrGalaxy.UI
                 threadInspection.ModelChanged += OnThreadModelChanged;
             }
             performance = GetComponent<GalaxyPerformanceMonitor>();
+        }
+
+        public void ConfigureConstellations(ConstellationTracker tracker, PersonalConstellationStore personalStore,
+            ConstellationSubmissionOutbox outbox)
+        {
+            if (constellationTracker != null) constellationTracker.Progressed -= OnConstellationProgressed;
+            constellationTracker = tracker;
+            personalConstellations = personalStore;
+            constellationOutbox = outbox;
+            if (constellationTracker != null) constellationTracker.Progressed += OnConstellationProgressed;
         }
 
         private void EnsureStyles()
@@ -103,6 +117,7 @@ namespace ClustrGalaxy.UI
                     GUILayout.Label($"REVEALED  {scanner.LastResult.RevealedEntityIds.Count} signal(s)  •  {scanner.LastResult.RevealedRouteIds.Count} route(s)", bodyStyle);
                 }
             }
+            RenderConstellationStatus();
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
@@ -176,6 +191,7 @@ namespace ClustrGalaxy.UI
             {
                 threadInspection.ModelChanged -= OnThreadModelChanged;
             }
+            if (constellationTracker != null) constellationTracker.Progressed -= OnConstellationProgressed;
             if (panelTexture != null)
             {
                 Destroy(panelTexture);
@@ -220,6 +236,31 @@ namespace ClustrGalaxy.UI
         {
             observedThreadModel = model;
             threadScrollPosition = Vector2.zero;
+        }
+
+        private ConstellationProgress latestConstellationProgress;
+        private bool hasConstellationProgress;
+        private void OnConstellationProgressed(ConstellationProgress progress)
+        {
+            latestConstellationProgress = progress;
+            hasConstellationProgress = !string.IsNullOrWhiteSpace(progress.ConstellationId);
+        }
+
+        private void RenderConstellationStatus()
+        {
+            if (constellationTracker != null)
+            {
+                var example = constellationTracker.ProgressOf("example-constellation");
+                if (example.Available) GUILayout.Label($"CONSTELLATION  {example.Message}", bodyStyle);
+                else GUILayout.Label("CONSTELLATION  EXAMPLE OVERLAY UNAVAILABLE", bodyStyle);
+            }
+            if (hasConstellationProgress) GUILayout.Label($"SIGNAL FINDING  {latestConstellationProgress.Message}", titleStyle);
+            if (personalConstellations == null) return;
+            foreach (var personal in personalConstellations.Constellations)
+            {
+                var queued = constellationOutbox?.IsQueued(personal.id) == true;
+                GUILayout.Label($"{personal.name}  {(queued ? "QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE" : "SAVED LOCALLY")}", bodyStyle);
+            }
         }
 
         private static string FormatWorldMode(GalaxyWorldMode mode)

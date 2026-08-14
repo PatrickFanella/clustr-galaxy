@@ -28,6 +28,9 @@ namespace ClustrGalaxy.Gameplay
         public string[] known_route_ids = Array.Empty<string>();
         public string[] completed_scan_ids = Array.Empty<string>();
         public string[] constellation_member_ids = Array.Empty<string>();
+        // A completion is distinct from its member scans: two authored overlays
+        // can share members, and a completed overlay must award only once.
+        public string[] completed_constellation_ids = Array.Empty<string>();
         public string[] completed_contract_ids = Array.Empty<string>();
         public string[] achievement_ids = Array.Empty<string>();
         public int scanner_level = 1;
@@ -61,6 +64,7 @@ namespace ClustrGalaxy.Gameplay
             known_route_ids = Normalize(known_route_ids);
             completed_scan_ids = Normalize(completed_scan_ids);
             constellation_member_ids = Normalize(constellation_member_ids);
+            completed_constellation_ids = Normalize(completed_constellation_ids);
             completed_contract_ids = Normalize(completed_contract_ids);
             achievement_ids = Normalize(achievement_ids);
             scanner_level = Math.Max(1, scanner_level);

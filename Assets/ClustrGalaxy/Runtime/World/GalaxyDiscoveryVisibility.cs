@@ -103,6 +103,7 @@ namespace ClustrGalaxy.World
         public GalaxyWorldMode WorldMode => modes?.WorldMode ?? GalaxyWorldMode.Explore;
         public bool RequiresStartingSystemChoice =>
             modes != null && modes.WorldMode == GalaxyWorldMode.Survey && discoveryStore == null;
+        public event Action<SurveyDiscoveryStore> SurveyStarted = delegate { };
 
         public void Initialize(GalaxyModeState modeState, SurveyDiscoveryStore store)
         {
@@ -189,6 +190,7 @@ namespace ClustrGalaxy.World
             }
             discoveryStore.Save();
             ApplyVisibility();
+            SurveyStarted(discoveryStore);
             return true;
         }
 
