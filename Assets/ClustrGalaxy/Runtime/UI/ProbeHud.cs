@@ -4,6 +4,7 @@ using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Progression;
 using ClustrGalaxy.World;
 using UnityEngine;
 
@@ -28,6 +29,8 @@ namespace ClustrGalaxy.UI
         private ConstellationTracker constellationTracker;
         private PersonalConstellationStore personalConstellations;
         private ConstellationSubmissionOutbox constellationOutbox;
+        private SurveyProgression progression;
+        private string progressionNotification = string.Empty;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -66,6 +69,13 @@ namespace ClustrGalaxy.UI
             personalConstellations = personalStore;
             constellationOutbox = outbox;
             if (constellationTracker != null) constellationTracker.Progressed += OnConstellationProgressed;
+        }
+
+        public void ConfigureProgression(SurveyProgression value)
+        {
+            if (progression != null) progression.Notification -= OnProgressionNotification;
+            progression = value;
+            if (progression != null) progression.Notification += OnProgressionNotification;
         }
 
         private void EnsureStyles()
@@ -118,6 +128,7 @@ namespace ClustrGalaxy.UI
                 }
             }
             RenderConstellationStatus();
+            RenderSurveyObjectives();
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
@@ -192,6 +203,7 @@ namespace ClustrGalaxy.UI
                 threadInspection.ModelChanged -= OnThreadModelChanged;
             }
             if (constellationTracker != null) constellationTracker.Progressed -= OnConstellationProgressed;
+            if (progression != null) progression.Notification -= OnProgressionNotification;
             if (panelTexture != null)
             {
                 Destroy(panelTexture);
@@ -262,6 +274,26 @@ namespace ClustrGalaxy.UI
                 GUILayout.Label($"{personal.name}  {(queued ? "QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE" : "SAVED LOCALLY")}", bodyStyle);
             }
         }
+
+        private void RenderSurveyObjectives()
+        {
+            if (progression == null || modeState == null || modeState.WorldMode != GalaxyWorldMode.Survey) return;
+            var pinned = progression.PinnedContract;
+            if (pinned.Definition != null)
+            {
+                GUILayout.Label($"OBJECTIVE  {pinned.Definition.DisplayName}  {pinned.Current}/{pinned.Definition.Required}", bodyStyle);
+            }
+            else GUILayout.Label("OBJECTIVE  SURVEY CONTRACTS COMPLETE", titleStyle);
+            GUILayout.Label($"SCANNER LVL {progression.ScannerLevel}", bodyStyle);
+            if (!string.IsNullOrWhiteSpace(progression.LastAchievementId))
+            {
+                var achievementDisplay = progression.LastAchievementId.Replace("achievement:", string.Empty);
+                GUILayout.Label($"LAST ACHIEVEMENT  {achievementDisplay}", bodyStyle);
+            }
+            if (!string.IsNullOrWhiteSpace(progressionNotification)) GUILayout.Label(progressionNotification, titleStyle);
+        }
+
+        private void OnProgressionNotification(string message) => progressionNotification = message ?? string.Empty;
 
         private static string FormatWorldMode(GalaxyWorldMode mode)
         {

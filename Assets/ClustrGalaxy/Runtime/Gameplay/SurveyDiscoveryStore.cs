@@ -69,6 +69,7 @@ namespace ClustrGalaxy.Gameplay
         public bool IsConstellationMemberRecorded(string stableId) => Contains(State.constellation_member_ids, stableId);
         public bool IsContractComplete(string stableId) => Contains(State.completed_contract_ids, stableId);
         public bool IsAchievementUnlocked(string stableId) => Contains(State.achievement_ids, stableId);
+        public bool IsProgressEventProcessed(string eventId) => Contains(State.processed_progress_event_ids, eventId);
 
         public bool DiscoverEntity(string stableId) => Add(ref State.known_entity_ids, stableId);
         public bool IdentifyEntity(string stableId)
@@ -82,6 +83,7 @@ namespace ClustrGalaxy.Gameplay
         public bool RecordConstellationMember(string stableId) => Add(ref State.constellation_member_ids, stableId);
         public bool CompleteContract(string stableId) => Add(ref State.completed_contract_ids, stableId);
         public bool UnlockAchievement(string stableId) => Add(ref State.achievement_ids, stableId);
+        public bool RecordProgressEvent(string eventId) => Add(ref State.processed_progress_event_ids, eventId);
 
         public bool SetScannerLevel(int scannerLevel)
         {

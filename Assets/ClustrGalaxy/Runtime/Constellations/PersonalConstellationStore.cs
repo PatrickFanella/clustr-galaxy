@@ -15,25 +15,28 @@ namespace ClustrGalaxy.Constellations
     {
         private readonly string path;
         private readonly SurveySnapshotKey snapshot;
+        private readonly SurveyEventBus eventBus;
         private PersonalConstellationDocument document;
 
-        private PersonalConstellationStore(string storagePath, SurveySnapshotKey snapshotKey, PersonalConstellationDocument loaded)
-        { path = storagePath; snapshot = snapshotKey; document = loaded; Normalize(); }
+        private PersonalConstellationStore(string storagePath, SurveySnapshotKey snapshotKey, PersonalConstellationDocument loaded,
+            SurveyEventBus sharedEventBus)
+        { path = storagePath; snapshot = snapshotKey; document = loaded; eventBus = sharedEventBus; Normalize(); }
 
         public string StoragePath => path;
         public SurveySnapshotKey SnapshotKey => snapshot;
         public IReadOnlyList<PersonalConstellation> Constellations => document.constellations.Where(item => item != null && item.BelongsTo(snapshot)).ToArray();
 
-        public static PersonalConstellationStore OpenDefault(string profileId, SurveySnapshotKey snapshotKey) =>
-            Open(Application.persistentDataPath, profileId, snapshotKey);
+        public static PersonalConstellationStore OpenDefault(string profileId, SurveySnapshotKey snapshotKey,
+            SurveyEventBus sharedEventBus = null) => Open(Application.persistentDataPath, profileId, snapshotKey, sharedEventBus);
 
-        public static PersonalConstellationStore Open(string persistentDataPath, string profileId, SurveySnapshotKey snapshotKey)
+        public static PersonalConstellationStore Open(string persistentDataPath, string profileId, SurveySnapshotKey snapshotKey,
+            SurveyEventBus sharedEventBus = null)
         {
             if (string.IsNullOrWhiteSpace(persistentDataPath)) throw new ArgumentException("A persistent-data root is required.", nameof(persistentDataPath));
             var safeProfile = RequirePathSegment(profileId);
             var storagePath = Path.Combine(persistentDataPath, "ClustrGalaxy", "profiles", "v1", safeProfile, "constellations.json");
             var loaded = TryLoad(storagePath) ?? new PersonalConstellationDocument();
-            return new PersonalConstellationStore(storagePath, snapshotKey, loaded);
+            return new PersonalConstellationStore(storagePath, snapshotKey, loaded, sharedEventBus);
         }
 
         public PersonalConstellation Save(string name, string note, IEnumerable<string> memberStableIds,
@@ -44,6 +47,7 @@ namespace ClustrGalaxy.Constellations
                 throw new ArgumentException("A personal constellation with this ID already exists.", nameof(id));
             document.constellations = document.constellations.Concat(new[] { constellation }).ToArray();
             Normalize(); SaveDocument();
+            eventBus?.Publish(SurveyEvent.PersonalConstellationSaved(snapshot, constellation.id, DateTime.UtcNow));
             return constellation;
         }
 

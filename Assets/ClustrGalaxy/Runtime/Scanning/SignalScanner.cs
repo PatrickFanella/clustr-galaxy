@@ -184,6 +184,12 @@ namespace ClustrGalaxy.Scanning
             LastResult = result;
             eventBus.Publish(SurveyEvent.ScanCompleted(store.SnapshotKey, target.StableId, result.RevealedEntityIds,
                 result.RevealedRouteIds, DateTime.UtcNow, store.State.scanner_level));
+            var membership = target.GetComponent<GalaxySurveyMembership>();
+            if (membership != null && target.EntityType == "post planet" &&
+                IsSystemComplete(membership.SystemStableId, store))
+            {
+                eventBus.Publish(SurveyEvent.SystemCompleted(store.SnapshotKey, membership.SystemStableId, DateTime.UtcNow));
+            }
         }
 
         private bool CanCharge(out SignalScanState failure)
@@ -244,7 +250,16 @@ namespace ClustrGalaxy.Scanning
 
         private static bool IsSystemComplete(GalaxyEntity target, SurveyDiscoveryStore store)
         {
-            var children = LoadedPostIds(target).ToArray();
+            var membership = target?.GetComponent<GalaxySurveyMembership>();
+            return membership != null && IsSystemComplete(membership.SystemStableId, store);
+        }
+
+        private static bool IsSystemComplete(string systemStableId, SurveyDiscoveryStore store)
+        {
+            var children = UnityEngine.Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Include)
+                .Where(entity => entity.EntityType == "post planet" && entity.GetComponent<GalaxySurveyMembership>() != null &&
+                    string.Equals(entity.GetComponent<GalaxySurveyMembership>().SystemStableId, systemStableId, StringComparison.Ordinal))
+                .Select(entity => entity.StableId).OrderBy(id => id, StringComparer.Ordinal).ToArray();
             return children.Length > 0 && children.All(store.IsScanComplete);
         }
 

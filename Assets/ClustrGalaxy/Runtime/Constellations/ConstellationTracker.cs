@@ -88,6 +88,7 @@ namespace ClustrGalaxy.Constellations
                 AddCompleted(definition.Id);
                 CompletionAwards++;
                 progress = ProgressOf(definition, true);
+                eventBus.Publish(SurveyEvent.AuthoredConstellationCompleted(store.SnapshotKey, definition.Id, DateTime.UtcNow));
             }
             store.Save();
             return progress;

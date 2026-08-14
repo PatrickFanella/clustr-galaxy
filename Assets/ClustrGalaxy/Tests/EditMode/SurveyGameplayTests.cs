@@ -9,6 +9,7 @@ using ClustrGalaxy.Scanning;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Progression;
 using NUnit.Framework;
 
 namespace ClustrGalaxy.Tests
@@ -705,6 +706,77 @@ namespace ClustrGalaxy.Tests
         public void SurveyStart_SeedsOnlyExplicitKnowledgeKinds(string entityType, bool anchor, bool expected)
         {
             Assert.That(SurveyStartingKnowledge.CanSeed(entityType, anchor), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void Progression_CompletesExactContractsAndRaisesScannerTiersOnce()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var bus = new SurveyEventBus();
+            using var progression = new SurveyProgression(store, bus);
+            var notifications = 0;
+            progression.Notification += _ => notifications++;
+
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, "post:open-source-ai",
+                new[] { "subreddit:signal-horizon" }, new[] { "route:a", "route:b" }, DateTime.UtcNow, 1));
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, "post:linux-handhelds",
+                Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, "post:right-to-repair",
+                Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            bus.Publish(SurveyEvent.SystemCompleted(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId, DateTime.UtcNow));
+            bus.Publish(SurveyEvent.AuthoredConstellationCompleted(SurveySnapshotKey.Demo, "example-constellation", DateTime.UtcNow));
+
+            Assert.That(store.State.surveyed_post_scan_count, Is.EqualTo(3));
+            Assert.That(store.State.revealed_route_count, Is.EqualTo(2));
+            Assert.That(store.State.completed_system_count, Is.EqualTo(1));
+            Assert.That(store.State.completed_authored_constellation_count, Is.EqualTo(1));
+            Assert.That(store.State.completed_contract_ids, Is.EqualTo(SurveyContractDefinition.Defaults.Select(item => item.Id).OrderBy(item => item)));
+            Assert.That(progression.ScannerLevel, Is.EqualTo(3));
+            Assert.That(notifications, Is.GreaterThanOrEqualTo(4));
+        }
+
+        [Test]
+        public void Progression_ReplayedEventsAreIdempotentAndPersistAcrossReload()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var key = SurveySnapshotKey.Pinned(9, 3);
+            var store = fixture.Open(key, SurveyFixture.StartingSystemId);
+            var bus = new SurveyEventBus();
+            using (var progression = new SurveyProgression(store, bus))
+            {
+                var scan = SurveyEvent.ScanCompleted(key, "post:open-source-ai", new[] { "subreddit:new" }, new[] { "route:a" }, DateTime.UtcNow, 1);
+                bus.Publish(scan); bus.Publish(scan);
+                bus.Publish(SurveyEvent.PersonalConstellationSaved(key, "personal:one", DateTime.UtcNow));
+                bus.Publish(SurveyEvent.PersonalConstellationSaved(key, "personal:one", DateTime.UtcNow));
+                bus.Publish(SurveyEvent.PilotMasteryArrival(key, "post:open-source-ai", DateTime.UtcNow));
+                Assert.That(store.State.surveyed_post_scan_count, Is.EqualTo(1));
+                Assert.That(store.State.revealed_route_count, Is.EqualTo(1));
+                Assert.That(store.IsAchievementUnlocked(SurveyProgression.FirstScanAchievement), Is.True);
+                Assert.That(store.IsAchievementUnlocked(SurveyProgression.FirstNewSystemAchievement), Is.True);
+                Assert.That(store.IsAchievementUnlocked(SurveyProgression.FirstPersonalConstellationAchievement), Is.True);
+                Assert.That(store.IsAchievementUnlocked(SurveyProgression.FirstMasteryArrivalAchievement), Is.True);
+            }
+            var restored = fixture.Open(key, SurveyFixture.StartingSystemId);
+            Assert.That(restored.State.surveyed_post_scan_count, Is.EqualTo(1));
+            Assert.That(restored.IsProgressEventProcessed("scan:post:open-source-ai"), Is.True);
+        }
+
+        [Test]
+        public void Progression_FlightModeChangesDoNotAffectSnapshotCounters()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Demo, SurveyFixture.StartingSystemId);
+            var bus = new SurveyEventBus();
+            using var progression = new SurveyProgression(store, bus);
+            var modes = new GalaxyModeState();
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            modes.SetFlightMode(FlightControlMode.Autopilot);
+            bus.Publish(SurveyEvent.ScanCompleted(SurveySnapshotKey.Demo, "post:one", Array.Empty<string>(), Array.Empty<string>(), DateTime.UtcNow, 1));
+            modes.SetFlightMode(FlightControlMode.PilotMastery);
+            modes.SetFlightMode(FlightControlMode.PilotAssist);
+            Assert.That(store.State.surveyed_post_scan_count, Is.EqualTo(1));
+            Assert.That(progression.ScannerLevel, Is.EqualTo(1));
         }
 
         private sealed class SurveyStoreFixture : IDisposable

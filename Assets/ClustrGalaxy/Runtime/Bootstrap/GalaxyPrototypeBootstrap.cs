@@ -7,6 +7,7 @@ using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.Constellations;
+using ClustrGalaxy.Progression;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -122,13 +123,17 @@ namespace ClustrGalaxy.Bootstrap
             hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner,
                 threadInspection);
             ConstellationTracker tracker = null;
+            SurveyProgression progression = null;
             discoveryVisibility.SurveyStarted += store =>
             {
                 tracker?.Dispose();
+                progression?.Dispose();
                 tracker = new ConstellationTracker(store, surveyEvents, new[] { ConstellationDefinition.Example },
                     ConstellationDefinition.Example.MemberStableIds);
-                var personal = PersonalConstellationStore.OpenDefault(store.ProfileId, store.SnapshotKey);
+                progression = new SurveyProgression(store, surveyEvents);
+                var personal = PersonalConstellationStore.OpenDefault(store.ProfileId, store.SnapshotKey, surveyEvents);
                 hud.ConfigureConstellations(tracker, personal, new ConstellationSubmissionOutbox(personal));
+                hud.ConfigureProgression(progression);
             };
         }
 

@@ -33,6 +33,13 @@ namespace ClustrGalaxy.Gameplay
         public string[] completed_constellation_ids = Array.Empty<string>();
         public string[] completed_contract_ids = Array.Empty<string>();
         public string[] achievement_ids = Array.Empty<string>();
+        // Event identities make local progression idempotent even when a UI or
+        // a recovered client replays a previously delivered event.
+        public string[] processed_progress_event_ids = Array.Empty<string>();
+        public int surveyed_post_scan_count;
+        public int revealed_route_count;
+        public int completed_system_count;
+        public int completed_authored_constellation_count;
         public int scanner_level = 1;
         public string last_saved_utc = string.Empty;
 
@@ -67,6 +74,11 @@ namespace ClustrGalaxy.Gameplay
             completed_constellation_ids = Normalize(completed_constellation_ids);
             completed_contract_ids = Normalize(completed_contract_ids);
             achievement_ids = Normalize(achievement_ids);
+            processed_progress_event_ids = Normalize(processed_progress_event_ids);
+            surveyed_post_scan_count = Math.Max(0, surveyed_post_scan_count);
+            revealed_route_count = Math.Max(0, revealed_route_count);
+            completed_system_count = Math.Max(0, completed_system_count);
+            completed_authored_constellation_count = Math.Max(0, completed_authored_constellation_count);
             scanner_level = Math.Max(1, scanner_level);
         }
 
