@@ -48,6 +48,30 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void ScopeContract_RecoversMetadataOmittedByThePublishedCommunityResponse()
+        {
+            const string liveShape = "{\"revision_id\":1,\"spatial_catalog_id\":3," +
+                "\"nodes\":[{\"id\":\"subreddit_1569\",\"type\":\"subreddit\"}],\"links\":[]}";
+            var scene = SpatialSceneJson.ParseScene(liveShape);
+
+            SpatialSceneScopeContract.ApplyOrValidate(
+                scene, "community", "c:new:c3875a74587b5df7");
+
+            Assert.That(scene.scope, Is.EqualTo("community"));
+            Assert.That(scene.root_id, Is.EqualTo("c:new:c3875a74587b5df7"));
+        }
+
+        [Test]
+        public void ScopeContract_RejectsContradictoryPublishedMetadata()
+        {
+            var scene = new SpatialScene { scope = "system", root_id = "subreddit_other" };
+
+            Assert.Throws<InvalidOperationException>(() =>
+                SpatialSceneScopeContract.ApplyOrValidate(
+                    scene, "community", "c:new:c3875a74587b5df7"));
+        }
+
+        [Test]
         public void SceneStore_MergesStableIdsAndRejectsMixedSnapshots()
         {
             var manifest = CompatibleManifest(revision: 9, catalog: 3);

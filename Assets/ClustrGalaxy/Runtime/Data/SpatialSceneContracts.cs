@@ -93,6 +93,42 @@ namespace ClustrGalaxy.Data
             (manifest.spatial_catalog_id == 0 || spatial_catalog_id == manifest.spatial_catalog_id);
     }
 
+    /// <summary>
+    /// Binds optional response metadata to the request that produced it. The
+    /// public overview/community endpoints may omit scope metadata, while
+    /// entity expansions publish it. Omitted values are safe to recover from
+    /// the pinned request; contradictory values are rejected.
+    /// </summary>
+    public static class SpatialSceneScopeContract
+    {
+        public static void ApplyOrValidate(SpatialScene scene, string expectedScope, string expectedRootId)
+        {
+            if (scene == null)
+            {
+                throw new ArgumentNullException(nameof(scene));
+            }
+            if (string.IsNullOrWhiteSpace(expectedScope) || string.IsNullOrWhiteSpace(expectedRootId))
+            {
+                throw new ArgumentException("A bounded scope and root ID are required.");
+            }
+            if (!string.IsNullOrWhiteSpace(scene.scope) &&
+                !string.Equals(scene.scope, expectedScope, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Scope mismatch: expected {expectedScope}, received {scene.scope}.");
+            }
+            if (!string.IsNullOrWhiteSpace(scene.root_id) &&
+                !string.Equals(scene.root_id, expectedRootId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Root mismatch: expected {expectedRootId}, received {scene.root_id}.");
+            }
+
+            scene.scope = expectedScope;
+            scene.root_id = expectedRootId;
+        }
+    }
+
     [Serializable]
     public sealed class SpatialNode
     {

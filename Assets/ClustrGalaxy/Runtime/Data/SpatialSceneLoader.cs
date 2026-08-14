@@ -63,19 +63,23 @@ namespace ClustrGalaxy.Data
 
         public void LoadCommunity(string communityId) =>
             BeginScopeLoad(SpatialSceneRequestUris.Community(apiBase, RequireManifest(), communityId),
-                ScopeCacheKey("community", communityId), $"LOADING REGION {communityId}");
+                ScopeCacheKey("community", communityId), "community", communityId,
+                $"LOADING REGION {communityId}");
 
         public void LoadSystem(string subredditId) =>
             BeginScopeLoad(SpatialSceneRequestUris.System(apiBase, RequireManifest(), subredditId),
-                ScopeCacheKey("system", subredditId), $"LOADING SYSTEM {subredditId}");
+                ScopeCacheKey("system", subredditId), "system", subredditId,
+                $"LOADING SYSTEM {subredditId}");
 
         public void LoadDiscussion(string postId) =>
             BeginScopeLoad(SpatialSceneRequestUris.Discussion(apiBase, RequireManifest(), postId),
-                ScopeCacheKey("discussion", postId), $"LOADING DISCUSSION {postId}");
+                ScopeCacheKey("discussion", postId), "discussion", postId,
+                $"LOADING DISCUSSION {postId}");
 
         public void LoadThread(string parentCommentId) =>
             BeginScopeLoad(SpatialSceneRequestUris.Thread(apiBase, RequireManifest(), parentCommentId),
-                ScopeCacheKey("thread", parentCommentId), $"LOADING THREAD {parentCommentId}");
+                ScopeCacheKey("thread", parentCommentId), "thread", parentCommentId,
+                $"LOADING THREAD {parentCommentId}");
 
         private IEnumerator LoadOverview()
         {
@@ -209,7 +213,8 @@ namespace ClustrGalaxy.Data
             SceneLoaded();
         }
 
-        private void BeginScopeLoad(string uri, string cacheKey, string status)
+        private void BeginScopeLoad(string uri, string cacheKey, string expectedScope,
+            string expectedRootId, string status)
         {
             if (Manifest == null || Store == null)
             {
@@ -217,10 +222,10 @@ namespace ClustrGalaxy.Data
             }
             client.Cancel();
             StatusText = status;
-            StartCoroutine(LoadScope(uri, cacheKey));
+            StartCoroutine(LoadScope(uri, cacheKey, expectedScope, expectedRootId));
         }
 
-        private IEnumerator LoadScope(string uri, string cacheKey)
+        private IEnumerator LoadScope(string uri, string cacheKey, string expectedScope, string expectedRootId)
         {
             string json = null!;
             SpatialRequestFailure? failure = null;
@@ -243,6 +248,7 @@ namespace ClustrGalaxy.Data
             try
             {
                 loaded = SpatialSceneJson.ParseScene(json);
+                SpatialSceneScopeContract.ApplyOrValidate(loaded, expectedScope, expectedRootId);
                 Store.Merge(loaded);
             }
             catch (Exception exception)
