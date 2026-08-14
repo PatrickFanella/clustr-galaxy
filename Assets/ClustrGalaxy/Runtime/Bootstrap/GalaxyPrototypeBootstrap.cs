@@ -5,6 +5,7 @@ using ClustrGalaxy.Generation;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
+using ClustrGalaxy.Scanning;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -36,6 +37,7 @@ namespace ClustrGalaxy.Bootstrap
 
             CreateStarfield();
             CreateSystem();
+            CreateSurveySignalDestination();
             var dataLoader = CreateDataLoader();
             CreateProbe(dataLoader);
             var entityCount = Object.FindObjectsByType<GalaxyEntity>(FindObjectsInactive.Exclude).Length;
@@ -76,6 +78,16 @@ namespace ClustrGalaxy.Bootstrap
             discoveryVisibility.BindDataLoader(dataLoader);
             var targeting = probe.AddComponent<ProbeTargeting>();
             discoveryVisibility.BindTargeting(targeting);
+            var surveyEvents = new SurveyEventBus();
+            var scanner = probe.AddComponent<SignalScanner>();
+            scanner.Initialize(modeState, discoveryVisibility, targeting, surveyEvents, new[]
+            {
+                new ScanRoute("route:technology-signal-horizon", "subreddit:technology",
+                    "subreddit:signal-horizon", 8f),
+                new ScanRoute("route:technology-weak-archive", "subreddit:technology",
+                    "subreddit:weak-archive", 2f)
+            });
+            scanner.BindDataLoader(dataLoader);
             probe.AddComponent<CommentThreadController>().Initialize(targeting);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -103,7 +115,7 @@ namespace ClustrGalaxy.Bootstrap
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility);
+            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility, scanner);
         }
 
         private static void CreateSystem()
@@ -166,6 +178,14 @@ namespace ClustrGalaxy.Bootstrap
             CreateTravelers(root.transform, star, starMu, revisionId, catalogId, timeScale,
                 previousElements.SemiMajorAxis + GalaxyScale.TravelerOrbitOffset);
             GalaxySurveyMembership.InitializeDescendants(root.transform, "subreddit:technology");
+        }
+
+        private static void CreateSurveySignalDestination()
+        {
+            var root = new GameObject("Survey Signal Horizon");
+            var destination = CreateBody(root.transform, "subreddit:signal-horizon", "r/signal-horizon",
+                "subreddit star", 0, new Vector3(14500f, 2800f, -12000f), 16f, new Color(0.35f, 0.45f, 0.9f));
+            destination.gameObject.AddComponent<GalaxySurveyMembership>().Initialize("subreddit:signal-horizon");
         }
 
         private static void CreateComments(

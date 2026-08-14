@@ -10,7 +10,10 @@ namespace ClustrGalaxy.Gameplay
     [Serializable]
     public sealed class SurveyDiscoveryState
     {
-        public const int CurrentSchemaVersion = 1;
+        // Version 2 distinguishes a visible silhouette from identified factual
+        // metadata. Version 1 profiles must not silently expose or hide the
+        // wrong information, so they deliberately start a fresh namespace.
+        public const int CurrentSchemaVersion = 2;
 
         public int schema_version = CurrentSchemaVersion;
         public long revision_id;
@@ -18,6 +21,10 @@ namespace ClustrGalaxy.Gameplay
         public string snapshot_namespace = string.Empty;
         public string starting_system_id = string.Empty;
         public string[] known_entity_ids = Array.Empty<string>();
+        // A discovered entity may be rendered and targeted as a silhouette. Its
+        // factual name and metrics are deliberately withheld until it has been
+        // scanned (or was part of the selected starting system).
+        public string[] identified_entity_ids = Array.Empty<string>();
         public string[] known_route_ids = Array.Empty<string>();
         public string[] completed_scan_ids = Array.Empty<string>();
         public string[] constellation_member_ids = Array.Empty<string>();
@@ -36,6 +43,7 @@ namespace ClustrGalaxy.Gameplay
                 starting_system_id = startingSystemId ?? string.Empty
             };
             state.known_entity_ids = Normalize(new[] { state.starting_system_id });
+            state.identified_entity_ids = Normalize(new[] { state.starting_system_id });
             return state;
         }
 
@@ -49,6 +57,7 @@ namespace ClustrGalaxy.Gameplay
         public void NormalizeCollections()
         {
             known_entity_ids = Normalize(known_entity_ids);
+            identified_entity_ids = Normalize(identified_entity_ids);
             known_route_ids = Normalize(known_route_ids);
             completed_scan_ids = Normalize(completed_scan_ids);
             constellation_member_ids = Normalize(constellation_member_ids);

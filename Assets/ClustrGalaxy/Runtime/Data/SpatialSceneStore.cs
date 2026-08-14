@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ClustrGalaxy.Data
 {
@@ -67,6 +68,19 @@ namespace ClustrGalaxy.Data
 
         public IReadOnlyCollection<SpatialNode> Nodes => nodes.Values;
         public IReadOnlyCollection<SpatialLink> Links => links.Values;
+
+        /// <summary>Deterministic, bounded logical adjacency for interaction systems.</summary>
+        public SpatialLink[] GetAdjacentLinks(string stableId, int maximum = 64)
+        {
+            if (string.IsNullOrWhiteSpace(stableId) || maximum <= 0) return Array.Empty<SpatialLink>();
+            return links.Values
+                .Where(link => string.Equals(link.source, stableId, StringComparison.Ordinal) ||
+                               string.Equals(link.target, stableId, StringComparison.Ordinal))
+                .OrderByDescending(link => link.weight)
+                .ThenBy(LinkKey, StringComparer.Ordinal)
+                .Take(maximum)
+                .ToArray();
+        }
 
         private static string ScopeKey(string scope, string rootId) => scope + "\u001f" + rootId;
 

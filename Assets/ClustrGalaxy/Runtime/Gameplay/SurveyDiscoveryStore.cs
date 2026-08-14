@@ -63,6 +63,7 @@ namespace ClustrGalaxy.Gameplay
         }
 
         public bool IsEntityKnown(string stableId) => Contains(State.known_entity_ids, stableId);
+        public bool IsEntityIdentified(string stableId) => Contains(State.identified_entity_ids, stableId);
         public bool IsRouteKnown(string stableId) => Contains(State.known_route_ids, stableId);
         public bool IsScanComplete(string stableId) => Contains(State.completed_scan_ids, stableId);
         public bool IsConstellationMemberRecorded(string stableId) => Contains(State.constellation_member_ids, stableId);
@@ -70,6 +71,12 @@ namespace ClustrGalaxy.Gameplay
         public bool IsAchievementUnlocked(string stableId) => Contains(State.achievement_ids, stableId);
 
         public bool DiscoverEntity(string stableId) => Add(ref State.known_entity_ids, stableId);
+        public bool IdentifyEntity(string stableId)
+        {
+            var discovered = DiscoverEntity(stableId);
+            var identified = Add(ref State.identified_entity_ids, stableId);
+            return discovered || identified;
+        }
         public bool DiscoverRoute(string stableId) => Add(ref State.known_route_ids, stableId);
         public bool CompleteScan(string stableId) => Add(ref State.completed_scan_ids, stableId);
         public bool RecordConstellationMember(string stableId) => Add(ref State.constellation_member_ids, stableId);

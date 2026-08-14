@@ -3,6 +3,7 @@ using System.IO;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
+using ClustrGalaxy.Scanning;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 using UnityEngine;
@@ -73,10 +74,60 @@ namespace ClustrGalaxy.Tests
         }
 
         [UnityTest]
-        [Ignore("Enabled by the implementing task")]
         public IEnumerator Scan_RevealsConnectedRouteAndDestination()
         {
-            yield break;
+            var root = new GameObject("signal scanner test root");
+            var storageRoot = Path.Combine(Path.GetTempPath(), "clustr-scan-playmode-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var modes = new GalaxyModeState();
+                var store = SurveyDiscoveryStore.Open(storageRoot, "test-pilot", SurveySnapshotKey.Pinned(9, 3),
+                    "subreddit:technology");
+                var visibility = root.AddComponent<GalaxySurveyVisibilityController>();
+                visibility.Initialize(modes, store);
+                var source = CreateSurveyEntity(root.transform, "subreddit:technology", "subreddit star", "subreddit:technology");
+                var remote = CreateSurveyEntity(root.transform, "subreddit:signal-horizon", "subreddit star", "subreddit:signal-horizon");
+                var routeRoot = new GameObject("route");
+                routeRoot.transform.SetParent(root.transform, false);
+                var route = routeRoot.AddComponent<GalaxySurveyRoute>();
+                route.Initialize("route:technology-signal-horizon", source.StableId, remote.StableId);
+                var targeting = root.AddComponent<ProbeTargeting>();
+                visibility.BindTargeting(targeting);
+                modes.SetWorldMode(GalaxyWorldMode.Survey);
+                Assert.That(visibility.StartAt(source.StableId), Is.True);
+                yield return null;
+                Assert.That(GalaxyEntity.TryGet(remote.StableId, out _), Is.False);
+
+                var events = new SurveyEventBus();
+                var eventCount = 0;
+                events.Published += _ => eventCount++;
+                var scanner = root.AddComponent<SignalScanner>();
+                scanner.Initialize(modes, visibility, targeting, events, new[]
+                {
+                    new ScanRoute(route.StableId, source.StableId, remote.StableId, 8f)
+                });
+                targeting.SelectTarget(source);
+                scanner.BeginScan();
+                scanner.Tick(SignalScanner.RequiredHoldSeconds);
+                yield return null;
+
+                Assert.That(store.IsEntityKnown(remote.StableId), Is.True);
+                Assert.That(store.IsEntityIdentified(remote.StableId), Is.False);
+                Assert.That(GalaxyEntity.TryGet(remote.StableId, out _), Is.True);
+                Assert.That(visibility.CanLabel(remote), Is.False);
+                Assert.That(routeRoot.activeSelf, Is.True);
+                Assert.That(eventCount, Is.EqualTo(1));
+
+                scanner.BeginScan();
+                scanner.Tick(SignalScanner.RequiredHoldSeconds);
+                Assert.That(scanner.LastResult.AlreadyScanned, Is.True);
+                Assert.That(eventCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                Object.Destroy(root);
+                if (Directory.Exists(storageRoot)) Directory.Delete(storageRoot, recursive: true);
+            }
         }
 
         [UnityTest]

@@ -2,6 +2,7 @@ using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
+using ClustrGalaxy.Scanning;
 using ClustrGalaxy.World;
 using UnityEngine;
 
@@ -19,6 +20,7 @@ namespace ClustrGalaxy.UI
         private GalaxyNavigationController navigation = null!;
         private GalaxyModeState modeState = null!;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private SignalScanner scanner = null!;
 
         public void Initialize(
             ObserverProbeController flightController,
@@ -26,7 +28,8 @@ namespace ClustrGalaxy.UI
             SpatialSceneLoader spatialSceneLoader,
             GalaxyNavigationController navigationController,
             GalaxyModeState galaxyModeState,
-            GalaxySurveyVisibilityController visibilityController)
+            GalaxySurveyVisibilityController visibilityController,
+            SignalScanner signalScanner = null)
         {
             flight = flightController;
             targeting = targetController;
@@ -34,6 +37,7 @@ namespace ClustrGalaxy.UI
             navigation = navigationController;
             modeState = galaxyModeState;
             discoveryVisibility = visibilityController;
+            scanner = signalScanner;
             performance = GetComponent<GalaxyPerformanceMonitor>();
         }
 
@@ -74,12 +78,24 @@ namespace ClustrGalaxy.UI
             GUILayout.Label($"PILOT  {FormatFlightMode(modeState?.FlightMode ?? FlightControlMode.PilotAssist)}", bodyStyle);
             GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
             GUILayout.Label($"VIEW  {navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT"}", bodyStyle);
+            if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey && scanner != null)
+            {
+                GUILayout.Label($"SIGNAL  {FormatSignalState(scanner.State)}  CHARGE {scanner.Charge01 * 100f:000}%  STR {scanner.SignalStrength01 * 100f:000}%", bodyStyle);
+                if (scanner.LastResult.AlreadyScanned)
+                {
+                    GUILayout.Label("ALREADY SURVEYED", titleStyle);
+                }
+                else if (scanner.LastResult.HasRevelations)
+                {
+                    GUILayout.Label($"REVEALED  {scanner.LastResult.RevealedEntityIds.Count} signal(s)  •  {scanner.LastResult.RevealedRouteIds.Count} route(s)", bodyStyle);
+                }
+            }
             if (performance != null)
             {
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
             }
             GUILayout.Space(5);
-            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nG or Y/Triangle: gravity flight", bodyStyle);
+            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nG or Y/Triangle: gravity flight", bodyStyle);
             GUILayout.Space(5);
             if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Explore)
             {
@@ -114,6 +130,11 @@ namespace ClustrGalaxy.UI
                 {
                     GUILayout.Label($"TARGET  {targeting.Target.DisplayName}", titleStyle);
                     GUILayout.Label($"{targeting.Target.EntityType}  •  value {targeting.Target.Value}\n{targeting.Target.StableId}", bodyStyle);
+                }
+                else
+                {
+                    GUILayout.Label("TARGET  UNIDENTIFIED SIGNAL", titleStyle);
+                    GUILayout.Label("Scan to identify this destination.", bodyStyle);
                 }
                 var thread = targeting.Target.GetComponent<CommentThreadNode>();
                 if (thread != null)
@@ -162,5 +183,14 @@ namespace ClustrGalaxy.UI
                 _ => "ASSIST"
             };
         }
+
+        private static string FormatSignalState(SignalScanState state) => state switch
+        {
+            SignalScanState.Charging => "CHARGING",
+            SignalScanState.OutOfRange => "OUT OF RANGE",
+            SignalScanState.Complete => "COMPLETE",
+            SignalScanState.NoSignal => "NO SIGNAL",
+            _ => "READY"
+        };
     }
 }

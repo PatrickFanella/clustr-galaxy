@@ -20,8 +20,8 @@ namespace ClustrGalaxy.World
         public static bool CanTarget(GalaxyWorldMode mode, bool known) =>
             mode == GalaxyWorldMode.Explore || known;
 
-        public static bool CanLabel(GalaxyWorldMode mode, bool known) =>
-            mode == GalaxyWorldMode.Explore || known;
+        public static bool CanLabel(GalaxyWorldMode mode, bool identified) =>
+            mode == GalaxyWorldMode.Explore || identified;
 
         public static bool CanFastTravel(GalaxyWorldMode mode, bool known) =>
             mode == GalaxyWorldMode.Explore || known;
@@ -184,7 +184,7 @@ namespace ClustrGalaxy.World
                 var entity = entities[index];
                 if (BelongsToSystem(entity, systemStableId) && CanSeedStartingKnowledge(entity))
                 {
-                    discoveryStore.DiscoverEntity(entity.StableId);
+                    discoveryStore.IdentifyEntity(entity.StableId);
                 }
             }
             discoveryStore.Save();
@@ -194,11 +194,16 @@ namespace ClustrGalaxy.World
 
         public bool CanRender(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanRender);
         public bool CanTarget(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanTarget);
-        public bool CanLabel(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanLabel);
+        public bool CanLabel(GalaxyEntity entity) => entity != null && GalaxyDiscoveryVisibility.CanLabel(
+            modes?.WorldMode ?? GalaxyWorldMode.Explore,
+            discoveryStore != null && discoveryStore.IsEntityIdentified(entity.StableId));
         public bool CanFastTravel(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanFastTravel);
 
         public bool IsKnown(GalaxyEntity entity) => entity != null && discoveryStore != null &&
             discoveryStore.IsEntityKnown(entity.StableId);
+
+        public bool IsIdentified(GalaxyEntity entity) => entity != null && discoveryStore != null &&
+            discoveryStore.IsEntityIdentified(entity.StableId);
 
         public GalaxyEntity[] LoadedStartingSystems()
         {

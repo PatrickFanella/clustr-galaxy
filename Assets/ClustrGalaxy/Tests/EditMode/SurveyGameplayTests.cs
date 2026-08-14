@@ -1,9 +1,11 @@
 using System;
 using System.IO;
+using System.Linq;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
+using ClustrGalaxy.Scanning;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 
@@ -331,6 +333,134 @@ namespace ClustrGalaxy.Tests
             Assert.That(restored.IsAchievementUnlocked("achievement:surveyor"), Is.True);
             Assert.That(restored.State.scanner_level, Is.EqualTo(2));
             Assert.That(restored.State.last_saved_utc, Is.Not.Empty);
+        }
+
+        [Test]
+        public void Scan_RevealsStrongestUnknownRouteBeforeWeakerRoutes()
+        {
+            var routes = new[]
+            {
+                new ScanRoute("weak", "known", "far", 2f),
+                new ScanRoute("strong", "known", "near", 8f)
+            };
+
+            var result = ScanRules.Reveal("known", routes, scannerLevel: 1);
+
+            Assert.That(result.RevealedRouteIds, Is.EqualTo(new[] { "strong" }));
+            Assert.That(result.RevealedEntityIds, Is.EqualTo(new[] { "near" }));
+        }
+
+        [Test]
+        public void Scan_RouteDestinationPersistsAsDiscoveredButUnidentified()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var store = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+            store.DiscoverEntity("subreddit:signal-horizon");
+            store.Save();
+
+            var restored = fixture.Open(SurveySnapshotKey.Pinned(9, 3), SurveyFixture.StartingSystemId);
+
+            Assert.That(restored.IsEntityKnown("subreddit:signal-horizon"), Is.True);
+            Assert.That(restored.IsEntityIdentified("subreddit:signal-horizon"), Is.False);
+            Assert.That(GalaxyDiscoveryVisibility.CanRender(GalaxyWorldMode.Survey,
+                restored.IsEntityKnown("subreddit:signal-horizon")), Is.True);
+            Assert.That(GalaxyDiscoveryVisibility.CanLabel(GalaxyWorldMode.Survey,
+                restored.IsEntityIdentified("subreddit:signal-horizon")), Is.False);
+        }
+
+        [Test]
+        public void ScanRules_OrdersEqualWeightsByOrdinalRouteIdAndUsesScannerLevels()
+        {
+            var routes = new[]
+            {
+                new ScanRoute("zeta", "known", "z", 8f),
+                new ScanRoute("alpha", "known", "a", 8f),
+                new ScanRoute("beta", "known", "b", 7f),
+                new ScanRoute("gamma", "known", "c", 6f)
+            };
+            var result = ScanRules.Reveal("known", routes, scannerLevel: 2);
+
+            Assert.That(result.RevealedRouteIds, Is.EqualTo(new[] { "alpha", "zeta" }));
+            Assert.That(ScanRules.Reveal("known", routes, scannerLevel: 3).RevealedRouteIds.Count, Is.EqualTo(4));
+        }
+
+        [Test]
+        public void ScanRules_PreservesWeightPriorityWhenLexicalRouteIdsConflict()
+        {
+            var result = ScanRules.Reveal("known", new[]
+            {
+                new ScanRoute("a-low", "known", "far", 2f),
+                new ScanRoute("z-high", "known", "near", 9f)
+            }, scannerLevel: 2);
+
+            Assert.That(result.RevealedRouteIds, Is.EqualTo(new[] { "z-high", "a-low" }));
+            Assert.That(result.RevealedEntityIds, Is.EqualTo(new[] { "far", "near" }),
+                "entity IDs are deliberately returned in ordinal stable-ID order");
+        }
+
+        [Test]
+        public void ScanRoutes_BuildPinnedCatalogUsesRendererIdsAndUndirectedReverseTraversal()
+        {
+            var manifest = new SpatialManifest
+            {
+                revision_id = 9,
+                spatial_catalog_id = 3,
+                dimensions = 3,
+                scene_contract = SpatialSceneContract.Version,
+                bounds = new SpatialBounds { min_x = 0f, max_x = 1f, min_y = 0f, max_y = 1f, min_z = 0f, max_z = 1f }
+            };
+            var store = new SpatialSceneStore(manifest);
+            store.Merge(new SpatialScene
+            {
+                revision_id = 9,
+                spatial_catalog_id = 3,
+                nodes = new[]
+                {
+                    new SpatialNode { id = "subreddit:a" }, new SpatialNode { id = "subreddit:b" },
+                    new SpatialNode { id = "subreddit:c" }
+                },
+                links = new[]
+                {
+                    new SpatialLink { source = "subreddit:a", target = "subreddit:b", type = "route", directed = true, weight = 9 },
+                    new SpatialLink { source = "subreddit:b", target = "subreddit:c", type = "activity", directed = false, weight = 4 }
+                }
+            });
+
+            var routes = SignalScanner.BuildPinnedRoutes(store);
+
+            Assert.That(routes, Has.Some.Matches<ScanRoute>(route => route.Id == "subreddit:a:subreddit:b:route" &&
+                route.SourceId == "subreddit:a" && route.TargetId == "subreddit:b"));
+            Assert.That(routes, Has.Some.Matches<ScanRoute>(route => route.Id == "subreddit:b:subreddit:c:activity" &&
+                route.SourceId == "subreddit:c" && route.TargetId == "subreddit:b"));
+            Assert.That(routes.Count(route => route.Id == "subreddit:b:subreddit:c:activity"), Is.EqualTo(2));
+            Assert.That(ScanRules.Reveal("subreddit:a", routes, 1).RevealedRouteIds,
+                Is.EqualTo(new[] { "subreddit:a:subreddit:b:route" }));
+        }
+
+        [Test]
+        public void SignalStrength_ClampsAtTargetAndScanRange()
+        {
+            Assert.That(SignalScanner.SignalStrengthForDistance(0f, 100f), Is.EqualTo(1f));
+            Assert.That(SignalScanner.SignalStrengthForDistance(50f, 100f), Is.EqualTo(0.5f));
+            Assert.That(SignalScanner.SignalStrengthForDistance(150f, 100f), Is.Zero);
+            Assert.That(SignalScanner.SignalStrengthForDistance(1f, 0f), Is.Zero);
+        }
+
+        [Test]
+        public void Discovery_SchemaOneProfileFailsClosedAsFreshSchemaTwoState()
+        {
+            using var fixture = SurveyStoreFixture.Create();
+            var key = SurveySnapshotKey.Pinned(9, 3);
+            var initial = fixture.Open(key, SurveyFixture.StartingSystemId);
+            Directory.CreateDirectory(Path.GetDirectoryName(initial.StoragePath));
+            File.WriteAllText(initial.StoragePath,
+                "{\"schema_version\":1,\"revision_id\":9,\"spatial_catalog_id\":3,\"snapshot_namespace\":\"pinned\",\"starting_system_id\":\"subreddit:technology\",\"known_entity_ids\":[\"subreddit:legacy\"]}");
+
+            var recovered = fixture.Open(key, SurveyFixture.StartingSystemId);
+
+            Assert.That(recovered.State.schema_version, Is.EqualTo(SurveyDiscoveryState.CurrentSchemaVersion));
+            Assert.That(recovered.IsEntityKnown("subreddit:legacy"), Is.False);
+            Assert.That(recovered.IsEntityIdentified(SurveyFixture.StartingSystemId), Is.True);
         }
 
         [TestCase(GalaxyWorldMode.Explore, false, true)]
