@@ -2,6 +2,7 @@ using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
+using ClustrGalaxy.World;
 using UnityEngine;
 
 namespace ClustrGalaxy.UI
@@ -17,19 +18,22 @@ namespace ClustrGalaxy.UI
         private GalaxyPerformanceMonitor performance = null!;
         private GalaxyNavigationController navigation = null!;
         private GalaxyModeState modeState = null!;
+        private GalaxySurveyVisibilityController discoveryVisibility = null!;
 
         public void Initialize(
             ObserverProbeController flightController,
             ProbeTargeting targetController,
             SpatialSceneLoader spatialSceneLoader,
             GalaxyNavigationController navigationController,
-            GalaxyModeState galaxyModeState)
+            GalaxyModeState galaxyModeState,
+            GalaxySurveyVisibilityController visibilityController)
         {
             flight = flightController;
             targeting = targetController;
             dataLoader = spatialSceneLoader;
             navigation = navigationController;
             modeState = galaxyModeState;
+            discoveryVisibility = visibilityController;
             performance = GetComponent<GalaxyPerformanceMonitor>();
         }
 
@@ -60,7 +64,7 @@ namespace ClustrGalaxy.UI
         private void OnGUI()
         {
             EnsureStyles();
-            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 272 : 352);
+            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 330 : 410);
             GUI.DrawTexture(panel, panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
@@ -75,12 +79,42 @@ namespace ClustrGalaxy.UI
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
             }
             GUILayout.Space(5);
-            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  M/Select: galaxy map  •  G or Y/Triangle: gravity flight", bodyStyle);
+            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nG or Y/Triangle: gravity flight", bodyStyle);
+            GUILayout.Space(5);
+            if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Explore)
+            {
+                if (GUILayout.Button("ENTER SURVEY // CHOOSE STARTING SYSTEM"))
+                {
+                    discoveryVisibility?.EnterSurvey();
+                }
+            }
+            else if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey && discoveryVisibility != null &&
+                     discoveryVisibility.RequiresStartingSystemChoice)
+            {
+                GUILayout.Label("SURVEY START // choose one loaded subreddit", titleStyle);
+                foreach (var system in discoveryVisibility.LoadedStartingSystems())
+                {
+                    if (GUILayout.Button(system.DisplayName))
+                    {
+                        discoveryVisibility.StartAt(system.StableId);
+                    }
+                }
+            }
+            else if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey)
+            {
+                if (GUILayout.Button("RETURN TO EXPLORE"))
+                {
+                    discoveryVisibility?.ReturnToExplore();
+                }
+            }
             if (targeting?.Target != null)
             {
                 GUILayout.Space(8);
-                GUILayout.Label($"TARGET  {targeting.Target.DisplayName}", titleStyle);
-                GUILayout.Label($"{targeting.Target.EntityType}  •  value {targeting.Target.Value}\n{targeting.Target.StableId}", bodyStyle);
+                if (discoveryVisibility == null || discoveryVisibility.CanLabel(targeting.Target))
+                {
+                    GUILayout.Label($"TARGET  {targeting.Target.DisplayName}", titleStyle);
+                    GUILayout.Label($"{targeting.Target.EntityType}  •  value {targeting.Target.Value}\n{targeting.Target.StableId}", bodyStyle);
+                }
                 var thread = targeting.Target.GetComponent<CommentThreadNode>();
                 if (thread != null)
                 {

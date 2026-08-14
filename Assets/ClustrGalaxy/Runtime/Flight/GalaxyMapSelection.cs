@@ -1,23 +1,28 @@
 using System;
 using System.Collections.Generic;
+using ClustrGalaxy.Gameplay;
+using ClustrGalaxy.World;
 using UnityEngine;
 
 namespace ClustrGalaxy.Flight
 {
     public readonly struct GalaxyMapCandidate
     {
-        public GalaxyMapCandidate(string stableId, string entityType, Vector2 viewportPosition, bool inFront)
+        public GalaxyMapCandidate(string stableId, string entityType, Vector2 viewportPosition, bool inFront,
+            bool known = true)
         {
             StableId = stableId;
             EntityType = entityType;
             ViewportPosition = viewportPosition;
             InFront = inFront;
+            Known = known;
         }
 
         public string StableId { get; }
         public string EntityType { get; }
         public Vector2 ViewportPosition { get; }
         public bool InFront { get; }
+        public bool Known { get; }
     }
 
     public static class GalaxyMapSelection
@@ -31,11 +36,16 @@ namespace ClustrGalaxy.Flight
             _ => false
         };
 
+        public static bool IsSelectable(GalaxyNavigationLevel level, string entityType,
+            GalaxyWorldMode worldMode, bool known) =>
+            IsSelectable(level, entityType) && GalaxyDiscoveryVisibility.CanTarget(worldMode, known);
+
         public static string NearestId(
             GalaxyNavigationLevel level,
             Vector2 cursor,
             IReadOnlyList<GalaxyMapCandidate> candidates,
-            float maximumRadius)
+            float maximumRadius,
+            GalaxyWorldMode worldMode = GalaxyWorldMode.Explore)
         {
             if (maximumRadius <= 0f)
             {
@@ -47,7 +57,7 @@ namespace ClustrGalaxy.Flight
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                if (!candidate.InFront || !IsSelectable(level, candidate.EntityType))
+                if (!candidate.InFront || !IsSelectable(level, candidate.EntityType, worldMode, candidate.Known))
                 {
                     continue;
                 }

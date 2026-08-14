@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ClustrGalaxy.Generation;
+using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.World;
 using UnityEngine;
@@ -19,10 +20,12 @@ namespace ClustrGalaxy.Flight
         private InputAction back = null!;
         private InputAction mapCursor = null!;
         private InputAction mapSelect = null!;
+        private InputAction enterSurvey = null!;
         private float blend;
         private Vector3 storedVelocity;
         private Vector3 storedAngularVelocity;
         private readonly GalaxyNavigationHistory history = new();
+        private GalaxySurveyVisibilityController discoveryVisibility = null!;
 
         public bool IsMapOpen { get; private set; }
         public GalaxyNavigationLevel Level => history.Level;
@@ -35,6 +38,11 @@ namespace ClustrGalaxy.Flight
         {
             targeting = probeTargeting;
             viewCamera = camera;
+        }
+
+        public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
+        {
+            discoveryVisibility = visibilityController;
         }
 
         private void Awake()
@@ -57,6 +65,9 @@ namespace ClustrGalaxy.Flight
             mapSelect = new InputAction("Map Select", InputActionType.Button, "<Keyboard>/enter");
             mapSelect.AddBinding("<Gamepad>/buttonSouth");
             mapSelect.performed += _ => SelectAtMapCursor();
+            enterSurvey = new InputAction("Enter Survey", InputActionType.Button, "<Keyboard>/v");
+            enterSurvey.AddBinding("<Gamepad>/dpad/up");
+            enterSurvey.performed += _ => EnterSurvey();
         }
 
         private void OnEnable()
@@ -65,6 +76,7 @@ namespace ClustrGalaxy.Flight
             back?.Enable();
             mapCursor?.Enable();
             mapSelect?.Enable();
+            enterSurvey?.Enable();
         }
 
         private void OnDisable()
@@ -73,6 +85,7 @@ namespace ClustrGalaxy.Flight
             back?.Disable();
             mapCursor?.Disable();
             mapSelect?.Disable();
+            enterSurvey?.Disable();
         }
 
         public void SetMapOpen(bool open)
@@ -153,6 +166,12 @@ namespace ClustrGalaxy.Flight
                 return;
             }
 
+            if (discoveryVisibility != null && discoveryVisibility.RequiresStartingSystemChoice)
+            {
+                ConfirmSurveyStartingSystem();
+                return;
+            }
+
             var candidates = new List<GalaxyMapCandidate>();
             foreach (var entity in GalaxyEntity.ActiveEntities)
             {
@@ -163,14 +182,46 @@ namespace ClustrGalaxy.Flight
                 }
                 var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
                 candidates.Add(new GalaxyMapCandidate(entity.StableId, metadata.Node.type,
-                    new Vector2(viewport.x, viewport.y), viewport.z > 0f));
+                    new Vector2(viewport.x, viewport.y), viewport.z > 0f,
+                    discoveryVisibility == null || discoveryVisibility.IsKnown(entity)));
             }
 
-            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition, candidates, 0.12f);
+            var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
+            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition, candidates, 0.12f, worldMode);
             if (GalaxyEntity.TryGet(selectedId, out var selected))
             {
                 targeting.SelectTarget(selected);
             }
+        }
+
+        public bool EnterSurvey()
+        {
+            if (discoveryVisibility == null)
+            {
+                return false;
+            }
+            SetMapOpen(true);
+            discoveryVisibility.EnterSurvey();
+            return true;
+        }
+
+        public bool ConfirmSurveyStartingSystem()
+        {
+            if (discoveryVisibility == null || viewCamera == null || !discoveryVisibility.RequiresStartingSystemChoice)
+            {
+                return false;
+            }
+
+            var candidates = new List<GalaxyMapCandidate>();
+            foreach (var system in discoveryVisibility.LoadedStartingSystems())
+            {
+                var viewport = viewCamera.WorldToViewportPoint(system.transform.position);
+                candidates.Add(new GalaxyMapCandidate(system.StableId, "subreddit", new Vector2(viewport.x, viewport.y),
+                    viewport.z > 0f));
+            }
+            var selectedId = GalaxyMapSelection.NearestId(GalaxyNavigationLevel.Region, MapCursorPosition,
+                candidates, 0.12f, GalaxyWorldMode.Explore);
+            return !string.IsNullOrWhiteSpace(selectedId) && discoveryVisibility.StartAt(selectedId);
         }
 
         private void LateUpdate()
@@ -209,6 +260,7 @@ namespace ClustrGalaxy.Flight
             back?.Dispose();
             mapCursor?.Dispose();
             mapSelect?.Dispose();
+            enterSurvey?.Dispose();
         }
     }
 }

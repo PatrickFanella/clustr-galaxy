@@ -26,6 +26,8 @@ namespace ClustrGalaxy.World
         private GalaxyNavigationController navigation = null!;
         private GalacticOverviewRenderer overview = null!;
         private GalaxyEntityPool entityPool = null!;
+        private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private string activeSystemId = string.Empty;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
         {
@@ -40,6 +42,11 @@ namespace ClustrGalaxy.World
             overview = overviewRenderer;
             navigation.ViewChanged += NavigationChanged;
             ApplyVisibility(navigation.Level);
+        }
+
+        public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
+        {
+            discoveryVisibility = visibilityController;
         }
 
         private void Materialize(SpatialScene scene)
@@ -60,6 +67,7 @@ namespace ClustrGalaxy.World
                     break;
             }
             if (navigation != null) ApplyVisibility(navigation.Level);
+            discoveryVisibility?.ApplyVisibility();
         }
 
         private void NavigationChanged(GalaxyNavigationLevel level, string _) => ApplyVisibility(level);
@@ -120,6 +128,8 @@ namespace ClustrGalaxy.World
                 var strength = GalacticRouteStyle.NormalizeStrength(link.weight, maximumWeight);
                 var route = new GameObject($"Historical route {link.source} -> {link.target}");
                 route.transform.SetParent(regionRoot, false);
+                route.AddComponent<GalaxySurveyRoute>().Initialize($"{link.source}:{link.target}:{link.type}",
+                    link.source, link.target);
                 var line = route.AddComponent<LineRenderer>();
                 line.useWorldSpace = false;
                 line.positionCount = 2;
@@ -198,6 +208,8 @@ namespace ClustrGalaxy.World
                     GalaxyScale.FirstLiveShipAxis + (index % 24) * GalaxyScale.LiveShipLaneGap);
                 GetOrAdd<KeplerOrbit>(ship).Initialize(star, elements, starMu, GalaxyScale.ShipOrbitTimeScale);
             }
+            activeSystemId = scene.root_id;
+            GalaxySurveyMembership.InitializeDescendants(systemRoot, activeSystemId);
         }
 
         private void MaterializeDiscussion(SpatialScene scene)
@@ -256,6 +268,7 @@ namespace ClustrGalaxy.World
                 GetOrAdd<KeplerOrbit>(particle).Initialize(planet.transform, ringElements, 300d, GalaxyScale.MoonOrbitTimeScale);
                 ringIndex++;
             }
+            GalaxySurveyMembership.InitializeDescendants(discussionRoot, activeSystemId);
         }
 
         private void MaterializeThread(SpatialScene scene)
@@ -287,6 +300,7 @@ namespace ClustrGalaxy.World
                 CreateSphere(threadRoot, node, $"reply depth {depth}", position, 0.5f, commentMaterial);
                 index++;
             }
+            GalaxySurveyMembership.InitializeDescendants(threadRoot, activeSystemId);
         }
 
         private static SpatialNode FindNode(SpatialScene scene, string id)

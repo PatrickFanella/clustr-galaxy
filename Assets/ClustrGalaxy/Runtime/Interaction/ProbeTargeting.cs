@@ -11,6 +11,7 @@ namespace ClustrGalaxy.Interaction
         [SerializeField] private float maximumDistance = 30000f;
 
         private InputAction targetAction = null!;
+        private GalaxySurveyVisibilityController discoveryVisibility = null!;
         public GalaxyEntity Target { get; private set; }
         public event Action<GalaxyEntity> TargetChanged = delegate { };
 
@@ -24,6 +25,11 @@ namespace ClustrGalaxy.Interaction
         private void OnEnable() => targetAction?.Enable();
         private void OnDisable() => targetAction?.Disable();
 
+        public void Initialize(GalaxySurveyVisibilityController visibilityController)
+        {
+            discoveryVisibility = visibilityController;
+        }
+
         public void AcquireTarget()
         {
             var directHit = DirectReticleTarget();
@@ -32,6 +38,10 @@ namespace ClustrGalaxy.Interaction
             var bestScore = float.PositiveInfinity;
             foreach (var entity in GalaxyEntity.ActiveEntities)
             {
+                if (discoveryVisibility != null && !discoveryVisibility.CanTarget(entity))
+                {
+                    continue;
+                }
                 var offset = entity.transform.position - observer.position;
                 var distance = offset.magnitude;
                 if (distance <= 0.01f || distance > maximumDistance)
@@ -59,6 +69,10 @@ namespace ClustrGalaxy.Interaction
 
         public void SelectTarget(GalaxyEntity target)
         {
+            if (target != null && discoveryVisibility != null && !discoveryVisibility.CanTarget(target))
+            {
+                target = null;
+            }
             Target = target;
             TargetChanged(Target);
         }
@@ -77,7 +91,10 @@ namespace ClustrGalaxy.Interaction
                 return null;
             }
 
-            return hit.collider.GetComponentInParent<GalaxyEntity>();
+            var entity = hit.collider.GetComponentInParent<GalaxyEntity>();
+            return entity != null && (discoveryVisibility == null || discoveryVisibility.CanTarget(entity))
+                ? entity
+                : null;
         }
 
         private void OnDestroy()

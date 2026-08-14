@@ -333,6 +333,41 @@ namespace ClustrGalaxy.Tests
             Assert.That(restored.State.last_saved_utc, Is.Not.Empty);
         }
 
+        [TestCase(GalaxyWorldMode.Explore, false, true)]
+        [TestCase(GalaxyWorldMode.Survey, false, false)]
+        [TestCase(GalaxyWorldMode.Survey, true, true)]
+        public void DiscoveryVisibility_UsesWorldModeAndKnownState(
+            GalaxyWorldMode mode, bool known, bool expected)
+        {
+            Assert.That(GalaxyDiscoveryVisibility.CanRender(mode, known), Is.EqualTo(expected));
+            Assert.That(GalaxyDiscoveryVisibility.CanTarget(mode, known), Is.EqualTo(expected));
+            Assert.That(GalaxyDiscoveryVisibility.CanLabel(mode, known), Is.EqualTo(expected));
+            Assert.That(GalaxyDiscoveryVisibility.CanFastTravel(mode, known), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void SurveyStart_UsesValidatedPinnedKeyOnlyBeforeCommit()
+        {
+            var demo = SurveySnapshotKey.Demo;
+            var pinned = SurveySnapshotKey.Pinned(18, 4);
+
+            Assert.That(GalaxySurveyVisibilityController.SelectPendingSnapshotKey(demo, false, pinned), Is.EqualTo(pinned));
+            Assert.That(GalaxySurveyVisibilityController.SelectPendingSnapshotKey(demo, true, pinned), Is.EqualTo(demo));
+            Assert.That(GalaxySurveyVisibilityController.SelectPendingSnapshotKey(demo, false, null), Is.EqualTo(demo));
+        }
+
+        [TestCase("subreddit star", false, true)]
+        [TestCase("post planet", false, true)]
+        [TestCase("user ship", false, false)]
+        [TestCase("discussion satellite", false, false)]
+        [TestCase("comment ring particle", false, false)]
+        [TestCase("reply depth 1", false, false)]
+        [TestCase("user ship", true, true)]
+        public void SurveyStart_SeedsOnlyExplicitKnowledgeKinds(string entityType, bool anchor, bool expected)
+        {
+            Assert.That(SurveyStartingKnowledge.CanSeed(entityType, anchor), Is.EqualTo(expected));
+        }
+
         private sealed class SurveyStoreFixture : IDisposable
         {
             private readonly string root;

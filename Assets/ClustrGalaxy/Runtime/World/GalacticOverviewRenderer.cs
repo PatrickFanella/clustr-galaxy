@@ -15,6 +15,7 @@ namespace ClustrGalaxy.World
         private Material landmarkMaterial = null!;
         private Material routeMaterial = null!;
         private GalaxyNavigationController navigation = null!;
+        private GalaxySurveyVisibilityController discoveryVisibility = null!;
 
         public void Initialize(SpatialSceneLoader spatialSceneLoader)
         {
@@ -26,6 +27,11 @@ namespace ClustrGalaxy.World
         {
             navigation = controller;
             navigation.ViewChanged += NavigationChanged;
+        }
+
+        public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
+        {
+            discoveryVisibility = visibilityController;
         }
 
         private void NavigationChanged(GalaxyNavigationLevel level, string _) =>
@@ -92,12 +98,13 @@ namespace ClustrGalaxy.World
                     continue;
                 }
 
-                CreateRoute(source, target,
+                CreateRoute(link.source, link.target, link.type, source, target,
                     GalacticRouteStyle.NormalizeStrength(link.weight, maximumWeight));
                 renderedRoutes++;
             }
 
             Debug.Log($"[ClustrGalaxy.Renderer] Rendered {positions.Count} galactic regions and {renderedRoutes} resident routes from the public overview.");
+            discoveryVisibility?.ApplyVisibility();
         }
 
         private void CreateLandmark(SpatialNode node, Vector3 position)
@@ -125,10 +132,12 @@ namespace ClustrGalaxy.World
             meshRenderer.SetPropertyBlock(properties);
         }
 
-        private void CreateRoute(Vector3 source, Vector3 target, float strength)
+        private void CreateRoute(string sourceId, string targetId, string routeType, Vector3 source, Vector3 target,
+            float strength)
         {
             var route = new GameObject("Community activity route");
             route.transform.SetParent(layerRoot, false);
+            route.AddComponent<GalaxySurveyRoute>().Initialize($"{sourceId}:{targetId}:{routeType}", sourceId, targetId);
             var line = route.AddComponent<LineRenderer>();
             line.useWorldSpace = false;
             line.positionCount = 2;

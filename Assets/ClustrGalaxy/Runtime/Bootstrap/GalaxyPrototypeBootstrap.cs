@@ -71,7 +71,11 @@ namespace ClustrGalaxy.Bootstrap
             var modeState = new GalaxyModeState();
             flight.Initialize(modeState);
             probe.AddComponent<FloatingOrigin>();
+            var discoveryVisibility = probe.AddComponent<GalaxySurveyVisibilityController>();
+            discoveryVisibility.Initialize(modeState, SpatialSceneLoader.DemoSurveySnapshotKey);
+            discoveryVisibility.BindDataLoader(dataLoader);
             var targeting = probe.AddComponent<ProbeTargeting>();
+            discoveryVisibility.BindTargeting(targeting);
             probe.AddComponent<CommentThreadController>().Initialize(targeting);
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -88,15 +92,18 @@ namespace ClustrGalaxy.Bootstrap
             cameraObject.AddComponent<AudioListener>();
             var navigation = probe.AddComponent<GalaxyNavigationController>();
             navigation.Initialize(targeting, camera);
+            navigation.BindDiscoveryVisibility(discoveryVisibility);
             var materializer = dataLoader.GetComponent<LiveGalaxyMaterializer>();
             var overview = dataLoader.GetComponent<GalacticOverviewRenderer>();
             overview.BindNavigation(navigation);
+            overview.BindDiscoveryVisibility(discoveryVisibility);
             materializer.BindNavigation(navigation, overview);
+            materializer.BindDiscoveryVisibility(discoveryVisibility);
             probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader, navigation, modeState);
+            hud.Initialize(flight, targeting, dataLoader, navigation, modeState, discoveryVisibility);
         }
 
         private static void CreateSystem()
@@ -158,6 +165,7 @@ namespace ClustrGalaxy.Bootstrap
 
             CreateTravelers(root.transform, star, starMu, revisionId, catalogId, timeScale,
                 previousElements.SemiMajorAxis + GalaxyScale.TravelerOrbitOffset);
+            GalaxySurveyMembership.InitializeDescendants(root.transform, "subreddit:technology");
         }
 
         private static void CreateComments(
