@@ -1,5 +1,6 @@
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Flight;
+using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 
@@ -65,6 +66,105 @@ namespace ClustrGalaxy.Tests
 
     public sealed class SurveyGameplayTests
     {
+        [Test]
+        public void Modes_AreOrthogonalAndFreelyChangeable()
+        {
+            var modes = new GalaxyModeState();
+
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            modes.SetFlightMode(FlightControlMode.PilotMastery);
+
+            Assert.That(modes.WorldMode, Is.EqualTo(GalaxyWorldMode.Survey));
+            Assert.That(modes.FlightMode, Is.EqualTo(FlightControlMode.PilotMastery));
+
+            modes.SetFlightMode(FlightControlMode.Autopilot);
+
+            Assert.That(modes.WorldMode, Is.EqualTo(GalaxyWorldMode.Survey));
+        }
+
+        [Test]
+        public void Modes_DuplicateAssignmentsDoNotRaiseEvents()
+        {
+            var modes = new GalaxyModeState();
+            var changed = 0;
+            modes.Changed += () => changed++;
+
+            modes.SetWorldMode(GalaxyWorldMode.Explore);
+            modes.SetFlightMode(FlightControlMode.PilotAssist);
+            Assert.That(changed, Is.Zero);
+
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+            modes.SetFlightMode(FlightControlMode.PilotMastery);
+            Assert.That(changed, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void Modes_CyclingFlightDoesNotChangeWorldMode()
+        {
+            var modes = new GalaxyModeState();
+            modes.SetWorldMode(GalaxyWorldMode.Survey);
+
+            modes.CycleFlightMode(1);
+            Assert.That(modes.FlightMode, Is.EqualTo(FlightControlMode.PilotMastery));
+            Assert.That(modes.WorldMode, Is.EqualTo(GalaxyWorldMode.Survey));
+
+            modes.CycleFlightMode(1);
+            Assert.That(modes.FlightMode, Is.EqualTo(FlightControlMode.Autopilot));
+            Assert.That(modes.WorldMode, Is.EqualTo(GalaxyWorldMode.Survey));
+        }
+
+        [Test]
+        public void FlightModes_KeepTheirDistinctVelocitySemantics()
+        {
+            var current = new UnityEngine.Vector3(5f, 0f, 0f);
+            var autopilotHold = ProbeFlightModel.DesiredVelocity(
+                FlightControlMode.Autopilot, current, UnityEngine.Vector3.zero, 100f, 10f, 1f);
+            var assist = ProbeFlightModel.DesiredVelocity(
+                FlightControlMode.PilotAssist, current, UnityEngine.Vector3.forward, 100f, 10f, 1f);
+            var mastery = ProbeFlightModel.DesiredVelocity(
+                FlightControlMode.PilotMastery, current, UnityEngine.Vector3.forward, 100f, 10f, 1f);
+            var autopilotTarget = ProbeFlightModel.DesiredVelocity(
+                FlightControlMode.Autopilot, current, UnityEngine.Vector3.forward * 80f, 100f, 10f, 1f);
+
+            Assert.That(autopilotHold.x, Is.LessThan(current.x));
+            Assert.That(autopilotTarget.z, Is.GreaterThan(0f));
+            Assert.That(assist.x, Is.LessThan(current.x));
+            Assert.That(assist.z, Is.GreaterThan(0f));
+            Assert.That(mastery.x, Is.EqualTo(current.x));
+            Assert.That(mastery.z, Is.EqualTo(10f));
+        }
+
+        [Test]
+        public void GravityFlight_AssistAndMasteryPreserveLateralMomentumWhileApplyingThrust()
+        {
+            var current = new UnityEngine.Vector3(8f, 0f, 0f);
+            var intent = UnityEngine.Vector3.forward;
+
+            var assist = ProbeFlightModel.VelocityWithMomentumPreserved(
+                FlightControlMode.PilotAssist, current, intent, 100f, 10f, 1f);
+            var mastery = ProbeFlightModel.VelocityWithMomentumPreserved(
+                FlightControlMode.PilotMastery, current, intent, 100f, 10f, 1f);
+
+            Assert.That(assist.x, Is.EqualTo(current.x));
+            Assert.That(assist.z, Is.EqualTo(10f));
+            Assert.That(mastery.x, Is.EqualTo(current.x));
+            Assert.That(mastery.z, Is.EqualTo(10f));
+        }
+
+        [Test]
+        public void GravityFlight_NoInputDoesNotDampExistingVelocityBeforeGravityIsApplied()
+        {
+            var current = new UnityEngine.Vector3(8f, 3f, -4f);
+
+            var assist = ProbeFlightModel.VelocityWithMomentumPreserved(
+                FlightControlMode.PilotAssist, current, UnityEngine.Vector3.zero, 100f, 10f, 1f);
+            var mastery = ProbeFlightModel.VelocityWithMomentumPreserved(
+                FlightControlMode.PilotMastery, current, UnityEngine.Vector3.zero, 100f, 10f, 1f);
+
+            Assert.That(assist, Is.EqualTo(current));
+            Assert.That(mastery, Is.EqualTo(current));
+        }
+
         [Test]
         public void BetaTuning_ExpandsSpaceAndSlowsTheProbe()
         {

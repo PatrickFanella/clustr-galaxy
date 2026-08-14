@@ -2,6 +2,7 @@ using System;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Generation;
+using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.UI;
@@ -67,6 +68,8 @@ namespace ClustrGalaxy.Bootstrap
             var rigidbody = probe.AddComponent<Rigidbody>();
             rigidbody.mass = 1f;
             var flight = probe.AddComponent<ObserverProbeController>();
+            var modeState = new GalaxyModeState();
+            flight.Initialize(modeState);
             probe.AddComponent<FloatingOrigin>();
             var targeting = probe.AddComponent<ProbeTargeting>();
             probe.AddComponent<CommentThreadController>().Initialize(targeting);
@@ -93,7 +96,7 @@ namespace ClustrGalaxy.Bootstrap
 
             var hud = probe.AddComponent<ProbeHud>();
             probe.AddComponent<GalaxyPerformanceMonitor>();
-            hud.Initialize(flight, targeting, dataLoader, navigation);
+            hud.Initialize(flight, targeting, dataLoader, navigation, modeState);
         }
 
         private static void CreateSystem()

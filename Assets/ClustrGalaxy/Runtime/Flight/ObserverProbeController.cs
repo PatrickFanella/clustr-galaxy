@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using ClustrGalaxy.Generation;
+using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Simulation;
 
 namespace ClustrGalaxy.Flight
@@ -27,9 +28,29 @@ namespace ClustrGalaxy.Flight
         private InputAction boost = null!;
         private InputAction brake = null!;
         private InputAction gravityMode = null!;
+        private InputAction previousFlightMode = null!;
+        private InputAction nextFlightMode = null!;
+        private Vector3? autopilotDesiredVelocity;
 
         public float Speed => body == null ? 0f : body.linearVelocity.magnitude;
         public bool GravityModeEnabled { get; private set; }
+        public GalaxyModeState ModeState { get; private set; } = null!;
+
+        public void Initialize(GalaxyModeState modeState)
+        {
+            ModeState = modeState ?? throw new System.ArgumentNullException(nameof(modeState));
+        }
+
+        /// <summary>Supplies a bounded desired velocity for Autopilot only.</summary>
+        public void SetAutopilotDesiredVelocity(Vector3 desiredVelocity)
+        {
+            autopilotDesiredVelocity = desiredVelocity;
+        }
+
+        public void ClearAutopilotDesiredVelocity()
+        {
+            autopilotDesiredVelocity = null;
+        }
 
         private void Awake()
         {
@@ -74,6 +95,13 @@ namespace ClustrGalaxy.Flight
             gravityMode = new InputAction("Gravity Mode", InputActionType.Button, "<Keyboard>/g");
             gravityMode.AddBinding("<Gamepad>/buttonNorth");
             gravityMode.performed += _ => GravityModeEnabled = !GravityModeEnabled;
+
+            previousFlightMode = new InputAction("Previous Pilot Mode", InputActionType.Button, "<Keyboard>/[");
+            previousFlightMode.AddBinding("<Gamepad>/dpad/left");
+            previousFlightMode.performed += _ => EnsureModeState().CycleFlightMode(-1);
+            nextFlightMode = new InputAction("Next Pilot Mode", InputActionType.Button, "<Keyboard>/]");
+            nextFlightMode.AddBinding("<Gamepad>/dpad/right");
+            nextFlightMode.performed += _ => EnsureModeState().CycleFlightMode(1);
         }
 
         private void OnEnable()
@@ -85,6 +113,8 @@ namespace ClustrGalaxy.Flight
             boost?.Enable();
             brake?.Enable();
             gravityMode?.Enable();
+            previousFlightMode?.Enable();
+            nextFlightMode?.Enable();
         }
 
         private void OnDisable()
@@ -96,40 +126,48 @@ namespace ClustrGalaxy.Flight
             boost?.Disable();
             brake?.Disable();
             gravityMode?.Disable();
+            previousFlightMode?.Disable();
+            nextFlightMode?.Disable();
         }
 
         private void FixedUpdate()
         {
+            var modes = EnsureModeState();
             var translation = move.ReadValue<Vector2>();
             var vertical = ProbeFlightModel.ApplyDeadzone(lift.ReadValue<float>());
             var localIntent = Vector3.ClampMagnitude(
                 new Vector3(translation.x, vertical, translation.y), 1f);
             var speed = ProbeFlightModel.DesiredSpeed(cruiseSpeed, boostMultiplier, boost.IsPressed());
-            if (GravityModeEnabled)
+            var desiredInput = modes.FlightMode == FlightControlMode.Autopilot
+                ? autopilotDesiredVelocity ?? Vector3.zero
+                : transform.TransformDirection(localIntent);
+            if (brake.IsPressed())
             {
-                if (brake.IsPressed())
-                {
-                    body.linearVelocity = ProbeFlightModel.MoveTowardsVelocity(
-                        body.linearVelocity, Vector3.zero, brakeAcceleration, Time.fixedDeltaTime);
-                }
-                else
-                {
-                    body.AddForce(
-                        transform.TransformDirection(localIntent) * acceleration,
-                        ForceMode.Acceleration);
-                    body.linearVelocity = Vector3.ClampMagnitude(body.linearVelocity, speed);
-                }
-
-                body.AddForce(GravitySource.AccelerationAt(body.position), ForceMode.Acceleration);
+                body.linearVelocity = ProbeFlightModel.MoveTowardsVelocity(
+                    body.linearVelocity, Vector3.zero, brakeAcceleration, Time.fixedDeltaTime);
             }
             else
             {
-                var desiredVelocity = brake.IsPressed()
-                    ? Vector3.zero
-                    : transform.TransformDirection(localIntent) * speed;
-                var rate = brake.IsPressed() ? brakeAcceleration : acceleration;
-                body.linearVelocity = ProbeFlightModel.MoveTowardsVelocity(
-                    body.linearVelocity, desiredVelocity, rate, Time.fixedDeltaTime);
+                body.linearVelocity = GravityModeEnabled
+                    ? ProbeFlightModel.VelocityWithMomentumPreserved(
+                        modes.FlightMode,
+                        body.linearVelocity,
+                        desiredInput,
+                        speed,
+                        acceleration,
+                        Time.fixedDeltaTime)
+                    : ProbeFlightModel.DesiredVelocity(
+                        modes.FlightMode,
+                        body.linearVelocity,
+                        desiredInput,
+                        speed,
+                        acceleration,
+                        Time.fixedDeltaTime);
+            }
+
+            if (GravityModeEnabled)
+            {
+                body.AddForce(GravitySource.AccelerationAt(body.position), ForceMode.Acceleration);
             }
 
             var aim = look.ReadValue<Vector2>();
@@ -150,6 +188,13 @@ namespace ClustrGalaxy.Flight
             boost?.Dispose();
             brake?.Dispose();
             gravityMode?.Dispose();
+            previousFlightMode?.Dispose();
+            nextFlightMode?.Dispose();
+        }
+
+        private GalaxyModeState EnsureModeState()
+        {
+            return ModeState ??= new GalaxyModeState();
         }
     }
 }

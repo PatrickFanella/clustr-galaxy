@@ -1,5 +1,6 @@
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
+using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using UnityEngine;
 
@@ -15,17 +16,20 @@ namespace ClustrGalaxy.UI
         private Texture2D panelTexture = null!;
         private GalaxyPerformanceMonitor performance = null!;
         private GalaxyNavigationController navigation = null!;
+        private GalaxyModeState modeState = null!;
 
         public void Initialize(
             ObserverProbeController flightController,
             ProbeTargeting targetController,
             SpatialSceneLoader spatialSceneLoader,
-            GalaxyNavigationController navigationController)
+            GalaxyNavigationController navigationController,
+            GalaxyModeState galaxyModeState)
         {
             flight = flightController;
             targeting = targetController;
             dataLoader = spatialSceneLoader;
             navigation = navigationController;
+            modeState = galaxyModeState;
             performance = GetComponent<GalaxyPerformanceMonitor>();
         }
 
@@ -56,12 +60,14 @@ namespace ClustrGalaxy.UI
         private void OnGUI()
         {
             EnsureStyles();
-            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 232 : 302);
+            var panel = new Rect(18, 18, 365, targeting?.Target == null ? 272 : 352);
             GUI.DrawTexture(panel, panelTexture);
             GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
             GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
             GUILayout.Label($"SPEED  {flight?.Speed ?? 0f:000.0}", bodyStyle);
             GUILayout.Label($"FLIGHT  {(flight != null && flight.GravityModeEnabled ? "GRAVITY / MOMENTUM" : "ASSISTED CRUISE")}", bodyStyle);
+            GUILayout.Label($"WORLD  {FormatWorldMode(modeState?.WorldMode ?? GalaxyWorldMode.Explore)}", bodyStyle);
+            GUILayout.Label($"PILOT  {FormatFlightMode(modeState?.FlightMode ?? FlightControlMode.PilotAssist)}", bodyStyle);
             GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
             GUILayout.Label($"VIEW  {navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT"}", bodyStyle);
             if (performance != null)
@@ -69,7 +75,7 @@ namespace ClustrGalaxy.UI
                 GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
             }
             GUILayout.Space(5);
-            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\nShift/L3: boost  •  X/B: brake  •  F/A: target + inspect\nM/Select: galaxy map  •  G or Y/Triangle: gravity flight", bodyStyle);
+            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  M/Select: galaxy map  •  G or Y/Triangle: gravity flight", bodyStyle);
             if (targeting?.Target != null)
             {
                 GUILayout.Space(8);
@@ -106,6 +112,21 @@ namespace ClustrGalaxy.UI
             {
                 Destroy(panelTexture);
             }
+        }
+
+        private static string FormatWorldMode(GalaxyWorldMode mode)
+        {
+            return mode == GalaxyWorldMode.Survey ? "SURVEY" : "EXPLORE";
+        }
+
+        private static string FormatFlightMode(FlightControlMode mode)
+        {
+            return mode switch
+            {
+                FlightControlMode.Autopilot => "AUTO",
+                FlightControlMode.PilotMastery => "MASTERY",
+                _ => "ASSIST"
+            };
         }
     }
 }
