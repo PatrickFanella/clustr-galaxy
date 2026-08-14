@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.unity.addressables": "2.7.6",
+    "com.unity.addressables": "2.9.1",
     "com.unity.ai.assistant": "2.17.0-pre.1",
     "com.unity.ai.inference": "2.6.1",
     "com.unity.connect.share": "4.2.4",
@@ -14,7 +14,7 @@
     "com.unity.sdk.linux-arm64": "1.1.0",
     "com.unity.sdk.linux-x86_64": "1.1.0",
     "com.unity.services.analytics": "6.3.0",
-    "com.unity.services.authentication": "3.7.3",
+    "com.unity.services.authentication": "3.7.4",
     "com.unity.test-framework": "1.6.0",
     "com.unity.toolchain.linux-x86_64-linux": "1.1.0",
     "com.unity.ugui": "2.0.0",
