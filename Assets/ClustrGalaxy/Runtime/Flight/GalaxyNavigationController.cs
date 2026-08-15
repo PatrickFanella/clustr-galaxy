@@ -42,6 +42,8 @@ namespace ClustrGalaxy.Flight
         public GalaxyNavigationLevel Level => history.Level;
         public string FocusedStableId => history.StableId;
         public Vector2 MapCursorPosition { get; private set; } = new(0.5f, 0.5f);
+        public string MapHoveredStableId { get; private set; } = string.Empty;
+        public string MapHoverStatus { get; private set; } = "NO SELECTABLE SIGNAL";
         public string TravelStatus { get; private set; } = string.Empty;
         public string PlottedDestinationId => plottedDestinationId;
         public bool HasAutopilotArrival => autopilotArrived;
@@ -176,6 +178,8 @@ namespace ClustrGalaxy.Flight
         {
             if (!IsMapOpen)
             {
+                MapHoveredStableId = string.Empty;
+                MapHoverStatus = "NO SELECTABLE SIGNAL";
                 return;
             }
 
@@ -187,6 +191,7 @@ namespace ClustrGalaxy.Flight
                 var mouse = Mouse.current.position.ReadValue();
                 MapCursorPosition = new Vector2(mouse.x / Screen.width, mouse.y / Screen.height);
             }
+            RefreshMapHover();
         }
 
         private void SelectAtMapCursor()
@@ -202,26 +207,54 @@ namespace ClustrGalaxy.Flight
                 return;
             }
 
+            var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
+            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition,
+                BuildMapCandidates(), 0.12f, worldMode);
+            if (GalaxyEntity.TryGet(selectedId, out var selected))
+            {
+                targeting.SelectTarget(selected);
+            }
+        }
+
+        private void RefreshMapHover()
+        {
+            if (viewCamera == null)
+            {
+                MapHoveredStableId = string.Empty;
+                MapHoverStatus = "NO SELECTABLE SIGNAL";
+                return;
+            }
+
+            var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
+            var nearest = GalaxyMapSelection.Nearest(history.Level, MapCursorPosition,
+                BuildMapCandidates(), 0.12f, worldMode);
+            if (!nearest.HasValue || !GalaxyEntity.TryGet(nearest.Value.StableId, out var entity))
+            {
+                MapHoveredStableId = string.Empty;
+                MapHoverStatus = "NO SELECTABLE SIGNAL";
+                return;
+            }
+
+            MapHoveredStableId = entity.StableId;
+            var canLabel = discoveryVisibility == null || discoveryVisibility.CanLabel(entity);
+            MapHoverStatus = canLabel
+                ? $"{entity.DisplayName}  •  {nearest.Value.EntityType.ToUpperInvariant()}"
+                : "UNIDENTIFIED SIGNAL";
+        }
+
+        private List<GalaxyMapCandidate> BuildMapCandidates()
+        {
             var candidates = new List<GalaxyMapCandidate>();
             foreach (var entity in GalaxyEntity.ActiveEntities)
             {
                 var metadata = entity.GetComponent<LiveEntityMetadata>();
-                if (metadata?.Node == null)
-                {
-                    continue;
-                }
+                if (metadata?.Node == null) continue;
                 var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
                 candidates.Add(new GalaxyMapCandidate(entity.StableId, metadata.Node.type,
                     new Vector2(viewport.x, viewport.y), viewport.z > 0f,
                     discoveryVisibility == null || discoveryVisibility.IsKnown(entity)));
             }
-
-            var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
-            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition, candidates, 0.12f, worldMode);
-            if (GalaxyEntity.TryGet(selectedId, out var selected))
-            {
-                targeting.SelectTarget(selected);
-            }
+            return candidates;
         }
 
         public bool EnterSurvey()

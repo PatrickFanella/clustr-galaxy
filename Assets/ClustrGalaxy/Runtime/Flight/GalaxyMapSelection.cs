@@ -52,8 +52,26 @@ namespace ClustrGalaxy.Flight
                 throw new ArgumentOutOfRangeException(nameof(maximumRadius));
             }
 
-            var bestId = string.Empty;
+            return Nearest(level, cursor, candidates, maximumRadius, worldMode)?.StableId ?? string.Empty;
+        }
+
+        public static GalaxyMapCandidate? Nearest(
+            GalaxyNavigationLevel level,
+            Vector2 cursor,
+            IReadOnlyList<GalaxyMapCandidate> candidates,
+            float maximumRadius,
+            GalaxyWorldMode worldMode = GalaxyWorldMode.Explore)
+        {
+            if (maximumRadius <= 0f)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maximumRadius));
+            }
+            if (candidates == null)
+            {
+                throw new ArgumentNullException(nameof(candidates));
+            }
             var bestDistance = maximumRadius * maximumRadius;
+            GalaxyMapCandidate? best = null;
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
@@ -66,11 +84,11 @@ namespace ClustrGalaxy.Flight
                 if (distance <= bestDistance)
                 {
                     bestDistance = distance;
-                    bestId = candidate.StableId;
+                    best = candidate;
                 }
             }
 
-            return bestId;
+            return best;
         }
     }
 }

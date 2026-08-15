@@ -141,6 +141,10 @@ namespace ClustrGalaxy.UI
             GUILayout.Label($"PILOT  {FormatFlightMode(modeState?.FlightMode ?? FlightControlMode.PilotAssist)}", bodyStyle);
             GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
             GUILayout.Label($"VIEW  {navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT"}", bodyStyle);
+            if (navigation != null && navigation.IsMapOpen)
+            {
+                GUILayout.Label($"MAP CURSOR  {navigation.MapHoverStatus}", bodyStyle);
+            }
             if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey && scanner != null)
             {
                 GUILayout.Label($"SIGNAL  {FormatSignalState(scanner.State)}  CHARGE {scanner.Charge01 * 100f:000}%  STR {scanner.SignalStrength01 * 100f:000}%", bodyStyle);

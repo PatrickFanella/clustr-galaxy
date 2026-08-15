@@ -415,6 +415,48 @@ namespace ClustrGalaxy.Tests
             }
         }
 
+        [UnityTest]
+        public IEnumerator GalaxyMapCursor_PreviewsACommunityWithoutSelectingIt()
+        {
+            var probe = new GameObject("map preview probe");
+            var cameraObject = new GameObject("map preview camera");
+            var landmark = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            try
+            {
+                probe.transform.position = new Vector3(0f, 0f, -10f);
+                probe.AddComponent<Rigidbody>();
+                var flight = probe.AddComponent<ObserverProbeController>();
+                flight.Initialize(new GalaxyModeState());
+                var targeting = probe.AddComponent<ProbeTargeting>();
+                cameraObject.transform.SetParent(probe.transform, false);
+                cameraObject.transform.localPosition = Vector3.zero;
+                var camera = cameraObject.AddComponent<Camera>();
+                landmark.transform.position = Vector3.zero;
+                var entity = landmark.AddComponent<GalaxyEntity>();
+                entity.Initialize("community-a", "Example Region", "community", 10);
+                landmark.AddComponent<LiveEntityMetadata>().Initialize(new SpatialNode
+                {
+                    id = "community-a", name = "Example Region", type = "community"
+                });
+                var navigation = probe.AddComponent<GalaxyNavigationController>();
+                navigation.Initialize(targeting, camera);
+                navigation.SetMapOpen(true);
+
+                yield return null;
+                yield return null;
+
+                Assert.That(navigation.MapHoveredStableId, Is.EqualTo("community-a"));
+                Assert.That(navigation.MapHoverStatus, Is.EqualTo("Example Region  •  COMMUNITY"));
+                Assert.That(targeting.Target, Is.Null);
+            }
+            finally
+            {
+                Object.Destroy(probe);
+                Object.Destroy(cameraObject);
+                Object.Destroy(landmark);
+            }
+        }
+
         private static GalaxyEntity CreateSurveyEntity(Transform parent, string stableId, string entityType,
             string systemStableId)
         {

@@ -75,7 +75,7 @@ git commit -m "feat: page bounded live galaxy scopes"
 
 ### Task 2: Controller-readable map and scope feedback
 
-- [ ] **Step 1: Write the failing selection-preview test**
+- [x] **Step 1: Write the failing selection-preview test**
 
 Add an EditMode test for `GalaxyMapSelection.Nearest` and a PlayMode test that opens the map, positions a selectable community at the cursor, waits one frame, and asserts `MapHoveredStableId` and `MapHoverStatus` are populated without changing the targeting selection.
 
@@ -86,19 +86,19 @@ Assert.That(nearest.HasValue, Is.True);
 Assert.That(nearest.Value.StableId, Is.EqualTo("community-a"));
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [x] **Step 2: Run the focused tests and confirm RED**
 
 Run EditMode and PlayMode using the Unity commands from Task 1, changing `-testPlatform` and result paths. Expected: compile failure for the new public hover interface.
 
-- [ ] **Step 3: Implement preview and HUD state**
+- [x] **Step 3: Implement preview and HUD state**
 
 Return `GalaxyMapCandidate?` from the pure selector, reuse it for selection, and have the controller refresh a hover candidate whenever the map is open. Resolve labels only through `GalaxySurveyVisibilityController.CanLabel`; otherwise show `UNIDENTIFIED SIGNAL`. In the HUD render `MAP CURSOR`, the current bounded scope's object composition, and honest statuses such as `SERVER DID NOT PUBLISH A CONTINUATION CURSOR`.
 
-- [ ] **Step 4: Run EditMode and PlayMode and confirm GREEN**
+- [x] **Step 4: Run EditMode and PlayMode and confirm GREEN**
 
 Expected: both suites pass, including the existing Survey discovery journey and the new hover test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Assets/ClustrGalaxy/Runtime/Flight Assets/ClustrGalaxy/Runtime/UI/ProbeHud.cs Assets/ClustrGalaxy/Tests

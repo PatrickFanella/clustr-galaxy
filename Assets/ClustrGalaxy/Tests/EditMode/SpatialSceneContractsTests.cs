@@ -401,6 +401,22 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void MapSelection_ReturnsTheNearestCandidateForControllerPreview()
+        {
+            var candidates = new[]
+            {
+                new GalaxyMapCandidate("far", "community", new Vector2(0.6f, 0.5f), true),
+                new GalaxyMapCandidate("near", "community", new Vector2(0.51f, 0.5f), true)
+            };
+
+            var selected = GalaxyMapSelection.Nearest(
+                GalaxyNavigationLevel.Galaxy, new Vector2(0.5f, 0.5f), candidates, 0.12f);
+
+            Assert.That(selected.HasValue, Is.True);
+            Assert.That(selected.Value.StableId, Is.EqualTo("near"));
+        }
+
+        [Test]
         public void GalaxyMapFraming_CentersTheOverviewWhenNothingIsSelected()
         {
             var focus = GalaxyNavigationController.ResolveMapFocus(
