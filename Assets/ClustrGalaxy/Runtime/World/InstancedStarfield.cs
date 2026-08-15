@@ -19,6 +19,7 @@ namespace ClustrGalaxy.World
         private Color pulseColor;
         private float pulseRemaining;
         private float pulseDuration;
+        private bool unsupportedReported;
 
         public void Initialize(Mesh starMesh, Material sharedMaterial, Matrix4x4[] instances)
         {
@@ -45,19 +46,45 @@ namespace ClustrGalaxy.World
 
         private void LateUpdate()
         {
-            if (mesh == null || material == null || matrices.Length == 0)
+            if (!CanRender(SystemInfo.supportsInstancing, mesh, material, matrices.Length))
             {
+                if (mesh != null && material != null && matrices.Length > 0 &&
+                    !SystemInfo.supportsInstancing)
+                {
+                    DisableUnsupported("GPU instancing is unavailable on the active graphics device.");
+                }
                 return;
             }
             UpdatePulse();
-            for (var offset = 0; offset < matrices.Length; offset += BatchSize)
+            try
             {
-                var count = Math.Min(BatchSize, matrices.Length - offset);
-                var batch = new Matrix4x4[count];
-                Array.Copy(matrices, offset, batch, 0, count);
-                Graphics.DrawMeshInstanced(mesh, 0, material, batch, count, null,
-                    ShadowCastingMode.Off, receiveShadows: false, gameObject.layer);
+                for (var offset = 0; offset < matrices.Length; offset += BatchSize)
+                {
+                    var count = Math.Min(BatchSize, matrices.Length - offset);
+                    var batch = new Matrix4x4[count];
+                    Array.Copy(matrices, offset, batch, 0, count);
+                    Graphics.DrawMeshInstanced(mesh, 0, material, batch, count, null,
+                        ShadowCastingMode.Off, receiveShadows: false, gameObject.layer);
+                }
             }
+            catch (InvalidOperationException exception)
+            {
+                DisableUnsupported(exception.Message);
+            }
+        }
+
+        public static bool CanRender(bool supportsInstancing, Mesh starMesh, Material starMaterial,
+            int instanceCount) =>
+            supportsInstancing && starMesh != null && starMaterial != null && instanceCount > 0;
+
+        private void DisableUnsupported(string reason)
+        {
+            if (!unsupportedReported)
+            {
+                Debug.LogWarning($"[ClustrGalaxy.Starfield] Decorative instancing disabled: {reason}");
+                unsupportedReported = true;
+            }
+            enabled = false;
         }
 
         private void UpdatePulse()

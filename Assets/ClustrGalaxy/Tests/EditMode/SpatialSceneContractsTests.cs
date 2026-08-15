@@ -156,6 +156,26 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void StarfieldRendering_RequiresGraphicsInstancingSupport()
+        {
+            var mesh = new Mesh();
+            var shader = Shader.Find("Sprites/Default");
+            Assert.That(shader, Is.Not.Null);
+            var material = new Material(shader);
+            try
+            {
+                Assert.That(InstancedStarfield.CanRender(false, mesh, material, 100), Is.False);
+                Assert.That(InstancedStarfield.CanRender(true, mesh, material, 100), Is.True);
+                Assert.That(InstancedStarfield.CanRender(true, mesh, material, 0), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(material);
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
         public void OverviewRequest_PinsTheManifestRevision()
         {
             var manifest = CompatibleManifest(revision: 9, catalog: 3);
