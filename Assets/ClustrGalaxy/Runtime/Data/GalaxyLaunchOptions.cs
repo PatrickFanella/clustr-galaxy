@@ -7,6 +7,7 @@ namespace ClustrGalaxy.Data
         private const string OfflineArgument = "-clustr-offline";
         private const string LongOfflineArgument = "--clustr-offline";
         private const string LiveSmokeArgument = "--clustr-live-smoke";
+        private const string BetaProfileArgument = "--clustr-beta-profile";
 
         public static bool IsOfflineOnly(string[] arguments)
         {
@@ -16,6 +17,31 @@ namespace ClustrGalaxy.Data
         public static bool IsLiveSmoke(string[] arguments)
         {
             return Contains(arguments, LiveSmokeArgument);
+        }
+
+        public static bool IsBetaProfile(string[] arguments)
+        {
+            if (arguments == null) return false;
+            foreach (var argument in arguments)
+            {
+                if (argument != null && argument.StartsWith(BetaProfileArgument, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        public static int ProfileDurationSeconds(string[] arguments)
+        {
+            const int defaultSeconds = 600;
+            if (arguments == null) return defaultSeconds;
+            foreach (var argument in arguments)
+            {
+                if (argument == null || !argument.StartsWith(BetaProfileArgument + "=", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var value = argument.Substring(BetaProfileArgument.Length + 1);
+                return int.TryParse(value, out var seconds) ? Math.Clamp(seconds, 30, 3600) : defaultSeconds;
+            }
+            return defaultSeconds;
         }
 
         private static bool Contains(string[] arguments, params string[] expected)

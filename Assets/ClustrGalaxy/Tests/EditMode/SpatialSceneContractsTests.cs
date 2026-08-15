@@ -5,6 +5,7 @@ using ClustrGalaxy.Flight;
 using ClustrGalaxy.Generation;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
+using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
 using NUnit.Framework;
 using UnityEngine;
@@ -721,6 +722,45 @@ namespace ClustrGalaxy.Tests
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(null), Is.False);
             Assert.That(GalaxyLaunchOptions.IsLiveSmoke(new[] { "ClustrGalaxy", "--CLUSTR-LIVE-SMOKE" }), Is.True);
             Assert.That(GalaxyLaunchOptions.IsLiveSmoke(new[] { "ClustrGalaxy", "--clustr-offline" }), Is.False);
+        }
+
+        [Test]
+        public void LaunchOptions_ParseABoundedBetaProfileDuration()
+        {
+            Assert.That(GalaxyLaunchOptions.IsBetaProfile(
+                new[] { "ClustrGalaxy", "--clustr-beta-profile=600" }), Is.True);
+            Assert.That(GalaxyLaunchOptions.ProfileDurationSeconds(
+                new[] { "ClustrGalaxy", "--clustr-beta-profile=600" }), Is.EqualTo(600));
+            Assert.That(GalaxyLaunchOptions.ProfileDurationSeconds(
+                new[] { "ClustrGalaxy", "--clustr-beta-profile=2" }), Is.EqualTo(30));
+            Assert.That(GalaxyLaunchOptions.ProfileDurationSeconds(
+                new[] { "ClustrGalaxy", "--clustr-beta-profile=99999" }), Is.EqualTo(3600));
+        }
+
+        [Test]
+        public void BetaProfileVerdict_EnforcesEveryLinuxAcceptanceThreshold()
+        {
+            var passing = new GalaxyBetaProfileReport
+            {
+                p95_cpu_frame_ms = 12.5f,
+                p95_gpu_frame_ms = 15.5f,
+                maximum_frame_stall_ms = 40f,
+                peak_gc_allocated_bytes_per_frame = 0,
+                p95_gc_allocated_bytes_per_frame = 0,
+                peak_player_memory_bytes = 3L * 1024 * 1024 * 1024,
+                peak_gpu_memory_bytes = 5L * 1024 * 1024 * 1024,
+                gpu_timing_available = true,
+                gpu_memory_available = true
+            };
+
+            Assert.That(GalaxyBetaProfile.Evaluate(passing).Qualified, Is.True);
+
+            passing.p95_gpu_frame_ms = 18f;
+            passing.p95_gc_allocated_bytes_per_frame = 64;
+            var failed = GalaxyBetaProfile.Evaluate(passing);
+            Assert.That(failed.Qualified, Is.False);
+            Assert.That(failed.Failures, Has.Some.Contains("GPU"));
+            Assert.That(failed.Failures, Has.Some.Contains("GC"));
         }
 
         [Test]

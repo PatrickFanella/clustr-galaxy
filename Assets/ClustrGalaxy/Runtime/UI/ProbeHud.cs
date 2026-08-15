@@ -41,6 +41,7 @@ namespace ClustrGalaxy.UI
         private string progressionNotification = string.Empty;
         private bool developerPerformanceVisible;
         private bool constellationAuthoringExpanded;
+        private GalaxyBetaProfileRunner betaProfile;
         private Vector2 constellationMemberScrollPosition;
 
         public void Initialize(
@@ -70,6 +71,7 @@ namespace ClustrGalaxy.UI
                 threadInspection.ModelChanged += OnThreadModelChanged;
             }
             performance = GetComponent<GalaxyPerformanceMonitor>();
+            betaProfile = GetComponent<GalaxyBetaProfileRunner>();
         }
 
         public void ConfigureConstellations(ConstellationTracker tracker, PersonalConstellationStore personalStore,
@@ -168,6 +170,10 @@ namespace ClustrGalaxy.UI
                 {
                     GUILayout.Label($"DEV PERF  ACTIVE {performance.ActiveEntityCount}  •  POOLED {performance.PooledEntityCount}  •  VISIBLE {performance.VisibleNodeCount}  •  KNOWN {performance.KnownNodeCount}\nSCAN EVENTS {performance.ScanEventCount}  •  GC {performance.SteadyStateGcBytes} B/frame  •  MAIN {performance.MainThreadMilliseconds:0.00} ms", bodyStyle);
                 }
+            }
+            if (betaProfile != null)
+            {
+                GUILayout.Label($"BETA PROFILE  {betaProfile.StatusText}", bodyStyle);
             }
             GUILayout.Space(5);
             GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nT/d-pad down: fast travel  •  P/R3: plot autopilot\nG or Y/Triangle: gravity flight", bodyStyle);

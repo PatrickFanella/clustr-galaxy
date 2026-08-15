@@ -98,7 +98,13 @@ namespace ClustrGalaxy.Bootstrap
             probe.AddComponent<LiveGalaxySelectionController>().Initialize(targeting, dataLoader, navigation);
 
             var hud = probe.AddComponent<ProbeHud>();
-            probe.AddComponent<GalaxyPerformanceMonitor>();
+            var performance = probe.AddComponent<GalaxyPerformanceMonitor>();
+            var arguments = Environment.GetCommandLineArgs();
+            if (GalaxyLaunchOptions.IsBetaProfile(arguments))
+            {
+                probe.AddComponent<GalaxyBetaProfileRunner>().Initialize(dataLoader, performance,
+                    GalaxyLaunchOptions.ProfileDurationSeconds(arguments));
+            }
             var gameplay = probe.AddComponent<GalaxyGameplayBootstrap>();
             gameplay.Initialize(flight, targeting, dataLoader, navigation, discoveryVisibility, scanner,
                 threadInspection, hud, starfield, registry, new[]

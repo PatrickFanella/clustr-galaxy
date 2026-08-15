@@ -23,15 +23,25 @@ and stability rules are defined in [`docs/galaxy-world-model.md`](docs/galaxy-wo
 In Unity Hub, choose **Add > Add project from disk** and select this directory.
 Use editor version `6000.4.10f1` when prompted.
 
-## Current milestone: offline Survey gameplay beta
+## Current milestone: live-pinned Survey beta
 
-The local vertical slice provides an offline-safe exploration loop. It has
+The vertical slice provides an offline-safe exploration loop and traverses the
+published immutable Clustr catalog from community region through subreddit,
+post discussion, and a lazily inspected comment thread. It has
 assisted six-degree-of-freedom flight, deterministic Kepler orbits, post
 planets, comment moons/rings, user ships, bounded local gravity, a signal
 scanner, discovery-gated Survey rendering, local constellations, contracts,
-achievements, and HUD-only comment threads. The same revision-pinned loader is
-ready to consume bounded public graph data whenever the manifest is published;
-the deterministic demo remains an explicitly local fallback.
+achievements, and HUD-only comment threads. The deterministic demo remains an
+explicitly local fallback and is never presented as source data.
+
+Every live session pins one manifest revision and spatial catalog. Bounded
+responses are merged only when their revision, catalog, scope, and root match
+the request. Published continuation cursors are followed up to the client
+ceiling; changing selection invalidates the older request. If a full server
+page omits a continuation cursor, the HUD says
+`SERVER DID NOT PUBLISH CONTINUATION` rather than implying the region is
+complete. The current public region response may also omit user nodes, so the
+client cannot synthesize region traffic or user ships that were not published.
 
 ### Explore and Survey
 
@@ -82,6 +92,31 @@ The normal HUD keeps p95 frame time and memory compact. Press **F10** to show
 the developer performance counters: active/pooled/visible/known entities, scan
 events, per-frame GC allocation, and main-thread time.
 
+While the map is open, the HUD's `MAP CURSOR` row previews the nearest valid
+next-level entity before selection. Explore displays the source label; Survey
+uses `UNIDENTIFIED SIGNAL` until that entity is identified. This keeps labels
+in the HUD instead of turning high-volume users into physical characters.
+
+### Live and performance qualification
+
+`--clustr-live-smoke` drives the real bounded hierarchy through overview,
+region, system, discussion, and one parent thread. Add
+`--clustr-beta-profile=600` to warm up, sample ten minutes, write a JSON report,
+and exit the Linux player. Duration is bounded to 30–3600 seconds. The report
+is written beneath Unity's persistent data directory at
+`ClustrGalaxy/reports/latest-beta-profile.json` and records the pinned IDs,
+resolution, CPU/GPU p95, maximum frame stall, p95 and peak per-frame GC allocation,
+player memory, GPU memory, and an exact threshold verdict. Missing GPU counters
+are a failed/unavailable measurement, never silently treated as a pass.
+
+Example release-evidence run:
+
+```bash
+Builds/Linux/ClustrGalaxy.x86_64 --clustr-live-smoke --clustr-beta-profile=600 \
+  -screen-fullscreen 0 -screen-width 2560 -screen-height 1440 \
+  -logFile /tmp/clustr-galaxy-beta-profile.log
+```
+
 ## Prototype controls
 
 Press **Play** in any scene. The current prototype is created at runtime.
@@ -109,5 +144,6 @@ single-dash spelling `-clustr-offline`) to require the last verified local
 cache; when no cache exists the HUD stays in an honest offline-unavailable
 state instead of attempting a network fallback. In normal mode Unity reads the
 public overview with a strict revision/catalog pin when the manifest route is
-available. Until then the HUD labels public data as `LEGACY / UNPINNED` and
-keeps the deterministic local system as the flyable fallback.
+available. If a future deployment removes that route, the HUD labels public
+data as `LEGACY / UNPINNED` and keeps the deterministic local system as the
+flyable fallback.
