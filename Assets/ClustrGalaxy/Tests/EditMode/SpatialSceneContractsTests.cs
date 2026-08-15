@@ -594,6 +594,28 @@ namespace ClustrGalaxy.Tests
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy", "--clustr-offline" }), Is.True);
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(new[] { "ClustrGalaxy" }), Is.False);
             Assert.That(GalaxyLaunchOptions.IsOfflineOnly(null), Is.False);
+            Assert.That(GalaxyLaunchOptions.IsLiveSmoke(new[] { "ClustrGalaxy", "--CLUSTR-LIVE-SMOKE" }), Is.True);
+            Assert.That(GalaxyLaunchOptions.IsLiveSmoke(new[] { "ClustrGalaxy", "--clustr-offline" }), Is.False);
+        }
+
+        [Test]
+        public void LiveSmokeSelection_PicksHighestActivityThenStableId()
+        {
+            var scene = new SpatialScene
+            {
+                nodes = new[]
+                {
+                    new SpatialNode { id = "community_z", type = "community", val = 20 },
+                    new SpatialNode { id = "community_b", type = "community", val = 50 },
+                    new SpatialNode { id = "community_a", type = "community", val = 50 },
+                    new SpatialNode { id = "post_1", type = "post", val = 500 }
+                }
+            };
+
+            var selected = GalaxyLiveDataSmokeRunner.SelectHighestActivity(scene, "community");
+
+            Assert.That(selected.id, Is.EqualTo("community_a"));
+            Assert.That(GalaxyLiveDataSmokeRunner.SelectHighestActivity(scene, "comment"), Is.Null);
         }
 
         private static SpatialManifest CompatibleManifest(long revision, long catalog) => new()

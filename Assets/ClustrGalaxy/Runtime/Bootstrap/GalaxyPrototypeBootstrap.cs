@@ -48,9 +48,14 @@ namespace ClustrGalaxy.Bootstrap
             var loader = dataClient.AddComponent<SpatialSceneLoader>();
             dataClient.AddComponent<GalacticOverviewRenderer>().Initialize(loader);
             dataClient.AddComponent<LiveGalaxyMaterializer>().Initialize(loader);
+            var arguments = Environment.GetCommandLineArgs();
+            if (GalaxyLaunchOptions.IsLiveSmoke(arguments))
+            {
+                dataClient.AddComponent<GalaxyLiveDataSmokeRunner>().Initialize(loader);
+            }
             loader.Initialize(
                 "https://clustr.subcult.tv/api",
-                GalaxyLaunchOptions.IsOfflineOnly(Environment.GetCommandLineArgs()));
+                GalaxyLaunchOptions.IsOfflineOnly(arguments));
             return loader;
         }
 
