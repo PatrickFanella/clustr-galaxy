@@ -228,6 +228,97 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void ScopePaging_BindsEncodedCursorWithoutChangingSnapshotParameters()
+        {
+            const string pinned = "https://clustr.subcult.tv/api/graph/community/region-a?lod=near&revision=9&spatial_catalog_id=3";
+
+            var next = SpatialScopePaging.WithCursor(pinned, "catalog:3 offset:500/+?");
+
+            Assert.That(next, Is.EqualTo(pinned + "&cursor=catalog%3A3%20offset%3A500%2F%2B%3F"));
+        }
+
+        [Test]
+        public void ScopePaging_UsesPublishedCumulativeCeilings()
+        {
+            Assert.That(SpatialScopePaging.For("community").MaximumNodes, Is.EqualTo(5000));
+            Assert.That(SpatialScopePaging.For("community").MaximumLinks, Is.EqualTo(15000));
+            Assert.That(SpatialScopePaging.For("discussion").MaximumNodes, Is.EqualTo(2048));
+            Assert.That(SpatialScopePaging.For("thread").MaximumNodes, Is.EqualTo(2000));
+        }
+
+        [Test]
+        public void ScopePaging_FlagsAFullPublishedPageWithoutContinuationMetadata()
+        {
+            var page = new SpatialScene
+            {
+                scope = "community",
+                nodes = new SpatialNode[500],
+                links = new SpatialLink[1500]
+            };
+            var limits = SpatialScopePaging.For("community");
+
+            Assert.That(SpatialScopePaging.CompletionFor(page, limits, 500, 1500),
+                Is.EqualTo(SpatialScopeCompletion.ContinuationUnavailable));
+        }
+
+        [Test]
+        public void ScopePaging_AggregatesMatchingPagesAndKeepsTheFinalCursorState()
+        {
+            var manifest = CompatibleManifest(revision: 9, catalog: 3);
+            var pages = new[]
+            {
+                new SpatialScene
+                {
+                    revision_id = 9, spatial_catalog_id = 3, scope = "community", root_id = "region-a",
+                    truncated = true, next_cursor = "page-2",
+                    nodes = new[]
+                    {
+                        new SpatialNode { id = "subreddit-a", type = "subreddit" },
+                        new SpatialNode { id = "user-a", type = "user" }
+                    },
+                    links = new[]
+                    {
+                        new SpatialLink { source = "user-a", target = "subreddit-a", type = "activity" }
+                    }
+                },
+                new SpatialScene
+                {
+                    revision_id = 9, spatial_catalog_id = 3, scope = "community", root_id = "region-a",
+                    truncated = false,
+                    nodes = new[]
+                    {
+                        new SpatialNode { id = "subreddit-b", type = "subreddit" },
+                        new SpatialNode { id = "subreddit-a", type = "subreddit", name = "updated" }
+                    }
+                }
+            };
+
+            var aggregate = SpatialScopePaging.Aggregate(manifest, "community", "region-a", pages);
+
+            Assert.That(aggregate.nodes, Has.Length.EqualTo(3));
+            Assert.That(Array.Find(aggregate.nodes, node => node.id == "subreddit-a").name, Is.EqualTo("updated"));
+            Assert.That(aggregate.links, Has.Length.EqualTo(1));
+            Assert.That(aggregate.truncated, Is.False);
+            Assert.That(aggregate.next_cursor, Is.Empty);
+        }
+
+        [Test]
+        public void ScopePaging_RejectsAContradictoryPageBeforeAggregation()
+        {
+            var manifest = CompatibleManifest(revision: 9, catalog: 3);
+            var pages = new[]
+            {
+                new SpatialScene
+                {
+                    revision_id = 9, spatial_catalog_id = 3, scope = "system", root_id = "subreddit-other"
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+                SpatialScopePaging.Aggregate(manifest, "community", "region-a", pages));
+        }
+
+        [Test]
         public void LegacyOverview_ParsesAsAnExplicitlyUnpinnedScene()
         {
             const string json = "{\"nodes\":[{\"id\":\"community_1\",\"name\":\"Faces\"," +

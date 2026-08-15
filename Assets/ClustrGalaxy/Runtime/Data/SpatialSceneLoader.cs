@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using ClustrGalaxy.Gameplay;
 using UnityEngine;
 
@@ -12,6 +13,7 @@ namespace ClustrGalaxy.Data
         private string apiBase = string.Empty;
         private bool offlineOnly;
         private bool started;
+        private int scopeGeneration;
 
         public SpatialManifest Manifest { get; private set; } = null!;
         public SpatialScene Scene { get; private set; } = null!;
@@ -52,6 +54,7 @@ namespace ClustrGalaxy.Data
             }
             StopAllCoroutines();
             client.Cancel();
+            scopeGeneration++;
             Manifest = null!;
             Scene = null!;
             Store = null!;
@@ -221,29 +224,79 @@ namespace ClustrGalaxy.Data
                 throw new InvalidOperationException("A pinned overview must load before requesting a bounded scope.");
             }
             client.Cancel();
+            var generation = ++scopeGeneration;
             StatusText = status;
-            StartCoroutine(LoadScope(uri, cacheKey, expectedScope, expectedRootId));
+            StartCoroutine(LoadScope(uri, cacheKey, expectedScope, expectedRootId, generation));
         }
 
-        private IEnumerator LoadScope(string uri, string cacheKey, string expectedScope, string expectedRootId)
+        private IEnumerator LoadScope(string uri, string cacheKey, string expectedScope, string expectedRootId,
+            int generation)
         {
-            string json = null!;
-            SpatialRequestFailure? failure = null;
             var offlineResult = offlineOnly;
+            var pages = new List<SpatialScene>();
+            var limits = SpatialScopePaging.For(expectedScope);
+            var acceptedNodes = 0;
+            var acceptedLinks = 0;
+            var currentUri = uri;
+            SpatialRequestFailure? failure = null;
+            string json = null!;
+
             if (offlineOnly)
             {
                 cache.TryRead(cacheKey, out json);
             }
             else
             {
-                yield return client.GetJson(uri, value => json = value, value => failure = value);
+                yield return client.GetJson(currentUri, value => json = value, value => failure = value);
+                if (generation != scopeGeneration) yield break;
                 if (string.IsNullOrWhiteSpace(json) && cache.TryRead(cacheKey, out var cached))
                 {
                     json = cached;
                     offlineResult = true;
                 }
             }
-            if (string.IsNullOrWhiteSpace(json))
+
+            while (!string.IsNullOrWhiteSpace(json))
+            {
+                SpatialScene page;
+                try
+                {
+                    page = SpatialSceneJson.ParseScene(json);
+                    if (!page.BelongsTo(Manifest))
+                    {
+                        throw new InvalidOperationException("MIXED REVISION OR CATALOG");
+                    }
+                    SpatialSceneScopeContract.ApplyOrValidate(page, expectedScope, expectedRootId);
+                    if (!SpatialScopePaging.CanAccept(limits, acceptedNodes, acceptedLinks, page))
+                    {
+                        throw new InvalidOperationException($"{expectedScope} response exceeded its cumulative client ceiling");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    StatusText = $"SCOPE REJECTED  {exception.Message}";
+                    Debug.LogWarning($"[ClustrGalaxy.Data] Rejected bounded scope: {exception.Message}");
+                    yield break;
+                }
+
+                pages.Add(page);
+                acceptedNodes += page.nodes?.Length ?? 0;
+                acceptedLinks += page.links?.Length ?? 0;
+                var completion = SpatialScopePaging.CompletionFor(page, limits, acceptedNodes, acceptedLinks);
+                if (offlineResult || !page.truncated || completion != SpatialScopeCompletion.Complete)
+                {
+                    break;
+                }
+
+                StatusText = $"LOADING {expectedScope.ToUpperInvariant()}  {acceptedNodes} OBJECTS / CONTINUING";
+                json = null!;
+                failure = null;
+                currentUri = SpatialScopePaging.WithCursor(uri, page.next_cursor);
+                yield return client.GetJson(currentUri, value => json = value, value => failure = value);
+                if (generation != scopeGeneration) yield break;
+            }
+
+            if (pages.Count == 0)
             {
                 var reason = offlineOnly ? "OFFLINE CACHE MISS" : failure?.ToString() ?? "request failed";
                 StatusText = $"SCOPE UNAVAILABLE  {reason}";
@@ -251,28 +304,37 @@ namespace ClustrGalaxy.Data
                 yield break;
             }
 
+            if (string.IsNullOrWhiteSpace(json) && !offlineResult)
+            {
+                var reason = failure?.ToString() ?? "continuation request failed";
+                StatusText = $"SCOPE UNAVAILABLE  {reason} / CURRENT VIEW RETAINED";
+                Debug.LogWarning($"[ClustrGalaxy.Data] Bounded continuation unavailable: {reason}");
+                yield break;
+            }
+
             SpatialScene loaded;
             try
             {
-                loaded = SpatialSceneJson.ParseScene(json);
-                SpatialSceneScopeContract.ApplyOrValidate(loaded, expectedScope, expectedRootId);
+                loaded = SpatialScopePaging.Aggregate(Manifest, expectedScope, expectedRootId, pages);
                 Store.Merge(loaded);
             }
             catch (Exception exception)
             {
                 StatusText = $"SCOPE REJECTED  {exception.Message}";
-                Debug.LogWarning($"[ClustrGalaxy.Data] Rejected bounded scope: {exception.Message}");
+                Debug.LogWarning($"[ClustrGalaxy.Data] Rejected bounded aggregate: {exception.Message}");
                 yield break;
             }
 
             if (!offlineResult)
             {
-                cache.Write(cacheKey, json, pinnedBase: false);
+                cache.Write(cacheKey, JsonUtility.ToJson(loaded), pinnedBase: false);
             }
             Scene = loaded;
             IsOffline = offlineResult;
             DataMode = offlineResult ? GalaxyDataMode.OfflinePinned : GalaxyDataMode.LivePinned;
-            var suffix = loaded.truncated ? " / MORE AVAILABLE" : string.Empty;
+            var completionStatus = SpatialScopePaging.CompletionFor(
+                pages[pages.Count - 1], limits, acceptedNodes, acceptedLinks);
+            var suffix = SpatialScopePaging.StatusSuffix(completionStatus);
             StatusText = $"{(offlineResult ? "OFFLINE" : "LIVE")} {loaded.scope.ToUpperInvariant()}  {loaded.nodes.Length} OBJECTS{suffix}";
             ScopeLoaded(loaded);
             SceneLoaded();
