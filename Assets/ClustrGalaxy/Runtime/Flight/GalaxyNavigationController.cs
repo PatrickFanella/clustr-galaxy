@@ -425,17 +425,20 @@ namespace ClustrGalaxy.Flight
             }
             blend = Mathf.MoveTowards(blend, IsMapOpen ? 1f : 0f, Time.unscaledDeltaTime / 0.8f);
             var eased = blend * blend * (3f - 2f * blend);
-            var focus = !string.IsNullOrWhiteSpace(history.StableId) && GalaxyEntity.TryGet(history.StableId, out var focused)
-                ? focused.transform.position
-                : targeting != null && targeting.Target != null
-                    ? targeting.Target.transform.position
-                : transform.position + transform.forward * 240f;
+            GalaxyEntity focused = null;
+            var hasFocusedEntity = !string.IsNullOrWhiteSpace(history.StableId) &&
+                GalaxyEntity.TryGet(history.StableId, out focused);
+            var hasTarget = targeting != null && targeting.Target != null;
+            var focus = ResolveMapFocus(history.Level,
+                hasFocusedEntity, hasFocusedEntity ? focused.transform.position : Vector3.zero,
+                hasTarget, hasTarget ? targeting.Target.transform.position : Vector3.zero,
+                transform.position, transform.forward);
             var distance = history.Level switch
             {
                 GalaxyNavigationLevel.Region => 3200f * GalaxyTuning.RegionDistanceScale,
                 GalaxyNavigationLevel.System => 1500f * GalaxyTuning.SystemDistanceScale,
                 GalaxyNavigationLevel.Inspect => 180f * GalaxyTuning.MoonOrbitScale,
-                _ => 5200f * GalaxyTuning.RegionDistanceScale
+                _ => 1200f * GalaxyTuning.RegionDistanceScale
             };
             var mapPosition = focus + new Vector3(0f, distance * 0.3f, -distance);
             var mapRotation = Quaternion.LookRotation(focus - mapPosition, Vector3.up);
@@ -445,6 +448,18 @@ namespace ClustrGalaxy.Flight
                 Vector3.Lerp(flightPosition, mapPosition, eased),
                 Quaternion.Slerp(flightRotation, mapRotation, eased));
             viewCamera.fieldOfView = Mathf.Lerp(72f, 58f, eased);
+        }
+
+        public static Vector3 ResolveMapFocus(GalaxyNavigationLevel level,
+            bool hasFocusedEntity, Vector3 focusedPosition,
+            bool hasTarget, Vector3 targetPosition,
+            Vector3 probePosition, Vector3 probeForward)
+        {
+            if (hasFocusedEntity) return focusedPosition;
+            if (hasTarget) return targetPosition;
+            return level == GalaxyNavigationLevel.Galaxy
+                ? Vector3.zero
+                : probePosition + probeForward * 240f;
         }
 
         private void OnDestroy()

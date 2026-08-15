@@ -105,6 +105,10 @@ namespace ClustrGalaxy.World
 
             Debug.Log($"[ClustrGalaxy.Renderer] Rendered {positions.Count} galactic regions and {renderedRoutes} resident routes from the public overview.");
             discoveryVisibility?.ApplyVisibility();
+            if (navigation != null && navigation.Level == GalaxyNavigationLevel.Galaxy && !navigation.IsMapOpen)
+            {
+                navigation.SetMapOpen(true);
+            }
         }
 
         private void CreateLandmark(SpatialNode node, Vector3 position)

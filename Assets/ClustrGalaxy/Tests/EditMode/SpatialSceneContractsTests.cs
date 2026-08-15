@@ -310,6 +310,24 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void GalaxyMapFraming_CentersTheOverviewWhenNothingIsSelected()
+        {
+            var focus = GalaxyNavigationController.ResolveMapFocus(
+                GalaxyNavigationLevel.Galaxy,
+                hasFocusedEntity: false, Vector3.zero,
+                hasTarget: false, Vector3.zero,
+                new Vector3(10f, 20f, 30f), Vector3.forward);
+
+            Assert.That(focus, Is.EqualTo(Vector3.zero));
+            Assert.That(GalaxyNavigationController.ResolveMapFocus(
+                    GalaxyNavigationLevel.Region,
+                    hasFocusedEntity: false, Vector3.zero,
+                    hasTarget: false, Vector3.zero,
+                    new Vector3(10f, 20f, 30f), Vector3.forward),
+                Is.EqualTo(new Vector3(10f, 20f, 270f)));
+        }
+
+        [Test]
         public void LayerVisibility_KeepsThePreviousLayerVisibleDuringPrefetch()
         {
             var loadingSystem = GalaxyLayerVisibility.For(
