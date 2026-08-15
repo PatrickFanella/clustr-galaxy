@@ -229,18 +229,25 @@ namespace ClustrGalaxy.Data
         {
             string json = null!;
             SpatialRequestFailure? failure = null;
-            yield return client.GetJson(uri, value => json = value, value => failure = value);
-
-            var offlineResult = false;
-            if (string.IsNullOrWhiteSpace(json) && cache.TryRead(cacheKey, out var cached))
+            var offlineResult = offlineOnly;
+            if (offlineOnly)
             {
-                json = cached;
-                offlineResult = true;
+                cache.TryRead(cacheKey, out json);
+            }
+            else
+            {
+                yield return client.GetJson(uri, value => json = value, value => failure = value);
+                if (string.IsNullOrWhiteSpace(json) && cache.TryRead(cacheKey, out var cached))
+                {
+                    json = cached;
+                    offlineResult = true;
+                }
             }
             if (string.IsNullOrWhiteSpace(json))
             {
-                StatusText = $"SCOPE UNAVAILABLE  {failure}";
-                Debug.LogWarning($"[ClustrGalaxy.Data] Bounded scope unavailable: {failure}");
+                var reason = offlineOnly ? "OFFLINE CACHE MISS" : failure?.ToString() ?? "request failed";
+                StatusText = $"SCOPE UNAVAILABLE  {reason}";
+                Debug.LogWarning($"[ClustrGalaxy.Data] Bounded scope unavailable: {reason}");
                 yield break;
             }
 
