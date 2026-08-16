@@ -1,64 +1,66 @@
 using UnityEngine;
-using System;
-using System.Collections.Generic;
+using ClustrGalaxy.Core.Domain;
 
 namespace ClustrGalaxy.World
 {
     public sealed class GalaxyEntity : MonoBehaviour
     {
-        private static readonly Dictionary<string, GalaxyEntity> Registry = new(StringComparer.Ordinal);
+        private GalaxyEntityRegistry registry;
 
         public string StableId { get; private set; } = string.Empty;
         public string DisplayName { get; private set; } = string.Empty;
         public string EntityType { get; private set; } = string.Empty;
+        public GalaxyEntityKind Kind { get; private set; }
+        public GalaxyVisualKind VisualKind { get; private set; }
         public long Value { get; private set; }
 
-        public void Initialize(string stableId, string displayName, string entityType, long value)
+        public void Initialize(string stableId, string displayName, string entityType, long value,
+            GalaxyEntityRegistry entityRegistry = null)
         {
-            if (!string.IsNullOrWhiteSpace(StableId))
-            {
-                Registry.Remove(StableId);
-            }
+            registry?.Unregister(this);
             StableId = stableId;
             DisplayName = displayName;
             EntityType = entityType;
+            (Kind, VisualKind) = GalaxyEntitySemantics.FromVisualLabel(entityType);
             Value = value;
             gameObject.name = $"{entityType}: {displayName}";
-            if (isActiveAndEnabled && !string.IsNullOrWhiteSpace(StableId))
-            {
-                Registry[StableId] = this;
-            }
+            registry = entityRegistry;
+            registry?.Register(this);
         }
-
-        public static bool TryGet(string stableId, out GalaxyEntity entity) =>
-            Registry.TryGetValue(stableId, out entity) && entity != null;
-
-        public static IEnumerable<GalaxyEntity> ActiveEntities => Registry.Values;
 
         public void ClearIdentity()
         {
-            RemoveFromRegistry();
+            registry?.Unregister(this);
             StableId = string.Empty;
             DisplayName = string.Empty;
             EntityType = string.Empty;
+            Kind = default;
+            VisualKind = default;
             Value = 0;
         }
 
         private void OnEnable()
         {
-            if (!string.IsNullOrWhiteSpace(StableId)) Registry[StableId] = this;
+            registry?.MarkActive(this);
         }
 
-        private void OnDisable() => RemoveFromRegistry();
+        private void OnDisable() => registry?.MarkInactive(this);
 
-        private void OnDestroy() => RemoveFromRegistry();
+        private void OnDestroy() => registry?.Unregister(this);
+    }
 
-        private void RemoveFromRegistry()
+    public static class GalaxyEntitySemantics
+    {
+        public static (GalaxyEntityKind Kind, GalaxyVisualKind Visual) FromVisualLabel(string value)
         {
-            if (!string.IsNullOrWhiteSpace(StableId) && Registry.TryGetValue(StableId, out var current) && current == this)
-            {
-                Registry.Remove(StableId);
-            }
+            if (value == "community" || value == "community region") return (GalaxyEntityKind.Community, GalaxyVisualKind.Region);
+            if (value == "subreddit" || value == "subreddit star") return (GalaxyEntityKind.Subreddit, GalaxyVisualKind.Star);
+            if (value == "post" || value == "post planet") return (GalaxyEntityKind.Post, GalaxyVisualKind.Planet);
+            if (value == "user" || value == "user ship") return (GalaxyEntityKind.User, GalaxyVisualKind.Ship);
+            if (value != null && (value.Contains("comment") || value.Contains("reply") || value == "discussion satellite"))
+                return (GalaxyEntityKind.Comment,
+                    value.Contains("ring") || value.Contains("particle") ? GalaxyVisualKind.RingParticle : GalaxyVisualKind.Satellite);
+            throw new System.ArgumentException($"Unknown galaxy visual label '{value}'.", nameof(value));
         }
     }
 }

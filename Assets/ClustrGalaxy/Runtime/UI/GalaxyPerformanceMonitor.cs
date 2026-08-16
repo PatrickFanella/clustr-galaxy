@@ -126,7 +126,7 @@ namespace ClustrGalaxy.UI
                     if (entity.gameObject.activeSelf) ActiveEntityCount++;
                     else PooledEntityCount++;
                 }
-                KnownNodeCount = visibility?.DiscoveryStore?.State.known_entity_ids?.Length ?? registry.Entities.Count;
+                KnownNodeCount = visibility?.SurveySession?.State.KnownEntities.Count ?? registry.Entities.Count;
             }
         }
 

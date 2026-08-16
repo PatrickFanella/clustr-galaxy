@@ -1,6 +1,7 @@
 using System;
 using ClustrGalaxy.Gameplay;
 using UnityEngine;
+using ClustrGalaxy.Core.Domain;
 
 namespace ClustrGalaxy.Flight
 {
@@ -15,15 +16,10 @@ namespace ClustrGalaxy.Flight
         public const float AutopilotMaximumSpeed = 92f;
         public const float AutopilotArrivalSpeed = 1.5f;
 
-        public static bool IsNavigableEntityType(string entityType)
-        {
-            return string.Equals(entityType, "subreddit", StringComparison.Ordinal) ||
-                   string.Equals(entityType, "subreddit star", StringComparison.Ordinal);
-        }
+        public static bool IsNavigableEntityType(GalaxyEntityKind entityKind) => GalaxyKinds.IsNavigable(entityKind);
 
-        public static bool IsEligibleDestination(GalaxyWorldMode worldMode, bool known, string entityType) =>
-            IsNavigableEntityType(entityType) &&
-            (worldMode == GalaxyWorldMode.Explore || known);
+        public static bool IsEligibleDestination(GalaxyWorldMode worldMode, bool known, GalaxyEntityKind entityKind) =>
+            IsNavigableEntityType(entityKind) && (worldMode == GalaxyWorldMode.Explore || known);
 
         public static float ArrivalRadius(float collisionRadius, double softeningRadius, float clearance = DefaultClearance)
         {

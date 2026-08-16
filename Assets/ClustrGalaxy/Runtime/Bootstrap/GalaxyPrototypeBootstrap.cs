@@ -30,13 +30,11 @@ namespace ClustrGalaxy.Bootstrap
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = 0.0012f;
 
+            var registry = new GalaxyEntityRegistry();
             var starfield = CreateStarfield();
-            CreateSystem();
-            CreateSurveySignalDestination();
+            CreateSystem(registry);
+            CreateSurveySignalDestination(registry);
             var dataLoader = CreateDataLoader();
-            var registryRoot = new GameObject("Galaxy Entity Registry");
-            var registry = registryRoot.AddComponent<GalaxyEntityRegistry>();
-            registry.RefreshFromScene();
             CreateProbe(dataLoader, starfield, registry);
             var entityCount = registry.Entities.Count;
             Debug.Log($"[ClustrGalaxy] Prototype ready: observer probe, {entityCount} targetable entities, and deterministic Kepler orbits loaded.");
@@ -107,7 +105,7 @@ namespace ClustrGalaxy.Bootstrap
             }
             var gameplay = probe.AddComponent<GalaxyGameplayBootstrap>();
             gameplay.Initialize(flight, targeting, dataLoader, navigation, discoveryVisibility, scanner,
-                threadInspection, hud, starfield, registry, new[]
+                threadInspection, hud, registry, new[]
                 {
                     new ScanRoute("route:technology-signal-horizon", "subreddit:technology",
                         "subreddit:signal-horizon", 8f),
@@ -121,7 +119,7 @@ namespace ClustrGalaxy.Bootstrap
             materializer.BindThreadInspection(threadInspection);
         }
 
-        private static void CreateSystem()
+        private static void CreateSystem(GalaxyEntityRegistry registry)
         {
             const long revisionId = 9;
             const long catalogId = 3;
@@ -130,7 +128,7 @@ namespace ClustrGalaxy.Bootstrap
 
             var root = new GameObject("Region: Technology Community Cluster");
             var star = CreateBody(root.transform, "subreddit:technology", "r/technology", "subreddit star", 14820,
-                Vector3.zero, 22f, new Color(0.7f, 1f, 0.35f));
+                Vector3.zero, 22f, new Color(0.7f, 1f, 0.35f), registry);
             star.gameObject.AddComponent<GravitySource>().Initialize(starMu, 14d, 12d);
             var light = star.gameObject.AddComponent<Light>();
             light.type = LightType.Point;
@@ -165,29 +163,29 @@ namespace ClustrGalaxy.Bootstrap
                     revisionId, catalogId, "subreddit:technology", seed.Id, semiMajorAxis);
 
                 var planet = CreateBody(root.transform, seed.Id, seed.Title, "post planet", seed.CommentCount,
-                    Vector3.zero, visualRadius, seed.Color);
+                    Vector3.zero, visualRadius, seed.Color, registry);
                 planet.gameObject.AddComponent<KeplerOrbit>().Initialize(star, elements, starMu, timeScale);
                 planet.gameObject.AddComponent<GravitySource>().Initialize(postMu,
                     Math.Max(1.5d, visualRadius * 0.75d), 6d);
                 CreateOrbitLine(root.transform, star, elements, starMu,
                     new Color(seed.Color.r, seed.Color.g, seed.Color.b, 0.28f), 0.075f);
                 CreateComments(planet, seed, elements, visualRadius, postMu,
-                    starMu, revisionId, catalogId, GalaxyScale.MoonOrbitTimeScale);
+                    starMu, revisionId, catalogId, GalaxyScale.MoonOrbitTimeScale, registry);
 
                 previousElements = elements;
                 previousRadius = visualRadius;
             }
 
             CreateTravelers(root.transform, star, starMu, revisionId, catalogId, timeScale,
-                previousElements.SemiMajorAxis + GalaxyScale.TravelerOrbitOffset);
+                previousElements.SemiMajorAxis + GalaxyScale.TravelerOrbitOffset, registry);
             GalaxySurveyMembership.InitializeDescendants(root.transform, "subreddit:technology");
         }
 
-        private static void CreateSurveySignalDestination()
+        private static void CreateSurveySignalDestination(GalaxyEntityRegistry registry)
         {
             var root = new GameObject("Survey Signal Horizon");
             var destination = CreateBody(root.transform, "subreddit:signal-horizon", "r/signal-horizon",
-                "subreddit star", 0, new Vector3(14500f, 2800f, -12000f), 16f, new Color(0.35f, 0.45f, 0.9f));
+                "subreddit star", 0, new Vector3(14500f, 2800f, -12000f), 16f, new Color(0.35f, 0.45f, 0.9f), registry);
             destination.gameObject.AddComponent<GalaxySurveyMembership>().Initialize("subreddit:signal-horizon");
         }
 
@@ -200,7 +198,8 @@ namespace ClustrGalaxy.Bootstrap
             double starMu,
             long revisionId,
             long catalogId,
-            float timeScale)
+            float timeScale,
+            GalaxyEntityRegistry registry)
         {
             var systemRoot = planet.parent;
             var physicalPlanetRadius = planetVisualRadius * 0.35d;
@@ -228,7 +227,7 @@ namespace ClustrGalaxy.Bootstrap
 
                 var moon = CreateBody(systemRoot, commentId, $"Active parent comment {index + 1}",
                     "discussion satellite", Math.Max(1, post.CommentCount / (index + 3)),
-                    Vector3.zero, moonRadius, Color.Lerp(post.Color, Color.white, 0.42f));
+                    Vector3.zero, moonRadius, Color.Lerp(post.Color, Color.white, 0.42f), registry);
                 var visualCatalog = GalaxyVisualCatalog.Load();
                 if (visualCatalog != null && visualCatalog.discussionSatellitePrefab != null)
                 {
@@ -251,7 +250,7 @@ namespace ClustrGalaxy.Bootstrap
                     Math.Max(minimumRingAxis, nextAxis));
                 if (ringAxis >= minimumRingAxis)
                 {
-                    CreateCommentParticleRing(systemRoot, planet, post, ringAxis, planetMu, timeScale);
+                    CreateCommentParticleRing(systemRoot, planet, post, ringAxis, planetMu, timeScale, registry);
                 }
             }
         }
@@ -263,7 +262,8 @@ namespace ClustrGalaxy.Bootstrap
             long revisionId,
             long catalogId,
             float timeScale,
-            double innerAxis)
+            double innerAxis,
+            GalaxyEntityRegistry registry)
         {
             var visualCatalog = GalaxyVisualCatalog.Load();
             for (var index = 0; index < 6; index++)
@@ -274,7 +274,7 @@ namespace ClustrGalaxy.Bootstrap
                 var collider = ship.AddComponent<CapsuleCollider>();
                 collider.radius = 0.45f;
                 collider.height = 1.8f;
-                ship.AddComponent<GalaxyEntity>().Initialize(id, $"traveler_{index:00}", "user ship", 140 + index * 37);
+                ship.AddComponent<GalaxyEntity>().Initialize(id, $"traveler_{index:00}", "user ship", 140 + index * 37, registry);
                 var prefab = visualCatalog != null ? visualCatalog.UserShipForIndex(index) : null;
                 if (prefab != null)
                 {
@@ -295,13 +295,14 @@ namespace ClustrGalaxy.Bootstrap
             }
         }
 
-        private static Transform CreateBody(Transform parent, string id, string label, string type, long value, Vector3 position, float scale, Color color)
+        private static Transform CreateBody(Transform parent, string id, string label, string type, long value,
+            Vector3 position, float scale, Color color, GalaxyEntityRegistry registry)
         {
             var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             body.transform.SetParent(parent, false);
             body.transform.localPosition = position;
             body.transform.localScale = Vector3.one * (scale * 2f);
-            body.AddComponent<GalaxyEntity>().Initialize(id, label, type, value);
+            body.AddComponent<GalaxyEntity>().Initialize(id, label, type, value, registry);
             body.GetComponent<MeshRenderer>().material = CreateMaterial(color, true);
             return body.transform;
         }
@@ -337,7 +338,8 @@ namespace ClustrGalaxy.Bootstrap
             PostSeed post,
             double axis,
             double planetMu,
-            float timeScale)
+            float timeScale,
+            GalaxyEntityRegistry registry)
         {
             var activity = MetricNormalizer.NormalizeLog(post.CommentCount, 1, 2000);
             var parentCount = 10 + Mathf.RoundToInt((float)activity * 18f);
@@ -361,7 +363,7 @@ namespace ClustrGalaxy.Bootstrap
                 particle.GetComponent<MeshRenderer>().sharedMaterial = material;
                 particle.GetComponent<SphereCollider>().radius = 1.25f;
                 particle.AddComponent<GalaxyEntity>().Initialize(
-                    id, $"Parent comment {index + 1}", "parent comment", Math.Max(1, post.CommentCount / parentCount));
+                    id, $"Parent comment {index + 1}", "parent comment", Math.Max(1, post.CommentCount / parentCount), registry);
                 particle.AddComponent<KeplerOrbit>().Initialize(planet, elements, planetMu, timeScale);
                 AttachPrototypeThread(particle.transform, post, index + 10);
             }

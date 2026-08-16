@@ -1,8 +1,14 @@
 using System;
+using System.Linq;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Gameplay;
 using ClustrGalaxy.Interaction;
 using UnityEngine;
+using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Persistence;
+using ClustrGalaxy.Core.Survey;
+using ClustrGalaxy.Persistence;
+using ClustrGalaxy.Core.Session;
 
 namespace ClustrGalaxy.World
 {
@@ -29,8 +35,8 @@ namespace ClustrGalaxy.World
 
     public static class SurveyStartingKnowledge
     {
-        public static bool CanSeed(string entityType, bool isNavigationAnchor) =>
-            isNavigationAnchor || entityType == "subreddit star" || entityType == "post planet";
+        public static bool CanSeed(GalaxyEntityKind entityKind, bool isNavigationAnchor) =>
+            isNavigationAnchor || entityKind == GalaxyEntityKind.Subreddit || entityKind == GalaxyEntityKind.Post;
     }
 
     /// <summary>
@@ -71,16 +77,21 @@ namespace ClustrGalaxy.World
     /// <summary>Metadata for route renderers; route IDs stay logical data IDs.</summary>
     public sealed class GalaxySurveyRoute : MonoBehaviour
     {
+        private GalaxyEntityRegistry registry;
         public string StableId { get; private set; } = string.Empty;
         public string SourceId { get; private set; } = string.Empty;
         public string TargetId { get; private set; } = string.Empty;
 
-        public void Initialize(string stableId, string sourceId, string targetId)
+        public void Initialize(string stableId, string sourceId, string targetId, GalaxyEntityRegistry entityRegistry = null)
         {
             StableId = stableId ?? string.Empty;
             SourceId = sourceId ?? string.Empty;
             TargetId = targetId ?? string.Empty;
+            registry = entityRegistry;
+            registry?.Register(this);
         }
+
+        private void OnDestroy() => registry?.Unregister(this);
     }
 
     /// <summary>
@@ -91,15 +102,17 @@ namespace ClustrGalaxy.World
     public sealed class GalaxySurveyVisibilityController : MonoBehaviour
     {
         private GalaxyModeState modes = null!;
-        private SurveyDiscoveryStore discoveryStore = null!;
+        private SurveySession surveySession = null!;
+        private GalaxySession galaxySession = null!;
         private SurveySnapshotKey snapshotKey;
-        private string profileId = SurveyDiscoveryStore.DefaultProfileId;
+        private string profileId = "offline-pilot";
         private string persistentDataRoot = string.Empty;
         private ProbeTargeting targeting = null!;
         private SpatialSceneLoader dataLoader = null!;
         private GalaxyEntityRegistry registry = null!;
+        private bool publishingOutcome;
 
-        public SurveyDiscoveryStore DiscoveryStore => discoveryStore;
+        public SurveySession SurveySession => galaxySession?.Survey ?? surveySession;
         public GalaxyEntityRegistry Registry
         {
             get
@@ -111,33 +124,27 @@ namespace ClustrGalaxy.World
         public SurveySnapshotKey PendingSnapshotKey => snapshotKey;
         public GalaxyWorldMode WorldMode => modes?.WorldMode ?? GalaxyWorldMode.Explore;
         public bool RequiresStartingSystemChoice =>
-            modes != null && modes.WorldMode == GalaxyWorldMode.Survey && discoveryStore == null;
-        public event Action<SurveyDiscoveryStore> SurveyStarted = delegate { };
-
-        public void Initialize(GalaxyModeState modeState, SurveyDiscoveryStore store)
-        {
-            if (modeState == null) throw new ArgumentNullException(nameof(modeState));
-            if (store == null) throw new ArgumentNullException(nameof(store));
-            Unsubscribe();
-            modes = modeState;
-            discoveryStore = store;
-            snapshotKey = store.SnapshotKey;
-            modes.WorldModeChanged += OnWorldModeChanged;
-            ApplyVisibility();
-        }
+            modes != null && modes.WorldMode == GalaxyWorldMode.Survey && SurveySession == null;
+        public event Action<SurveyTransitionOutcome> SurveyTransitionCommitted = delegate { };
 
         public void Initialize(GalaxyModeState modeState, SurveySnapshotKey key,
-            string surveyProfileId = SurveyDiscoveryStore.DefaultProfileId, string dataRoot = null)
+            string surveyProfileId = "offline-pilot", string dataRoot = null)
         {
             if (modeState == null) throw new ArgumentNullException(nameof(modeState));
             Unsubscribe();
             modes = modeState;
             snapshotKey = key;
-            profileId = string.IsNullOrWhiteSpace(surveyProfileId) ? SurveyDiscoveryStore.DefaultProfileId : surveyProfileId;
+            profileId = string.IsNullOrWhiteSpace(surveyProfileId) ? "offline-pilot" : surveyProfileId;
             persistentDataRoot = dataRoot ?? Application.persistentDataPath;
-            discoveryStore = null!;
+            surveySession = null!;
             modes.WorldModeChanged += OnWorldModeChanged;
             ApplyVisibility();
+        }
+
+        public void BindGalaxySession(GalaxySession session)
+        {
+            galaxySession = session ?? throw new ArgumentNullException(nameof(session));
+            surveySession = null!;
         }
 
         public void BindTargeting(ProbeTargeting targetController)
@@ -150,17 +157,16 @@ namespace ClustrGalaxy.World
         public void BindRegistry(GalaxyEntityRegistry entityRegistry)
         {
             registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
-            registry.RefreshFromScene();
             ApplyVisibility();
         }
 
         public void BindDataLoader(SpatialSceneLoader sceneLoader)
         {
-            if (dataLoader != null) dataLoader.SceneLoaded -= UpdatePendingSnapshotKey;
+            if (dataLoader != null) dataLoader.SceneCommitted -= UpdatePendingSnapshotKey;
             dataLoader = sceneLoader;
             if (dataLoader != null)
             {
-                dataLoader.SceneLoaded += UpdatePendingSnapshotKey;
+                dataLoader.SceneCommitted += UpdatePendingSnapshotKey;
                 UpdatePendingSnapshotKey();
             }
         }
@@ -175,40 +181,44 @@ namespace ClustrGalaxy.World
         public bool StartAt(string systemStableId)
         {
             EnsureRegistry();
-            registry.RefreshFromScene();
             if (!TryGetLoadedSubreddit(systemStableId, out _))
             {
                 return false;
             }
 
-            if (discoveryStore == null)
-            {
-                var opened = string.IsNullOrWhiteSpace(persistentDataRoot)
-                    ? SurveyDiscoveryStore.OpenDefault(profileId, snapshotKey, systemStableId)
-                    : SurveyDiscoveryStore.Open(persistentDataRoot, profileId, snapshotKey, systemStableId);
-                if (!string.Equals(opened.StartingSystemId, systemStableId, StringComparison.Ordinal))
-                {
-                    return false;
-                }
-                discoveryStore = opened;
-            }
-            else if (!string.Equals(discoveryStore.StartingSystemId, systemStableId, StringComparison.Ordinal))
+            if (SurveySession != null && SurveySession.State.StartingSystemId != (GalaxyEntityId)systemStableId)
             {
                 return false;
             }
 
             EnsureRegistry();
+            var seeded = new System.Collections.Generic.List<GalaxyEntityId>();
             for (var index = 0; index < registry.Entities.Count; index++)
             {
                 var entity = registry.Entities[index];
                 if (BelongsToSystem(entity, systemStableId) && CanSeedStartingKnowledge(entity))
                 {
-                    discoveryStore.IdentifyEntity(entity.StableId);
+                    seeded.Add((GalaxyEntityId)entity.StableId);
                 }
             }
-            discoveryStore.Save();
+            SurveyTransitionOutcome outcome;
+            if (SurveySession == null && galaxySession != null)
+                outcome = galaxySession.StartSurvey((GalaxyEntityId)systemStableId, seeded,
+                    "start:" + systemStableId, DateTime.UtcNow);
+            else
+            {
+                if (SurveySession == null)
+                {
+                    var root = string.IsNullOrWhiteSpace(persistentDataRoot) ? Application.persistentDataPath : persistentDataRoot;
+                    surveySession = new SurveySession(new SurveyFileRepository(new FileDurableDocumentStore(root)), profileId,
+                        ToCoreSnapshot(snapshotKey), (GalaxyEntityId)systemStableId);
+                }
+                outcome = ApplySurveyIntent(new StartSurveyIntent("start:" + systemStableId,
+                    SurveySession.State.Snapshot, DateTime.UtcNow, (GalaxyEntityId)systemStableId, seeded));
+            }
+            if (!outcome.Succeeded) return false;
+            if (outcome.Changed && galaxySession != null) Publish(outcome);
             ApplyVisibility();
-            SurveyStarted(discoveryStore);
             return true;
         }
 
@@ -216,14 +226,38 @@ namespace ClustrGalaxy.World
         public bool CanTarget(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanTarget);
         public bool CanLabel(GalaxyEntity entity) => entity != null && GalaxyDiscoveryVisibility.CanLabel(
             modes?.WorldMode ?? GalaxyWorldMode.Explore,
-            discoveryStore != null && discoveryStore.IsEntityIdentified(entity.StableId));
+            IsIdentified(entity));
         public bool CanFastTravel(GalaxyEntity entity) => Can(entity, GalaxyDiscoveryVisibility.CanFastTravel);
 
-        public bool IsKnown(GalaxyEntity entity) => entity != null && discoveryStore != null &&
-            discoveryStore.IsEntityKnown(entity.StableId);
+        public bool IsKnown(GalaxyEntity entity) => entity != null &&
+            SurveySession != null && SurveySession.State.IsKnown((GalaxyEntityId)entity.StableId);
 
-        public bool IsIdentified(GalaxyEntity entity) => entity != null && discoveryStore != null &&
-            discoveryStore.IsEntityIdentified(entity.StableId);
+        public bool IsIdentified(GalaxyEntity entity) => entity != null &&
+            SurveySession != null && SurveySession.State.IsIdentified((GalaxyEntityId)entity.StableId);
+
+        public bool IsRouteKnown(string routeId) => SurveySession != null &&
+            SurveySession.State.KnownRoutes.Contains((GalaxyRouteId)routeId);
+
+        public SurveyTransitionOutcome ApplySurveyIntent(SurveyIntent intent)
+        {
+            if (publishingOutcome)
+                throw new InvalidOperationException("Survey outcomes are presentation-only; nested transitions are forbidden.");
+            if (SurveySession == null) throw new InvalidOperationException("Survey has not been started.");
+            var outcome = galaxySession != null ? galaxySession.ApplySurvey(intent) : surveySession.Apply(intent);
+            if (outcome.Succeeded && outcome.Changed)
+            {
+                ApplyVisibility();
+                Publish(outcome);
+            }
+            return outcome;
+        }
+
+        private void Publish(SurveyTransitionOutcome outcome)
+        {
+            publishingOutcome = true;
+            try { SurveyTransitionCommitted(outcome); }
+            finally { publishingOutcome = false; }
+        }
 
         public GalaxyEntity[] LoadedStartingSystems()
         {
@@ -243,7 +277,6 @@ namespace ClustrGalaxy.World
         public void ApplyVisibility()
         {
             EnsureRegistry();
-            registry.RefreshFromScene();
             for (var index = 0; index < registry.Entities.Count; index++)
             {
                 var entity = registry.Entities[index];
@@ -267,7 +300,7 @@ namespace ClustrGalaxy.World
             for (var index = 0; index < registry.Routes.Count; index++)
             {
                 var route = registry.Routes[index];
-                var known = discoveryStore != null && discoveryStore.IsRouteKnown(route.StableId);
+                var known = IsRouteKnown(route.StableId);
                 var visible = GalaxyDiscoveryVisibility.CanRender(modes?.WorldMode ?? GalaxyWorldMode.Explore, known);
                 if (route.gameObject.activeSelf != visible)
                 {
@@ -289,14 +322,17 @@ namespace ClustrGalaxy.World
         private static bool CanSeedStartingKnowledge(GalaxyEntity entity)
         {
             var membership = entity.GetComponent<GalaxySurveyMembership>();
-            return SurveyStartingKnowledge.CanSeed(entity.EntityType, membership != null && membership.IsNavigationAnchor);
+            return SurveyStartingKnowledge.CanSeed(entity.Kind, membership != null && membership.IsNavigationAnchor);
         }
 
-        private void UpdatePendingSnapshotKey()
+        private void UpdatePendingSnapshotKey(SpatialScene _ = null)
         {
-            snapshotKey = SelectPendingSnapshotKey(snapshotKey, discoveryStore != null,
+            snapshotKey = SelectPendingSnapshotKey(snapshotKey, SurveySession != null,
                 dataLoader != null ? dataLoader.PinnedSurveySnapshotKey : null);
         }
+
+        private static SurveySnapshotId ToCoreSnapshot(SurveySnapshotKey key) =>
+            new SurveySnapshotId(key.RevisionId, key.CatalogId, key.StorageNamespace);
 
         private bool TryGetLoadedSubreddit(string stableId, out GalaxyEntity entity)
         {
@@ -324,11 +360,7 @@ namespace ClustrGalaxy.World
 
         private static bool IsSubreddit(GalaxyEntity candidate)
         {
-            var metadata = candidate.GetComponent<LiveEntityMetadata>();
-            var isSubreddit = metadata?.Node != null
-                ? metadata.Node.type == "subreddit"
-                : candidate.EntityType == "subreddit star";
-            return isSubreddit;
+            return candidate.Kind == GalaxyEntityKind.Subreddit;
         }
 
         private void OnWorldModeChanged(GalaxyWorldMode _) => ApplyVisibility();
@@ -339,9 +371,7 @@ namespace ClustrGalaxy.World
             {
                 // Compatibility for isolated PlayMode fixtures. Runtime setup
                 // always injects the shared registry through the composition root.
-                registry = GetComponent<GalaxyEntityRegistry>();
-                if (registry == null) registry = gameObject.AddComponent<GalaxyEntityRegistry>();
-                registry.RefreshFromScene();
+                throw new InvalidOperationException("Survey visibility requires the shared resident galaxy registry.");
             }
         }
 
@@ -356,7 +386,7 @@ namespace ClustrGalaxy.World
         private void OnDestroy()
         {
             Unsubscribe();
-            if (dataLoader != null) dataLoader.SceneLoaded -= UpdatePendingSnapshotKey;
+            if (dataLoader != null) dataLoader.SceneCommitted -= UpdatePendingSnapshotKey;
         }
     }
 }

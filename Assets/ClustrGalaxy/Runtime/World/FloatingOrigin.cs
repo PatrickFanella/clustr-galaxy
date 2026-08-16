@@ -42,61 +42,39 @@ namespace ClustrGalaxy.World
                 }
             }
 
-            ShiftWorldSpaceLines(shift);
-            ShiftTrails(shift);
-            ShiftWorldParticles(shift);
+            ShiftWorldSpaceEffects(roots, shift);
             LogicalOrigin = LogicalOrigin.Add(-shift);
             Physics.SyncTransforms();
             Rebased(shift, LogicalOrigin);
         }
 
-        private static void ShiftWorldSpaceLines(Vector3 shift)
+        private static void ShiftWorldSpaceEffects(GameObject[] roots, Vector3 shift)
         {
-            foreach (var line in FindObjectsByType<LineRenderer>(FindObjectsInactive.Include))
+            foreach (var root in roots)
             {
-                if (!line.useWorldSpace)
+                foreach (var line in root.GetComponentsInChildren<LineRenderer>(true))
                 {
-                    continue;
+                    if (!line.useWorldSpace) continue;
+                    var positions = new Vector3[line.positionCount];
+                    line.GetPositions(positions);
+                    for (var index = 0; index < positions.Length; index++) positions[index] += shift;
+                    line.SetPositions(positions);
                 }
-                var positions = new Vector3[line.positionCount];
-                line.GetPositions(positions);
-                for (var index = 0; index < positions.Length; index++)
+                foreach (var trail in root.GetComponentsInChildren<TrailRenderer>(true))
                 {
-                    positions[index] += shift;
+                    var positions = new Vector3[trail.positionCount];
+                    trail.GetPositions(positions);
+                    for (var index = 0; index < positions.Length; index++) positions[index] += shift;
+                    trail.SetPositions(positions);
                 }
-                line.SetPositions(positions);
-            }
-        }
-
-        private static void ShiftTrails(Vector3 shift)
-        {
-            foreach (var trail in FindObjectsByType<TrailRenderer>(FindObjectsInactive.Include))
-            {
-                var positions = new Vector3[trail.positionCount];
-                trail.GetPositions(positions);
-                for (var index = 0; index < positions.Length; index++)
+                foreach (var system in root.GetComponentsInChildren<ParticleSystem>(true))
                 {
-                    positions[index] += shift;
+                    if (system.main.simulationSpace != ParticleSystemSimulationSpace.World) continue;
+                    var particles = new ParticleSystem.Particle[system.particleCount];
+                    var count = system.GetParticles(particles);
+                    for (var index = 0; index < count; index++) particles[index].position += shift;
+                    system.SetParticles(particles, count);
                 }
-                trail.SetPositions(positions);
-            }
-        }
-
-        private static void ShiftWorldParticles(Vector3 shift)
-        {
-            foreach (var system in FindObjectsByType<ParticleSystem>(FindObjectsInactive.Include))
-            {
-                if (system.main.simulationSpace != ParticleSystemSimulationSpace.World)
-                {
-                    continue;
-                }
-                var particles = new ParticleSystem.Particle[system.particleCount];
-                var count = system.GetParticles(particles);
-                for (var index = 0; index < count; index++)
-                {
-                    particles[index].position += shift;
-                }
-                system.SetParticles(particles, count);
             }
         }
     }

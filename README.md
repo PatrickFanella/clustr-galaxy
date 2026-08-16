@@ -66,7 +66,7 @@ a local outbox record marked
 `QUEUED LOCALLY — SUBMISSION SERVICE UNAVAILABLE`; no network request, account
 identity, credentials, or automatic publication is involved.
 
-In Survey, open **AUTHOR PERSONAL CONSTELLATION** in the compact left HUD to
+In Survey, use **ADD CONSTELLATION MEMBER** in the compact left HUD to
 add the current identified target, review up to 12 member rows, and enter a
 local name and reason. A constellation needs 3–12 unique known entities.
 **SAVE LOCALLY** is the only action that writes a constellation. Queuing is a

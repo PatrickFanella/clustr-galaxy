@@ -12,6 +12,7 @@ namespace ClustrGalaxy.Interaction
 
         private InputAction targetAction = null!;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
+        private GalaxyEntityRegistry registry = null!;
         public GalaxyEntity Target { get; private set; }
         public event Action<GalaxyEntity> TargetChanged = delegate { };
 
@@ -28,7 +29,11 @@ namespace ClustrGalaxy.Interaction
         public void Initialize(GalaxySurveyVisibilityController visibilityController)
         {
             discoveryVisibility = visibilityController;
+            registry = visibilityController?.Registry;
         }
+
+        public void BindRegistry(GalaxyEntityRegistry entityRegistry) =>
+            registry = entityRegistry ?? throw new ArgumentNullException(nameof(entityRegistry));
 
         public void AcquireTarget()
         {
@@ -36,7 +41,7 @@ namespace ClustrGalaxy.Interaction
             var observer = Camera.main != null ? Camera.main.transform : transform;
             GalaxyEntity best = null;
             var bestScore = float.PositiveInfinity;
-            foreach (var entity in GalaxyEntity.ActiveEntities)
+            foreach (var entity in registry?.ActiveEntities ?? Array.Empty<GalaxyEntity>())
             {
                 if (discoveryVisibility != null && !discoveryVisibility.CanTarget(entity))
                 {

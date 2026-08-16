@@ -7,6 +7,7 @@ using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Simulation;
 using ClustrGalaxy.UI;
 using ClustrGalaxy.World;
+using ClustrGalaxy.Core.Domain;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -377,11 +378,11 @@ namespace ClustrGalaxy.Tests
         [Test]
         public void MapSelection_OnlyAllowsTheNextSemanticLevel()
         {
-            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, "community"), Is.True);
-            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, "post"), Is.False);
-            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Region, "subreddit"), Is.True);
-            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.System, "post"), Is.True);
-            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Inspect, "comment"), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, GalaxyEntityKind.Community), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Galaxy, GalaxyEntityKind.Post), Is.False);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Region, GalaxyEntityKind.Subreddit), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.System, GalaxyEntityKind.Post), Is.True);
+            Assert.That(GalaxyMapSelection.IsSelectable(GalaxyNavigationLevel.Inspect, GalaxyEntityKind.Comment), Is.True);
         }
 
         [Test]
@@ -390,9 +391,9 @@ namespace ClustrGalaxy.Tests
             var cursor = new Vector2(0.5f, 0.5f);
             var candidates = new[]
             {
-                new GalaxyMapCandidate("far", "community", new Vector2(0.6f, 0.5f), true),
-                new GalaxyMapCandidate("near", "community", new Vector2(0.52f, 0.5f), true),
-                new GalaxyMapCandidate("behind", "community", cursor, false)
+                new GalaxyMapCandidate("far", GalaxyEntityKind.Community, new Vector2(0.6f, 0.5f), true),
+                new GalaxyMapCandidate("near", GalaxyEntityKind.Community, new Vector2(0.52f, 0.5f), true),
+                new GalaxyMapCandidate("behind", GalaxyEntityKind.Community, cursor, false)
             };
 
             Assert.That(GalaxyMapSelection.NearestId(
@@ -459,18 +460,19 @@ namespace ClustrGalaxy.Tests
             var owner = new GameObject("pool owner");
             try
             {
+                var registry = new GalaxyEntityRegistry();
                 var pool = new GalaxyEntityPool(owner.transform);
                 var first = pool.Acquire(PrimitiveType.Sphere, owner.transform);
-                first.GetComponent<GalaxyEntity>().Initialize("post_old", "Old", "post planet", 1);
+                first.GetComponent<GalaxyEntity>().Initialize("post_old", "Old", "post planet", 1, registry);
 
-                Assert.That(GalaxyEntity.TryGet("post_old", out _), Is.True);
+                Assert.That(registry.FindActiveEntity("post_old"), Is.Not.Null);
                 pool.Release(first);
-                Assert.That(GalaxyEntity.TryGet("post_old", out _), Is.False);
+                Assert.That(registry.FindActiveEntity("post_old"), Is.Null);
 
                 var reused = pool.Acquire(PrimitiveType.Sphere, owner.transform);
                 Assert.That(reused, Is.SameAs(first));
-                reused.GetComponent<GalaxyEntity>().Initialize("post_new", "New", "post planet", 2);
-                Assert.That(GalaxyEntity.TryGet("post_new", out _), Is.True);
+                reused.GetComponent<GalaxyEntity>().Initialize("post_new", "New", "post planet", 2, registry);
+                Assert.That(registry.FindActiveEntity("post_new"), Is.Not.Null);
             }
             finally
             {
