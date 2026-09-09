@@ -147,7 +147,7 @@ namespace ClustrGalaxy.Bootstrap
                         "subreddit:weak-archive", 2f)
                 });
             if (Array.Exists(arguments, value => value == "--clustr-warm-start-smoke"))
-                probe.AddComponent<GalaxyWarmStartSmokeRunner>();
+                probe.AddComponent<GalaxyWarmStartSmokeRunner>().Initialize(dataLoader);
             overview.BindNavigation(navigation);
             overview.BindDiscoveryVisibility(discoveryVisibility);
             materializer.BindNavigation(navigation, overview);

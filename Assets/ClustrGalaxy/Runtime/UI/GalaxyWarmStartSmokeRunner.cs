@@ -11,6 +11,8 @@ namespace ClustrGalaxy.UI
     /// <summary>Opt-in offline startup evidence. The parent measures process-to-rendered readiness.</summary>
     public sealed class GalaxyWarmStartSmokeRunner : MonoBehaviour
     {
+        private SpatialSceneLoader loader;
+        public void Initialize(SpatialSceneLoader value) => loader = value;
         [Serializable] private sealed class Result
         {
             public bool passed, offline, chart_visible;
@@ -22,7 +24,6 @@ namespace ClustrGalaxy.UI
         private IEnumerator Start()
         {
             var owner = GetComponent<GalaxySessionBehaviour>();
-            var loader = FindFirstObjectByType<SpatialSceneLoader>();
             var navigation = GetComponent<GalaxyNavigationController>();
             var result = new Result { source_sha = Application.version.Contains("+") ? Application.version.Split('+')[1] : "",
                 build_id = Application.buildGUID, width = Screen.width, height = Screen.height };
