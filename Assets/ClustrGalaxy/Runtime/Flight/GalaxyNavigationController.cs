@@ -580,7 +580,7 @@ namespace ClustrGalaxy.Flight
                 GalaxyNavigationLevel.Region => 3200f * GalaxyTuning.RegionDistanceScale,
                 GalaxyNavigationLevel.System => 1500f * GalaxyTuning.SystemDistanceScale,
                 GalaxyNavigationLevel.Inspect => 180f * GalaxyTuning.MoonOrbitScale,
-                _ => GalacticLandmarkLayout.OverviewCameraDistance(58f, viewCamera.aspect)
+                _ => ClustrGalaxy.Data.GalacticLandmarkLayout.OverviewCameraDistance(58f, viewCamera.aspect)
             };
             var mapPosition = focus + new Vector3(0f, distance * 0.3f, -distance);
             var mapRotation = Quaternion.LookRotation(focus - mapPosition, Vector3.up);

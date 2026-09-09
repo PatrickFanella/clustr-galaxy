@@ -19,6 +19,7 @@ namespace ClustrGalaxy.UI
             public string source_sha, build_id, data_mode, error;
             public long revision_id, catalog_id;
             public int width, height, resident_nodes;
+            public float first_frame_seconds, scene_ready_seconds, engine_elapsed_seconds;
         }
 
         private IEnumerator Start()
@@ -26,7 +27,8 @@ namespace ClustrGalaxy.UI
             var owner = GetComponent<GalaxySessionBehaviour>();
             var navigation = GetComponent<GalaxyNavigationController>();
             var result = new Result { source_sha = Application.version.Contains("+") ? Application.version.Split('+')[1] : "",
-                build_id = Application.buildGUID, width = Screen.width, height = Screen.height };
+                build_id = Application.buildGUID, width = Screen.width, height = Screen.height,
+                first_frame_seconds = Time.realtimeSinceStartup };
             if (GalaxyPrototypeBootstrap.IsDemo || loader == null || !loader.OfflineOnly)
             { Finish(result, "Cached startup requires an explicit offline, non-demo launch."); yield break; }
             var deadline = Time.realtimeSinceStartup + 15f;
@@ -36,6 +38,7 @@ namespace ClustrGalaxy.UI
                 owner.Registry.Entities.Count == 0 || navigation == null || !navigation.IsMapOpen ||
                 loader.Scene == null || !string.IsNullOrEmpty(loader.Scene.scope) && loader.Scene.scope != "overview")
             { Finish(result, "Verified cached overview did not reach the visible chart: " + loader.StatusText); yield break; }
+            result.scene_ready_seconds = Time.realtimeSinceStartup;
             while (!VisibleOverview(owner) && Time.realtimeSinceStartup < deadline) yield return null;
             if (!VisibleOverview(owner))
             { Finish(result, "The cached overview has no visible chart geometry or HUD."); yield break; }
@@ -77,6 +80,7 @@ namespace ClustrGalaxy.UI
         private static void Finish(Result result, string error)
         {
             result.error = error;
+            result.engine_elapsed_seconds = Time.realtimeSinceStartup;
             try
             {
                 var folder = Path.Combine(Application.persistentDataPath, "ClustrGalaxy", "warm-start");
