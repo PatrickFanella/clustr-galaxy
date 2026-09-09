@@ -17,7 +17,7 @@ def _terminate(process):
         process.wait()
 
 
-def run(command, log, *, env=None, timeout=900, shutdown_timeout=45):
+def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_stdout=False):
     # Convert harness termination into a normal unwind so owned display/audio
     # contexts clean up and a detached Unity player cannot survive its runner.
     previous = None
@@ -26,15 +26,18 @@ def run(command, log, *, env=None, timeout=900, shutdown_timeout=45):
         def interrupted(signum, _frame):
             raise SystemExit(128 + signum)
         signal.signal(signal.SIGTERM, interrupted)
+    output_stream = None
     try:
-        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout)
+        if capture_stdout: output_stream = pathlib.Path(log).open("a")
+        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout, output_stream=output_stream)
     finally:
+        if output_stream is not None: output_stream.close()
         if previous is not None: signal.signal(signal.SIGTERM, previous)
 
 
-def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45):
+def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_stream=None):
     log = pathlib.Path(log)
-    process = subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL,
+    process = subprocess.Popen(command, env=env, stdout=output_stream if output_stream is not None else subprocess.DEVNULL,
                                stderr=subprocess.STDOUT, start_new_session=True)
     started = time.monotonic()
     shutdown_started = None

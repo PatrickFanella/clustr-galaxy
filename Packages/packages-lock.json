@@ -318,14 +318,13 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.serialization": {
-      "version": "3.1.5",
-      "depth": 2,
-      "source": "registry",
+      "version": "file:com.unity.serialization",
+      "depth": 0,
+      "source": "embedded",
       "dependencies": {
-        "com.unity.burst": "1.8.13",
-        "com.unity.collections": "2.4.2"
-      },
-      "url": "https://packages.unity.com"
+        "com.unity.collections": "2.4.2",
+        "com.unity.burst": "1.8.13"
+      }
     },
     "com.unity.services.analytics": {
       "version": "6.3.0",

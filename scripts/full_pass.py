@@ -45,7 +45,7 @@ def main():
         command = [sys.executable, str(ROOT / "scripts" / script), *arguments]
         print("START " + name, flush=True)
         (output / (name + ".log")).write_text("Child evidence paths and process result are recorded in summary.json.\n")
-        result = run(command, output / (name + ".log"), timeout=2400)
+        result = run(command, output / (name + ".log"), timeout=2400, capture_stdout=True)
         paths = sorted(set(ROOT.glob(pattern)) - before)
         values = []
         for path in paths:
@@ -60,8 +60,12 @@ def main():
         print(("PASS " if result["passed"] else "FAIL ") + name + ": " + ", ".join(result["reports"]), flush=True)
         return paths if result["passed"] else []
 
+    report["library_cache_present_at_start"] = (ROOT / "Library").exists()
+    os_release = pathlib.Path("/etc/os-release")
+    report["host_os_id"] = next((line.split("=", 1)[1].strip('"') for line in os_release.read_text().splitlines()
+                                 if line.startswith("ID=")), "") if os_release.exists() else ""
     save()
-    checks = run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], output / "python-tests.log", timeout=120)
+    checks = run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], output / "python-tests.log", timeout=120, capture_stdout=True)
     checks.update(name="python-tests", passed=checks["process_exit"] == 0 and not checks["timed_out"])
     report["steps"].append(checks); save()
     if not checks["passed"]: return 2
@@ -74,6 +78,7 @@ def main():
         report[name] = {k: v for k, v in identity.items() if k != "files_sha256"}
     save()
     step("controller-smoke", "ui_smoke.py", ["--player", "Builds/LinuxRelease/ClustrGalaxy.x86_64"])
+    step("performance-preflight", "hierarchy_smoke.py", ["--stress", "--active-features", "--profile-seconds", "30", "--window-system", "wayland", "--single-threaded-rendering"])
     demo = step("campaign-1440", "demo_journey.py", ["--campaign", "--flight-activities", "--expeditions", "--resolution", "2560x1440"])
     for resolution in ("1280x720", "1920x1080", "2560x1440"):
         step("visual-" + resolution, "visual_smoke.py", ["--resolution", resolution])
@@ -97,7 +102,12 @@ def main():
             step("public-performance", "hierarchy_smoke.py", ["--live", "--active-features", "--profile-seconds", str(args.profile_seconds), *graphics])
         else:
             report["steps"].append(dict(name="public-performance", passed=False, reason="Public hierarchy prerequisite failed; no repeat provider traversal"))
-    report["automated_passed"] = all(s["passed"] for s in report["steps"]) and not args.no_live and args.profile_seconds == 600
+    report["source_unchanged"] = (subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip() == report["source_sha"]
+                                  and not subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT))
+    report["arch_clean_source_verified"] = (report["host_os_id"] == "arch" and not report["source_dirty"] and report["source_unchanged"]
+                                             and all(s["passed"] for s in report["steps"] if s["name"] in ("validation", "build")))
+    if report["arch_clean_source_verified"]: report["external_gates"].remove("Clean-source Arch verification")
+    report["automated_passed"] = all(s["passed"] for s in report["steps"]) and report["source_unchanged"] and not args.no_live and args.profile_seconds == 600
     report["passed"] = report["automated_passed"]
     save()
     print("Full automated pass: " + str(report["passed"]) + "; " + str(output / "summary.json"), flush=True)
