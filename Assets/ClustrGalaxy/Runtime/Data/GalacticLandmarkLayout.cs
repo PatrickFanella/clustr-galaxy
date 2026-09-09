@@ -11,6 +11,16 @@ namespace ClustrGalaxy.Data
         private const float RadialSpan = 760f;
         private const float ElevationSpan = 150f;
 
+        public static float OverviewCameraDistance(float verticalFieldOfView, float aspect)
+        {
+            // Fit the entire projection envelope, including clusters at its near edge.
+            var radius = Mathf.Sqrt(Mathf.Pow((InnerRadius + RadialSpan) * GalaxyTuning.RegionDistanceScale, 2f) +
+                                    Mathf.Pow(ElevationSpan * GalaxyTuning.RegionDistanceScale, 2f)) + 6f;
+            var verticalHalfAngle = verticalFieldOfView * Mathf.Deg2Rad * .5f;
+            var horizontalHalfAngle = Mathf.Atan(Mathf.Tan(verticalHalfAngle) * aspect);
+            return radius / Mathf.Sin(Mathf.Min(verticalHalfAngle, horizontalHalfAngle));
+        }
+
         public static Vector3 Project(SpatialNode node, SpatialBounds bounds)
         {
             var normalizedX = Normalize(node.x, bounds.min_x, bounds.max_x) - 0.5f;

@@ -573,6 +573,34 @@ namespace ClustrGalaxy.Tests
             Assert.That(first.magnitude, Is.GreaterThan(360f));
         }
 
+        [TestCase(16f / 9f)]
+        [TestCase(1920f / 840f)]
+        [TestCase(1f)]
+        public void OverviewChart_FitsProjectedEdgesAndOffCenterClusters(float aspect)
+        {
+            var view = new GameObject("Overview framing regression", typeof(Camera));
+            try
+            {
+                var camera = view.GetComponent<Camera>();
+                camera.fieldOfView = 58f; camera.aspect = aspect; camera.farClipPlane = 250000f;
+                var distance = GalacticLandmarkLayout.OverviewCameraDistance(camera.fieldOfView, aspect);
+                var position = new Vector3(0, distance * .3f, -distance);
+                view.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-position, Vector3.up));
+                var bounds = new SpatialBounds { min_x = 0, max_x = 300, min_y = 0, max_y = 300, min_z = 0, max_z = 300 };
+                for (var x = 0; x <= 300; x += 30)
+                for (var y = 0; y <= 300; y += 30)
+                for (var z = 0; z <= 300; z += 300)
+                {
+                    var point = GalacticLandmarkLayout.Project(new SpatialNode { id = "edge", x = x, y = y, z = z }, bounds);
+                    var screen = camera.WorldToViewportPoint(point);
+                    Assert.That(screen.z, Is.GreaterThan(camera.nearClipPlane));
+                    Assert.That(screen.x, Is.InRange(.01f, .99f), "Horizontal projection clipped at " + point);
+                    Assert.That(screen.y, Is.InRange(.01f, .99f), "Vertical projection clipped at " + point);
+                }
+            }
+            finally { UnityEngine.Object.DestroyImmediate(view); }
+        }
+
         [Test]
         public void RouteStrength_PreservesAFaintLegacyRouteAndHighlightsStrongTraffic()
         {
