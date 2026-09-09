@@ -9,6 +9,31 @@ namespace ClustrGalaxy.Tests
 {
     public sealed class CelestialFrameTests
     {
+        [UnityTest] public IEnumerator InactiveStreamedBodyInitializesBeforeAwakeAndRetainsItsFrame()
+        {
+            var parent = new GameObject("Hidden body center");
+            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            try
+            {
+                body.SetActive(false);
+                var orbit = body.AddComponent<KeplerOrbit>();
+                orbit.Initialize(parent.transform, new OrbitalElements(100, .1, .2, .3, .4, .5), 1000000);
+                var gravity = body.AddComponent<GravitySource>();
+                gravity.Initialize(1000, .1, 12);
+                Assert.That(body.activeSelf, Is.False);
+                Assert.That(gravity.CenterPosition, Is.EqualTo(body.transform.position));
+                var expected = orbit.LogicalPositionAt(orbit.SimulationTime).RelativeTo(
+                    FloatingOrigin.Active != null ? FloatingOrigin.Active.LogicalOrigin : DoubleVector3.Zero);
+                Assert.That(Vector3.Distance(gravity.CenterPosition, expected), Is.LessThan(.0001f));
+                body.SetActive(true);
+                yield return new WaitForFixedUpdate();
+                Assert.That(gravity.CenterPosition, Is.EqualTo(body.transform.position));
+                Assert.That(GravitySource.ActiveSources, Does.Contain(gravity));
+                body.SetActive(false);
+                Assert.That(GravitySource.ActiveSources, Does.Not.Contain(gravity));
+            }
+            finally { Object.DestroyImmediate(body); Object.DestroyImmediate(parent); }
+        }
         [Test] public void CachedLocalEphemerisTracksParentChangesAndPooledReinitialization()
         {
             var root = new GameObject("Cache root"); var parent = new GameObject("Cache parent"); var moon = new GameObject("Cache moon");

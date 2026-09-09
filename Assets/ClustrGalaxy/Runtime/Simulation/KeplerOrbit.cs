@@ -55,6 +55,7 @@ namespace ClustrGalaxy.Simulation
             double parentMu,
             double simulationTimeScale = 1d)
         {
+            bodyTransform = transform; // Initialize may run while a Survey body is inactive, before Awake.
             parentBody = parent;
             parentOrbit = parent.GetComponent<KeplerOrbit>();
             if (parentOrbit != null && !parentOrbit.enabled) parentOrbit = null;

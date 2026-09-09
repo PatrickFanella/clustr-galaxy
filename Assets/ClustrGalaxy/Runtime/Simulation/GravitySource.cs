@@ -29,6 +29,7 @@ namespace ClustrGalaxy.Simulation
 
         public void Initialize(double gravitationalParameter, double softeningRadius, double maximumAcceleration, ClustrGalaxy.World.DoubleVector3? staticLogicalPosition = null)
         {
+            bodyTransform = transform; // Hidden streamed bodies initialize before their first Awake.
             GravitationalParameter = gravitationalParameter;
             SofteningRadius = softeningRadius;
             MaximumAcceleration = maximumAcceleration;
