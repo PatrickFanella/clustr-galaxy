@@ -48,6 +48,7 @@ namespace ClustrGalaxy.Flight
         private const float AutopilotAnchorTolerance = 2.5f;
 
         public bool IsMapOpen { get; private set; }
+        public bool IsChartSettled => IsMapOpen && blend >= 1f;
         public GalaxyNavigationLevel Level => (GalaxyNavigationLevel)navigation.State.Level;
         public string FocusedStableId => navigation.State.FocusedId.Value;
         public Vector2 MapCursorPosition { get; private set; } = new(0.5f, 0.5f);

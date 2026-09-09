@@ -15,7 +15,7 @@ namespace ClustrGalaxy.Data
         {
             // Fit the entire projection envelope, including clusters at its near edge.
             var radius = Mathf.Sqrt(Mathf.Pow((InnerRadius + RadialSpan) * GalaxyTuning.RegionDistanceScale, 2f) +
-                                    Mathf.Pow(ElevationSpan * GalaxyTuning.RegionDistanceScale, 2f)) + 6f;
+                                    Mathf.Pow(ElevationSpan * GalaxyTuning.RegionDistanceScale, 2f)) + 6.5f * GalaxyTuning.RegionDistanceScale;
             var verticalHalfAngle = verticalFieldOfView * Mathf.Deg2Rad * .5f;
             var horizontalHalfAngle = Mathf.Atan(Mathf.Tan(verticalHalfAngle) * aspect);
             return radius / Mathf.Sin(Mathf.Min(verticalHalfAngle, horizontalHalfAngle));

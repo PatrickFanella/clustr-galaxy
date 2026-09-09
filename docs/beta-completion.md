@@ -749,3 +749,20 @@ Evidence: `Builds/evidence/20260909T043033Z-clean-candidate/ubuntu-result.json`.
 The existing Gitea runner advertises Ubuntu and kvant labels, but not the required
 licensed Unity label. Ubuntu licensing and CI activation remain actual external
 dependencies. Human testing remains deferred; the expanded beta is unqualified.
+
+
+The new rendered-startup check exposed a blank initial fixture chart: the old
+fixed camera distance did not contain near-edge clusters in the published
+projection envelope. Chart distance now fits the full envelope; marker size uses
+the same presentation scale as their positions. Framing regression tests cover
+all bound edges at three aspect ratios. The diagnostic waits for the chart camera
+to settle before saving its screenshot, rather than accepting the first tiny
+object entering the frustum mid-transition.
+
+The first fully rendered timing was 4.732 s (first Unity frame at 2.848 s;
+verified scene at 3.140 s; rendered capture at engine time 3.570 s). It failed the
+unchanged three-second threshold. The project now disables the optional Unity
+splash screen through its supported Player setting, as documented in the
+[Unity 6.4 manual](https://docs.unity3d.com/6000.4/Documentation/Manual/class-PlayerSettingsSplashScreen.html).
+This applies to normal players too. A fresh measured run is required to establish
+the resulting startup time; cache-source timing remains separately labelled.

@@ -39,8 +39,8 @@ namespace ClustrGalaxy.UI
                 loader.Scene == null || !string.IsNullOrEmpty(loader.Scene.scope) && loader.Scene.scope != "overview")
             { Finish(result, "Verified cached overview did not reach the visible chart: " + loader.StatusText); yield break; }
             result.scene_ready_seconds = Time.realtimeSinceStartup;
-            while (!VisibleOverview(owner) && Time.realtimeSinceStartup < deadline) yield return null;
-            if (!VisibleOverview(owner))
+            while ((!navigation.IsChartSettled || !VisibleOverview(owner)) && Time.realtimeSinceStartup < deadline) yield return null;
+            if (!navigation.IsChartSettled || !VisibleOverview(owner))
             { Finish(result, "The cached overview has no visible chart geometry or HUD."); yield break; }
             // Let both the world chart and retained HUD submit complete frames.
             yield return new WaitForEndOfFrame();
