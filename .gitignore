@@ -35,3 +35,7 @@ sysinfo.txt
 
 # Generated from native/telemetry.c by the build entrypoint
 /Assets/ClustrGalaxy/Plugins/Linux/x86_64/libclustrtelemetry.so
+
+# Addressables generates and removes this linker manifest during player builds.
+/Assets/AddressableAssetsData/link.xml
+/Assets/AddressableAssetsData/link.xml.meta
