@@ -112,6 +112,7 @@ def main():
     report["source_unchanged"] = (subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip() == report["source_sha"]
                                   and not subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT))
     report["arch_clean_source_verified"] = (report["host_os_id"] == "arch" and not report["source_dirty"] and report["source_unchanged"]
+                                             and not report["library_cache_present_at_start"]
                                              and all(s["passed"] for s in report["steps"] if s["name"] in ("validation", "build")))
     if report["arch_clean_source_verified"]: report["external_gates"].remove("Clean-source Arch verification")
     report["automated_passed"] = all(s["passed"] for s in report["steps"]) and report["source_unchanged"] and not args.no_live and args.profile_seconds == 600

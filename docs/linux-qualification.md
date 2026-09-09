@@ -1,9 +1,10 @@
 # Linux build and qualification procedure
 
-Status: unqualified implementation candidate, 2026-09-06. See beta-completion.md.
+Status: unqualified implementation candidate, 2026-09-09. See beta-completion.md.
 
 Use Unity 6000.4.10f1 with the Linux Standalone module and a valid editor license.
-Keep Packages/manifest.json and packages-lock.json unchanged. A clean checkout has
+Keep the locked package versions. Serialization 3.1.5 has a documented
+[editor compatibility patch](third-party-patches/unity-serialization-3.1.5.md); no dependency version was upgraded. A clean checkout has
 no Library, Temp, or pre-existing player directories. Record git SHA, git status,
 editor version, OS release, kernel, GPU/driver/backend, and runtime host separately.
 
@@ -11,11 +12,14 @@ editor version, OS release, kernel, GPU/driver/backend, and runtime host separat
 
 From the repository root, run `python3 scripts/full_pass.py` for the serialized
 automated pass before human testing. It runs Python checks, both Unity suites,
-both Linux builds, controller smoke, the full campaign/restart journey,
+both Linux builds, controller smoke, stress preflight and rendered cached startup,
+the full campaign/restart journey,
 resolution-specific visual and simulation journeys, replay import, separate
 cockpit interaction measurements, fixture hierarchy/offline jumps, development
 smoke, 600-second active stress, and bounded public hierarchy/jump reads. Public
-performance runs only after that public hierarchy prerequisite succeeds.
+performance runs only after that public hierarchy prerequisite succeeds. Separate
+fixture and public-cache offline processes verify launch through settled chart
+rendering at 1440p against the three-second limit.
 
 Each run writes `Builds/evidence/<timestamp>-full-pass/summary.json`, linking all
 child reports and the full release/development artifact hashes. Failed child
@@ -25,8 +29,10 @@ independent checks continue to expose more than the first failure. Reports are
 preserved; rerunning creates a new evidence directory. `--profile-seconds 30`
 and `--no-live` are diagnostic subsets and cannot produce a full-pass verdict.
 
-This command does not supply clean-checkout Arch evidence, a licensed Ubuntu
-environment, hosted CI, or human controller/enjoyment acceptance. It never marks
+On Arch, the command records clean-checkout evidence only when source is clean
+and unchanged, no Library was present at the start, and validation/build pass.
+It does not supply a licensed Ubuntu environment, hosted CI, or human
+controller/enjoyment acceptance. It never marks
 the release qualified. Scored-course and campaign fixture placement remains
 labelled separately from real propulsion, orbit, recovery and cruise journeys.
 
@@ -73,7 +79,10 @@ Unity license through the organization's licensed runner mechanism. Do not copy
 personal access tokens into the image or repository. Run the same validation and
 build commands in that container. The container shares the runtime host kernel;
 record Ubuntu userland/build environment separately from the Arch runtime host.
-The test attempted on 2026-09-06 stopped with exit 198: no valid Unity license.
+The renewed 2026-09-09 attempt includes the required native compiler and resolves
+Editor library dependencies, but still exits 198 before discovery: no valid Unity
+Editor license in the isolated environment. The host license was only mounted
+read-only; machine identity and licensing were not bypassed.
 Ubuntu build and Ubuntu-built-player smoke remain uncompleted.
 
 ## Licensed Gitea runner
@@ -83,7 +92,9 @@ Git, a C11 compiler, exact Unity editor and Linux module, a valid headless edito
 and writable isolated project/work directories. Configure UNITY_EDITOR in the
 runner environment. Use one Unity job per checkout. Register the label as a host
 runner only on an isolated build machine; do not expose production credentials.
-Runner installation/registration and CI execution have not been demonstrated.
+The inspected existing Gitea runner advertises Ubuntu and kvant labels, but not
+the required licensed Unity label. Suitable runner registration and CI execution
+have not been demonstrated.
 The checked-in workflow is configuration, not a passing CI result.
 
 ## Player acceptance
@@ -113,11 +124,14 @@ counters, sample counts, duration, or measurements must fail. Report write failu
 must exit nonzero, including failure to replace the latest-report pointer. Report
 write and pointer failures have deterministic tests; a durable JSON is preserved
 when the pointer update fails. Near-limit fixture traversal, labelled intervals,
-moving flight, and verified-source cache timing/usage are implemented. Complete
-Radeon GPU duration coverage and process-to-rendered cached overview evidence
-remain open before the harness covers the entire accepted plan. Do not interpret the current verdict alone as milestone completion.
+moving flight, and verified-source cache timing/usage are implemented. The raw frame trace preserves sample order and records attributable GPU duration
+coverage, main-thread execution, fixed steps and celestial work. Required missing
+measurements remain failures. Rendered startup is now a separate process gate,
+not the cached-source-open timer in the performance report. Do not interpret the current verdict alone as milestone completion.
 
-Package only after the completion ledger is all passed at one source revision:
+Create a qualified release package only after the completion ledger is all passed
+at one source revision. Unqualified candidate artifacts and evidence may be
+retained locally before that gate. The final package contains:
 development/release players, controls, launch instructions, local storage/privacy,
 provider limitations, dependency and asset notices, SHA-256 sums, environment and
 qualification manifest. Public publishing is outside this procedure.
@@ -134,10 +148,12 @@ python3 scripts/hierarchy_smoke.py --jump --offline-restart --window-system wayl
 
 The fixture binds loopback only and never forwards traffic. The opt-in player
 argument is `--clustr-fixture-url=http://127.0.0.1:PORT/api`; it is incompatible
-with offline/demo flags. Fixture Survey identity and cache are separate from
+with demo mode. An explicit offline fixture launch reads only its verified
+fixture cache and sends no fixture request. Fixture Survey identity and cache are separate from
 published snapshots and authored demo progress. Small and near-limit functional
-hierarchy runs passed on the Radeon host. The 30-second diagnostic failed, so
-600-second qualification remains uncompleted. Selectable rendered objects drive
+hierarchy runs passed on the Radeon host. Historical failures and passing
+preflights are recorded in the completion ledger; final 600-second qualification
+must use the same source and artifacts as the current player matrix. Selectable rendered objects drive
 traversal; direct loader calls do not count as player hierarchy evidence.
 
 Vulkan returned GPU timing samples on this host, with missing frames still failing
@@ -161,9 +177,12 @@ This does not replace the mandatory real-controller run.
 
 The performance scenario now alternates a virtual-controller flight input every
 five seconds to keep movement bounded. It reports traveled distance and rejects a
-stationary run. Warm overview availability is measured through an independent
-verified-cache-only source before sampling, with no network requests, and the
-whole cache size is reported. RSS covers the entire player process; GPU samples
+stationary run. The performance report measures an independent verified-cache-only source open
+before sampling and reports the whole cache size. The separate warm-start command
+measures process creation through completed overview/HUD frames, a settled chart
+and a saved screenshot. It copies only v2 cache into isolated storage, retains
+source-cache hashes, and observes the readiness line with a monotonic parent
+timer; screenshot writing and polling are included as a conservative bound. RSS covers the entire player process; GPU samples
 must have finite values and increasing timestamps. New fields fail closed when
 absent from older reports. None of these checks relax the 600-second thresholds.
 

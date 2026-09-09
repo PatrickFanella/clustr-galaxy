@@ -766,3 +766,16 @@ splash screen through its supported Player setting, as documented in the
 [Unity 6.4 manual](https://docs.unity3d.com/6000.4/Documentation/Manual/class-PlayerSettingsSplashScreen.html).
 This applies to normal players too. A fresh measured run is required to establish
 the resulting startup time; cache-source timing remains separately labelled.
+
+
+Rendered startup is now automatically verified on source
+`b9d5c8316c8605703a669f82db5e6ca003fe1088`, release build `20260909T070556Z`:
+fixture `20260909T070744887708Z-warm-start` passes in 2.686 s with zero observed
+fixture requests; public-cache `20260909T070813908093Z-warm-start` passes in
+2.538 s, revision 243/catalog 14, 300 resident regions. Both are new offline
+processes, include settled chart/HUD frames and 1440p screenshot writes, and
+preserve the source cache. The public run enforces offline mode but does not
+claim an independent network packet capture. Validation `20260909T070353567394Z`
+passes 292 EditMode / 433 PlayMode tests with no project compiler diagnostics.
+The fixture screenshot was visually inspected. Full final-source performance,
+platform, physical-course and human acceptance still require their own evidence.
