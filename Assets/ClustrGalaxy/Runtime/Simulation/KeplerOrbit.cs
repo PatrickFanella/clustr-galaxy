@@ -6,6 +6,9 @@ namespace ClustrGalaxy.Simulation
 {
     public sealed class KeplerOrbit : MonoBehaviour
     {
+        public static bool CaptureTiming { get; set; }
+        public static long AppliedOrbitTicks { get; private set; }
+        public static long AppliedOrbitCount { get; private set; }
         private Transform parentBody = null!;
         private OrbitalElements elements;
         private double parentGravitationalParameter;
@@ -52,7 +55,14 @@ namespace ClustrGalaxy.Simulation
         }
 
         public void RefreshPosition() => ApplyPosition(SimulationTime);
-        private void FixedUpdate() => ApplyPosition(Time.timeAsDouble);
+        private void FixedUpdate()
+        {
+            if (!CaptureTiming) { ApplyPosition(Time.timeAsDouble); return; }
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            ApplyPosition(Time.timeAsDouble);
+            AppliedOrbitTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+            AppliedOrbitCount++;
+        }
 
         private void ApplyPosition(double time)
         {

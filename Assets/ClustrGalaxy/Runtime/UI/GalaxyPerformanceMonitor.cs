@@ -6,6 +6,7 @@ using ClustrGalaxy.Core.Diagnostics;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Flight;
 using ClustrGalaxy.Scanning;
+using ClustrGalaxy.Simulation;
 using ClustrGalaxy.World;
 using Unity.Profiling;
 using Unity.Profiling.LowLevel.Unsafe;
@@ -30,7 +31,11 @@ namespace ClustrGalaxy.UI
         private double[] memoryQueryMilliseconds = Array.Empty<double>();
         private ulong[] frameTimestamps = Array.Empty<ulong>();
         private int[] collectionCounts = Array.Empty<int>();
-        private int previousCollectionCount;
+        private int previousCollectionCount, fixedStepsSinceUpdate;
+        private int[] fixedSteps = Array.Empty<int>();
+        private long[] orbitUpdates = Array.Empty<long>();
+        private double[] orbitWorkMilliseconds = Array.Empty<double>();
+        private long previousOrbitTicks, previousOrbitUpdates;
         private ExecutionSample previousExecution;
         private double previousMemoryQueryMilliseconds;
         public bool ExecutionCountersAvailable { get; private set; }
@@ -120,6 +125,8 @@ namespace ClustrGalaxy.UI
             floatScratch = new float[capacity]; longScratch = new long[capacity];
             executionSamples = new ExecutionSample[capacity];
             collectionCounts = new int[capacity];
+            fixedSteps = new int[capacity]; orbitUpdates = new long[capacity]; orbitWorkMilliseconds = new double[capacity];
+            KeplerOrbit.CaptureTiming = true;
             memoryQueryMilliseconds = new double[capacity]; frameTimestamps = new ulong[capacity];
             gpuWindow = new GpuTimingWindow(capacity);
             ResetSamplingWindow(); prepared = true;
@@ -158,7 +165,7 @@ namespace ClustrGalaxy.UI
         }
         public void FinishCapture()
         {
-            draining = false; frozen = true;
+            draining = false; frozen = true; KeplerOrbit.CaptureTiming = false;
             P95FrameMilliseconds = Percentile(frameMilliseconds, count);
             P95CpuMilliseconds = Percentile(cpuMilliseconds, count);
             P95GpuMilliseconds = Percentile(gpuWindow.Values, gpuWindow.Count);
@@ -209,12 +216,18 @@ namespace ClustrGalaxy.UI
             gcAllocated = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame");
             gfxUsedMemory = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "Gfx Used Memory");
         }
+        private void FixedUpdate()
+        {
+            if (prepared && !frozen) fixedStepsSinceUpdate++;
+        }
         private void Update()
         {
             if (!prepared || frozen) return;
             long allocation = gcAllocated.Valid ? gcAllocated.LastValue : -1;
             long residentBytes = -1, graphicsBytes = -1;
             var currentCollectionCount = GC.CollectionCount(0);
+            var currentOrbitTicks = KeplerOrbit.AppliedOrbitTicks;
+            var currentOrbitUpdates = KeplerOrbit.AppliedOrbitCount;
             var executionDelta = default(ExecutionSample);
             var currentMemoryQueryMilliseconds = 0d;
 #if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
@@ -257,12 +270,17 @@ namespace ClustrGalaxy.UI
             // frame. Finish its slot before opening the current frame's slot.
             if (pending >= 0)
             {
+                fixedSteps[pending] = fixedStepsSinceUpdate;
+                orbitUpdates[pending] = currentOrbitUpdates - previousOrbitUpdates;
+                orbitWorkMilliseconds[pending] = (currentOrbitTicks - previousOrbitTicks) * 1000d / System.Diagnostics.Stopwatch.Frequency;
                 collectionCounts[pending] = currentCollectionCount - previousCollectionCount;
                 executionSamples[pending] = executionDelta;
                 memoryQueryMilliseconds[pending] = previousMemoryQueryMilliseconds;
                 CompleteCpuFrame(pending, Time.unscaledDeltaTime, MainThreadMilliseconds, allocation, residentBytes, graphicsBytes);
                 pending = -1;
             }
+            fixedStepsSinceUpdate = 0;
+            previousOrbitTicks = currentOrbitTicks; previousOrbitUpdates = currentOrbitUpdates;
             previousCollectionCount = currentCollectionCount;
             previousMemoryQueryMilliseconds = currentMemoryQueryMilliseconds;
             if (capture)
@@ -316,7 +334,7 @@ namespace ClustrGalaxy.UI
             if (!frozen) throw new InvalidOperationException("Finish capture before exporting frame evidence.");
             using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
             using var writer = new StreamWriter(stream);
-            writer.WriteLine("sample,timestamp,interval,frame_ms,main_thread_marker_ms,gc_bytes,gpu_memory_query_ms,execution_available,update_thread_cpu_ms,update_process_cpu_ms,voluntary_switches,involuntary_switches,major_faults,gc_collections");
+            writer.WriteLine("sample,timestamp,interval,frame_ms,main_thread_marker_ms,gc_bytes,gpu_memory_query_ms,execution_available,update_thread_cpu_ms,update_process_cpu_ms,voluntary_switches,involuntary_switches,major_faults,gc_collections,update_interval_fixed_steps,orbit_updates,orbit_work_ms");
             for (var i = 0; i < count; i++)
             {
                 var execution = executionSamples[i];
@@ -327,12 +345,14 @@ namespace ClustrGalaxy.UI
                     (execution.ThreadCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
                     (execution.ProcessCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
                     execution.VoluntarySwitches.ToString(CultureInfo.InvariantCulture), execution.InvoluntarySwitches.ToString(CultureInfo.InvariantCulture),
-                    execution.MajorFaults.ToString(CultureInfo.InvariantCulture), collectionCounts[i].ToString(CultureInfo.InvariantCulture)));
+                    execution.MajorFaults.ToString(CultureInfo.InvariantCulture), collectionCounts[i].ToString(CultureInfo.InvariantCulture), fixedSteps[i].ToString(CultureInfo.InvariantCulture),
+                    orbitUpdates[i].ToString(CultureInfo.InvariantCulture), orbitWorkMilliseconds[i].ToString("R", CultureInfo.InvariantCulture)));
             }
             writer.Flush(); stream.Flush(true);
         }
         private void OnDisable()
         {
+            KeplerOrbit.CaptureTiming = false;
             allocatedMemory.Dispose(); mainThreadTime.Dispose(); gcAllocated.Dispose(); gfxUsedMemory.Dispose();
         }
     }
