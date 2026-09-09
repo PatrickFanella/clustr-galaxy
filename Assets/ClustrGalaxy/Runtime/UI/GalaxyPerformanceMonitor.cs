@@ -1,40 +1,81 @@
 using System;
-using Unity.Profiling;
+using System.Runtime.InteropServices;
+using ClustrGalaxy.Core.Diagnostics;
+using ClustrGalaxy.Data;
+using ClustrGalaxy.Flight;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.World;
+using Unity.Profiling;
+using Unity.Profiling.LowLevel.Unsafe;
 using UnityEngine;
 
 namespace ClustrGalaxy.UI
 {
     public sealed class GalaxyPerformanceMonitor : MonoBehaviour
     {
-        private const int SampleCount = 600;
-        private readonly float[] frameMilliseconds = new float[SampleCount];
-        private readonly float[] cpuMilliseconds = new float[SampleCount];
-        private readonly float[] gpuMilliseconds = new float[SampleCount];
-        private readonly long[] gcAllocatedBytes = new long[SampleCount];
-        private readonly FrameTiming[] latestTiming = new FrameTiming[1];
-        private int cursor;
-        private int count;
-        private float nextReport;
-        private ProfilerRecorder allocatedMemory;
-        private ProfilerRecorder mainThreadTime;
-        private ProfilerRecorder gcAllocated;
-        private ProfilerRecorder gfxUsedMemory;
+        private float[] frameMilliseconds = Array.Empty<float>();
+        private float[] cpuMilliseconds = Array.Empty<float>();
+        private long[] gcAllocatedBytes = Array.Empty<long>();
+        private float[] floatScratch = Array.Empty<float>();
+        private long[] longScratch = Array.Empty<long>();
+        private byte[] intervals = Array.Empty<byte>();
+        private readonly FrameTiming[] recentTimings = new FrameTiming[32];
+        private GpuTimingWindow gpuWindow;
+        private bool prepared, capture, draining, frozen, cpuOverflow;
+        private bool nativeAllocations, nativeMemory, nativeResidentMemory;
+        private int count, pending = -1, invalidSamples;
+        private double capturedSeconds, ordinarySeconds;
+        private ulong latestAvailableTimestamp;
+#if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
+        private ulong previousAllocated;
+        [DllImport("clustrtelemetry")] private static extern int clustr_allocation_available();
+        [DllImport("clustrtelemetry")] private static extern ulong clustr_allocated_bytes();
+        [DllImport("clustrtelemetry")] private static extern long clustr_gpu_memory_bytes();
+        [DllImport("clustrtelemetry")] private static extern long clustr_process_peak_rss_bytes();
+#endif
+        private ProfilerRecorder allocatedMemory, mainThreadTime, gcAllocated, gfxUsedMemory;
+        private GalaxyNavigationController navigation;
+        private ProbeHud hud;
+        private ObserverProbeController flight;
+        private SpatialSceneLoader loader;
         private GalaxyEntityRegistry registry;
         private GalaxySurveyVisibilityController visibility;
         private int scanEvents;
 
-        public float P95FrameMilliseconds { get; private set; }
-        public long AllocatedMemoryBytes => allocatedMemory.Valid ? allocatedMemory.LastValue : 0L;
-        public long MainThreadNanoseconds => mainThreadTime.Valid ? mainThreadTime.LastValue : 0L;
-        public long SteadyStateGcBytes => gcAllocated.Valid ? gcAllocated.LastValue : 0L;
+        public string GcMeasurementSource => nativeAllocations ? "Mono allocation profiler, all managed threads" : "Unity GC Allocated In Frame";
+        public string GpuMemoryMeasurementSource => "Linux DRM requested buffers, unique clients";
+        public string PlayerMemoryMeasurementSource => "Linux process high-water RSS (getrusage)";
+        public int OrdinaryFlightSamples { get; private set; }
+        public int LoadingSamples { get; private set; }
+        public int OtherGameplaySamples { get; private set; }
+        public float OrdinaryFlightSeconds => (float)ordinarySeconds;
+        public double CapturedSeconds => capturedSeconds;
+        public float OrdinaryMaximumFrameMilliseconds { get; private set; }
+        public long OrdinaryPeakGcBytes { get; private set; }
+        public int InvalidMeasuredSamples => invalidSamples + (gpuWindow?.Conflict == true ? 1 : 0);
+        public bool SampleOverflow => cpuOverflow || gpuWindow?.Overflow == true;
+        public int ValidGpuSamples => gpuWindow?.ValidCount ?? 0;
+        public ulong[] MissingGpuTimestamps => gpuWindow?.MissingTimestamps() ?? Array.Empty<ulong>();
+        public int RecordedGpuSamples => gpuWindow?.Count ?? 0;
+        public ulong FirstGpuTimestamp => gpuWindow?.FirstTimestamp ?? 0;
+        public ulong LastGpuTimestamp => gpuWindow?.LastTimestamp ?? 0;
+        public ulong CaptureStartTimestamp => gpuWindow?.Start ?? 0;
+        public ulong CaptureEndTimestamp => gpuWindow?.End ?? 0;
+        public bool GpuDrainComplete => pending < 0 && gpuWindow?.Complete == true;
+        public bool TimestampClockCompatible { get; private set; }
+        public bool CpuCounterAvailable => mainThreadTime.Valid;
+        public bool GcCounterAvailable => nativeAllocations || gcAllocated.Valid;
+        public bool MemoryCounterAvailable => nativeResidentMemory;
+        public long AllocatedMemoryBytes => allocatedMemory.Valid ? allocatedMemory.LastValue : 0;
+        public long MainThreadNanoseconds => mainThreadTime.Valid ? mainThreadTime.LastValue : 0;
+        public long SteadyStateGcBytes => gcAllocated.Valid ? gcAllocated.LastValue : 0;
+        public float MainThreadMilliseconds => MainThreadNanoseconds / 1000000f;
         public int ActiveEntityCount { get; private set; }
         public int PooledEntityCount { get; private set; }
         public int KnownNodeCount { get; private set; }
         public int VisibleNodeCount { get; private set; }
         public int ScanEventCount => scanEvents;
-        public float MainThreadMilliseconds => MainThreadNanoseconds / 1000000f;
+        public float P95FrameMilliseconds { get; private set; }
         public float P95CpuMilliseconds { get; private set; }
         public float P95GpuMilliseconds { get; private set; }
         public float MaximumFrameMilliseconds { get; private set; }
@@ -42,123 +83,187 @@ namespace ClustrGalaxy.UI
         public long P95GcAllocatedBytes { get; private set; }
         public long PeakAllocatedMemoryBytes { get; private set; }
         public long PeakGpuMemoryBytes { get; private set; }
-        public bool GpuTimingAvailable { get; private set; }
-        public bool GpuMemoryAvailable => gfxUsedMemory.Valid && PeakGpuMemoryBytes > 0;
+        public bool GpuTimingAvailable => ValidGpuSamples > 0;
+        public bool GpuMemoryAvailable => nativeMemory && PeakGpuMemoryBytes > 0;
         public int CollectedSampleCount => count;
 
-        public void Configure(GalaxyEntityRegistry entityRegistry, SignalScanner signalScanner,
-            GalaxySurveyVisibilityController visibilityController)
+        public void BindSource(SpatialSceneLoader source) => loader = source;
+        public void Configure(GalaxyEntityRegistry entityRegistry, SignalScanner scanner, GalaxySurveyVisibilityController controller)
         {
-            registry = entityRegistry;
-            visibility = visibilityController;
+            registry = entityRegistry; visibility = controller;
+            navigation = GetComponent<GalaxyNavigationController>();
+            hud = GetComponent<ProbeHud>(); flight = GetComponent<ObserverProbeController>();
         }
-
         public void RecordScanEvent() => scanEvents++;
-
+        public void PrepareCapture(int seconds)
+        {
+            var capacity = Math.Clamp(seconds, 30, 3600) * 500;
+            frameMilliseconds = new float[capacity]; cpuMilliseconds = new float[capacity];
+            gcAllocatedBytes = new long[capacity]; intervals = new byte[capacity];
+            floatScratch = new float[capacity]; longScratch = new long[capacity];
+            gpuWindow = new GpuTimingWindow(capacity);
+            ResetSamplingWindow(); prepared = true;
+        }
         public void ResetSamplingWindow()
         {
-            cursor = 0;
-            count = 0;
-            P95FrameMilliseconds = 0f;
-            P95CpuMilliseconds = 0f;
-            P95GpuMilliseconds = 0f;
-            MaximumFrameMilliseconds = 0f;
-            PeakGcAllocatedBytes = 0L;
-            P95GcAllocatedBytes = 0L;
-            PeakAllocatedMemoryBytes = 0L;
-            PeakGpuMemoryBytes = 0L;
-            GpuTimingAvailable = false;
+            count = invalidSamples = 0; pending = -1;
+            capture = draining = frozen = cpuOverflow = false;
+            capturedSeconds = ordinarySeconds = 0;
+            OrdinaryFlightSamples = LoadingSamples = OtherGameplaySamples = 0;
+            OrdinaryMaximumFrameMilliseconds = MaximumFrameMilliseconds = 0;
+            OrdinaryPeakGcBytes = PeakGcAllocatedBytes = P95GcAllocatedBytes = 0;
+            PeakAllocatedMemoryBytes = PeakGpuMemoryBytes = 0;
+            P95FrameMilliseconds = P95CpuMilliseconds = P95GpuMilliseconds = 0;
             Array.Clear(frameMilliseconds, 0, frameMilliseconds.Length);
             Array.Clear(cpuMilliseconds, 0, cpuMilliseconds.Length);
-            Array.Clear(gpuMilliseconds, 0, gpuMilliseconds.Length);
             Array.Clear(gcAllocatedBytes, 0, gcAllocatedBytes.Length);
         }
-
+        public void BeginCapture()
+        {
+            if (!prepared) throw new InvalidOperationException("Prepare capture storage before warm-up.");
+            ResetSamplingWindow();
+            var start = (ulong)ProfilerUnsafeUtility.Timestamp;
+            var frequency = FrameTimingManager.GetCpuTimerFrequency();
+            var ratio = ProfilerUnsafeUtility.TimestampToNanosecondsConversionRatio;
+            TimestampClockCompatible = frequency > 0 && ratio.Denominator > 0 &&
+                Math.Abs(frequency * (double)ratio.Numerator / ratio.Denominator - 1e9) < 1e6 &&
+                latestAvailableTimestamp > 0 && start > latestAvailableTimestamp &&
+                (start - latestAvailableTimestamp) / (double)frequency < 1;
+            gpuWindow.Begin(start); capture = true;
+        }
+        public void EndCapture()
+        {
+            capture = false; draining = true;
+            gpuWindow.Close((ulong)ProfilerUnsafeUtility.Timestamp, count);
+        }
+        public void FinishCapture()
+        {
+            draining = false; frozen = true;
+            P95FrameMilliseconds = Percentile(frameMilliseconds, count);
+            P95CpuMilliseconds = Percentile(cpuMilliseconds, count);
+            P95GpuMilliseconds = Percentile(gpuWindow.Values, gpuWindow.Count);
+            Array.Copy(gcAllocatedBytes, longScratch, count);
+            Array.Sort(longScratch, 0, count);
+            P95GcAllocatedBytes = count == 0 ? 0 : longScratch[Math.Clamp((int)Math.Ceiling(count * .95) - 1, 0, count - 1)];
+            if (registry == null) return;
+            ActiveEntityCount = PooledEntityCount = VisibleNodeCount = 0;
+            foreach (var entity in registry.Entities)
+            {
+                if (entity == null) continue;
+                if (entity.gameObject.activeInHierarchy) VisibleNodeCount++;
+                if (entity.gameObject.activeSelf) ActiveEntityCount++; else PooledEntityCount++;
+            }
+            KnownNodeCount = visibility?.SurveySession?.State.KnownEntities.Count ?? registry.Entities.Count;
+        }
+        private float Percentile(float[] values, int length)
+        {
+            if (length == 0) return 0;
+            Array.Copy(values, floatScratch, length);
+            Array.Sort(floatScratch, 0, length);
+            return floatScratch[Math.Clamp((int)Math.Ceiling(length * .95) - 1, 0, length - 1)];
+        }
         private void OnEnable()
         {
+#if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
+            if (GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs()) || Array.Exists(Environment.GetCommandLineArgs(), value => value == "--clustr-ui-performance"))
+            {
+                try
+                {
+                    if (clustr_allocation_available() != 0)
+                    {
+                        var before = clustr_allocated_bytes();
+                        var probe = new byte[4096]; GC.KeepAlive(probe);
+                        nativeAllocations = clustr_allocated_bytes() >= before + 4096;
+                    }
+                    previousAllocated = clustr_allocated_bytes();
+                    nativeMemory = clustr_gpu_memory_bytes() > 0;
+                    nativeResidentMemory = clustr_process_peak_rss_bytes() > 0;
+                    Debug.Log("[ClustrGalaxy.Telemetry] allocation_probe=" + nativeAllocations + " drm_memory=" + nativeMemory + " process_rss=" + nativeResidentMemory);
+                }
+                catch (Exception exception) { Debug.LogWarning("[ClustrGalaxy.Telemetry] Native measurements unavailable: " + exception.Message); }
+            }
+#endif
             allocatedMemory = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "Total Used Memory");
             mainThreadTime = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Main Thread", 15);
             gcAllocated = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame");
             gfxUsedMemory = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "Gfx Used Memory");
         }
-
         private void Update()
         {
-            var frameMs = Time.unscaledDeltaTime * 1000f;
-            frameMilliseconds[cursor] = frameMs;
-            var cpuMs = MainThreadMilliseconds > 0f ? MainThreadMilliseconds : frameMs;
-            cpuMilliseconds[cursor] = cpuMs;
-            FrameTimingManager.CaptureFrameTimings();
-            if (FrameTimingManager.GetLatestTimings(1, latestTiming) > 0 && latestTiming[0].gpuFrameTime > 0d)
+            if (!prepared || frozen) return;
+            long allocation = gcAllocated.Valid ? gcAllocated.LastValue : -1;
+            long residentBytes = -1, graphicsBytes = -1;
+#if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
+            if (nativeAllocations)
             {
-                gpuMilliseconds[cursor] = (float)latestTiming[0].gpuFrameTime;
-                GpuTimingAvailable = true;
+                var current = clustr_allocated_bytes();
+                allocation = current >= previousAllocated ? (long)(current - previousAllocated) : -1;
+                previousAllocated = current;
             }
-            MaximumFrameMilliseconds = Mathf.Max(MaximumFrameMilliseconds, frameMs);
-            if (gcAllocated.Valid) PeakGcAllocatedBytes = Math.Max(PeakGcAllocatedBytes, gcAllocated.LastValue);
-            gcAllocatedBytes[cursor] = gcAllocated.Valid ? gcAllocated.LastValue : 0L;
-            if (allocatedMemory.Valid) PeakAllocatedMemoryBytes = Math.Max(PeakAllocatedMemoryBytes, allocatedMemory.LastValue);
-            if (gfxUsedMemory.Valid) PeakGpuMemoryBytes = Math.Max(PeakGpuMemoryBytes, gfxUsedMemory.LastValue);
-            cursor = (cursor + 1) % frameMilliseconds.Length;
-            count = Math.Min(count + 1, frameMilliseconds.Length);
-            if (Time.unscaledTime < nextReport || count < 60)
+            if (nativeResidentMemory)
             {
-                return;
+                residentBytes = clustr_process_peak_rss_bytes();
+                if (residentBytes <= 0) nativeResidentMemory = false;
             }
-            nextReport = Time.unscaledTime + 2f;
-            var sorted = new float[count];
-            Array.Copy(frameMilliseconds, sorted, count);
-            Array.Sort(sorted);
-            P95FrameMilliseconds = sorted[Mathf.Clamp(Mathf.CeilToInt(count * 0.95f) - 1, 0, count - 1)];
-            P95CpuMilliseconds = Percentile(cpuMilliseconds, count, includeZeros: false);
-            P95GpuMilliseconds = Percentile(gpuMilliseconds, count, includeZeros: false);
-            P95GcAllocatedBytes = Percentile(gcAllocatedBytes, count);
-            if (registry != null)
+            if (nativeMemory)
             {
-                ActiveEntityCount = 0;
-                PooledEntityCount = 0;
-                VisibleNodeCount = 0;
-                for (var index = 0; index < registry.Entities.Count; index++)
+                graphicsBytes = clustr_gpu_memory_bytes();
+                if (graphicsBytes < 0) nativeMemory = false;
+            }
+#endif
+            // Delta time, Main Thread and allocation deltas describe the preceding
+            // frame. Finish its slot before opening the current frame's slot.
+            if (pending >= 0)
+            {
+                CompleteCpuFrame(pending, Time.unscaledDeltaTime, MainThreadMilliseconds, allocation, residentBytes, graphicsBytes);
+                pending = -1;
+            }
+            if (capture)
+            {
+                if (count == frameMilliseconds.Length) cpuOverflow = true;
+                else
                 {
-                    var entity = registry.Entities[index];
-                    if (entity == null) continue;
-                    if (entity.gameObject.activeInHierarchy) VisibleNodeCount++;
-                    if (entity.gameObject.activeSelf) ActiveEntityCount++;
-                    else PooledEntityCount++;
+                    pending = count++;
+                    var loading = loader?.IsLoading == true;
+                    var ordinary = !loading && navigation != null && !navigation.IsMapOpen && hud?.InputCaptured != true && flight != null && flight.enabled;
+                    intervals[pending] = loading ? (byte)1 : ordinary ? (byte)2 : (byte)3;
                 }
-                KnownNodeCount = visibility?.SurveySession?.State.KnownEntities.Count ?? registry.Entities.Count;
+            }
+            if (capture || draining || !gpuWindow.Active)
+            {
+                FrameTimingManager.CaptureFrameTimings();
+                var available = FrameTimingManager.GetLatestTimings((uint)recentTimings.Length, recentTimings);
+                for (var i = (int)available - 1; i >= 0; i--)
+                {
+                    var timing = recentTimings[i];
+                    latestAvailableTimestamp = Math.Max(latestAvailableTimestamp, timing.frameStartTimestamp);
+                    gpuWindow.Record(timing.frameStartTimestamp, (float)timing.gpuFrameTime);
+                }
             }
         }
-
+        private void CompleteCpuFrame(int index, float seconds, float cpuMs, long allocation, long residentBytes, long graphicsBytes)
+        {
+            var frameMs = seconds * 1000f;
+            frameMilliseconds[index] = frameMs; cpuMilliseconds[index] = cpuMs; gcAllocatedBytes[index] = allocation;
+            capturedSeconds += seconds;
+            if (!float.IsFinite(cpuMs) || cpuMs <= 0 || !float.IsFinite(frameMs) || frameMs <= 0 ||
+                allocation < 0 || residentBytes <= 0 || graphicsBytes < 0) invalidSamples++;
+            MaximumFrameMilliseconds = Mathf.Max(MaximumFrameMilliseconds, frameMs);
+            PeakGcAllocatedBytes = Math.Max(PeakGcAllocatedBytes, allocation);
+            PeakAllocatedMemoryBytes = Math.Max(PeakAllocatedMemoryBytes, residentBytes);
+            PeakGpuMemoryBytes = Math.Max(PeakGpuMemoryBytes, graphicsBytes);
+            if (intervals[index] == 1) LoadingSamples++;
+            else if (intervals[index] == 2)
+            {
+                OrdinaryFlightSamples++; ordinarySeconds += seconds;
+                OrdinaryMaximumFrameMilliseconds = Mathf.Max(OrdinaryMaximumFrameMilliseconds, frameMs);
+                OrdinaryPeakGcBytes = Math.Max(OrdinaryPeakGcBytes, allocation);
+            }
+            else OtherGameplaySamples++;
+        }
         private void OnDisable()
         {
-            allocatedMemory.Dispose();
-            mainThreadTime.Dispose();
-            gcAllocated.Dispose();
-            gfxUsedMemory.Dispose();
-        }
-
-        private static float Percentile(float[] values, int valueCount, bool includeZeros)
-        {
-            var samples = new float[valueCount];
-            var sampleCount = 0;
-            for (var index = 0; index < valueCount; index++)
-            {
-                if (!includeZeros && values[index] <= 0f) continue;
-                samples[sampleCount++] = values[index];
-            }
-            if (sampleCount == 0) return 0f;
-            Array.Sort(samples, 0, sampleCount);
-            return samples[Mathf.Clamp(Mathf.CeilToInt(sampleCount * 0.95f) - 1, 0, sampleCount - 1)];
-        }
-
-        private static long Percentile(long[] values, int valueCount)
-        {
-            if (valueCount == 0) return 0L;
-            var samples = new long[valueCount];
-            Array.Copy(values, samples, valueCount);
-            Array.Sort(samples);
-            return samples[Mathf.Clamp(Mathf.CeilToInt(valueCount * 0.95f) - 1, 0, valueCount - 1)];
+            allocatedMemory.Dispose(); mainThreadTime.Dispose(); gcAllocated.Dispose(); gfxUsedMemory.Dispose();
         }
     }
 }

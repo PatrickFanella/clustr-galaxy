@@ -1,6 +1,7 @@
 using System;
 using ClustrGalaxy.Generation;
 using UnityEngine;
+using ClustrGalaxy.World;
 
 namespace ClustrGalaxy.Simulation
 {
@@ -25,11 +26,13 @@ namespace ClustrGalaxy.Simulation
             double parentGravitationalParameter,
             double simulationTime)
         {
-            if (elements.SemiMajorAxis <= 0d || parentGravitationalParameter <= 0d)
-            {
-                return Vector3.zero;
-            }
+            var position = PrecisePositionAtTime(elements, parentGravitationalParameter, simulationTime);
+            return new Vector3((float)position.X, (float)position.Y, (float)position.Z);
+        }
 
+        public static DoubleVector3 PrecisePositionAtTime(OrbitalElements elements, double parentGravitationalParameter, double simulationTime)
+        {
+            if (elements.SemiMajorAxis <= 0d || parentGravitationalParameter <= 0d) return DoubleVector3.Zero;
             var eccentricity = Math.Max(0d, Math.Min(0.95d, elements.Eccentricity));
             var meanMotion = Math.Sqrt(
                 parentGravitationalParameter /
@@ -38,6 +41,19 @@ namespace ClustrGalaxy.Simulation
                 elements.MeanAnomalyAtEpochRadians + meanMotion * simulationTime);
             var eccentricAnomaly = SolveEccentricAnomaly(meanAnomaly, eccentricity);
 
+            return PrecisePositionAtEccentricAnomaly(elements, eccentricAnomaly);
+        }
+
+        // Uniform geometric sampling draws an ellipse without bunching vertices at apoapsis.
+        public static Vector3 PositionAtEccentricAnomaly(OrbitalElements elements, double eccentricAnomaly)
+        {
+            var position = PrecisePositionAtEccentricAnomaly(elements, eccentricAnomaly);
+            return new Vector3((float)position.X, (float)position.Y, (float)position.Z);
+        }
+
+        private static DoubleVector3 PrecisePositionAtEccentricAnomaly(OrbitalElements elements, double eccentricAnomaly)
+        {
+            var eccentricity = Math.Max(0d, Math.Min(0.95d, elements.Eccentricity));
             var planeX = elements.SemiMajorAxis * (Math.Cos(eccentricAnomaly) - eccentricity);
             var planeZ = elements.SemiMajorAxis *
                 Math.Sqrt(1d - eccentricity * eccentricity) * Math.Sin(eccentricAnomaly);
@@ -47,7 +63,7 @@ namespace ClustrGalaxy.Simulation
             var inclinedZ = Math.Cos(elements.InclinationRadians) * planeZ;
             RotateY(ref planeX, ref inclinedZ, elements.LongitudeAscendingNodeRadians);
 
-            return new Vector3((float)planeX, (float)inclinedY, (float)inclinedZ);
+            return new DoubleVector3(planeX, inclinedY, inclinedZ);
         }
 
         private static double SolveEccentricAnomaly(double meanAnomaly, double eccentricity)

@@ -23,3 +23,15 @@
 # Crash and profiling artifacts
 sysinfo.txt
 *.stackdump
+
+# Addressables build products (source configuration is retained)
+/Assets/AddressableAssetsData/Linux/
+/Assets/AddressableAssetsData/Linux.meta
+/Assets/StreamingAssets/aa/
+/Assets/StreamingAssets/aa.meta
+/scripts/__pycache__/
+/Assets/Resources/PerformanceTestRunInfo.json*
+/Assets/Resources/PerformanceTestRunSettings.json*
+
+# Generated from native/telemetry.c by the build entrypoint
+/Assets/ClustrGalaxy/Plugins/Linux/x86_64/libclustrtelemetry.so

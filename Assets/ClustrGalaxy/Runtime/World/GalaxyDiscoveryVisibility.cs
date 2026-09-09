@@ -81,9 +81,11 @@ namespace ClustrGalaxy.World
         public string StableId { get; private set; } = string.Empty;
         public string SourceId { get; private set; } = string.Empty;
         public string TargetId { get; private set; } = string.Empty;
+        public long Weight { get; private set; } = 1;
 
-        public void Initialize(string stableId, string sourceId, string targetId, GalaxyEntityRegistry entityRegistry = null)
+        public void Initialize(string stableId, string sourceId, string targetId, GalaxyEntityRegistry entityRegistry = null, long weight = 1)
         {
+            Weight = weight;
             StableId = stableId ?? string.Empty;
             SourceId = sourceId ?? string.Empty;
             TargetId = targetId ?? string.Empty;
@@ -180,6 +182,7 @@ namespace ClustrGalaxy.World
 
         public bool StartAt(string systemStableId)
         {
+            if (publishingOutcome) throw new InvalidOperationException("Nested Survey transitions are forbidden.");
             EnsureRegistry();
             if (!TryGetLoadedSubreddit(systemStableId, out _))
             {
@@ -202,7 +205,8 @@ namespace ClustrGalaxy.World
                 }
             }
             SurveyTransitionOutcome outcome;
-            if (SurveySession == null && galaxySession != null)
+            var openingSession = SurveySession == null && galaxySession != null;
+            if (openingSession)
                 outcome = galaxySession.StartSurvey((GalaxyEntityId)systemStableId, seeded,
                     "start:" + systemStableId, DateTime.UtcNow);
             else
@@ -210,14 +214,18 @@ namespace ClustrGalaxy.World
                 if (SurveySession == null)
                 {
                     var root = string.IsNullOrWhiteSpace(persistentDataRoot) ? Application.persistentDataPath : persistentDataRoot;
+                    try
+                    {
                     surveySession = new SurveySession(new SurveyFileRepository(new FileDurableDocumentStore(root)), profileId,
                         ToCoreSnapshot(snapshotKey), (GalaxyEntityId)systemStableId);
+                    }
+                    catch (InvalidOperationException) { return false; }
                 }
                 outcome = ApplySurveyIntent(new StartSurveyIntent("start:" + systemStableId,
                     SurveySession.State.Snapshot, DateTime.UtcNow, (GalaxyEntityId)systemStableId, seeded));
             }
             if (!outcome.Succeeded) return false;
-            if (outcome.Changed && galaxySession != null) Publish(outcome);
+            if (outcome.Changed && openingSession) Publish(outcome);
             ApplyVisibility();
             return true;
         }
@@ -363,7 +371,11 @@ namespace ClustrGalaxy.World
             return candidate.Kind == GalaxyEntityKind.Subreddit;
         }
 
-        private void OnWorldModeChanged(GalaxyWorldMode _) => ApplyVisibility();
+        private void OnWorldModeChanged(GalaxyWorldMode mode)
+        {
+            galaxySession?.ApplySurveyVisibility(mode == GalaxyWorldMode.Explore);
+            ApplyVisibility();
+        }
 
         private void EnsureRegistry()
         {

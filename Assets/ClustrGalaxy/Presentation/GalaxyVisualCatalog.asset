@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83ffe32569b9fec2fbbbcab491d8d97b, type: 3}
+  m_Name: GalaxyVisualCatalog
+  m_EditorClassIdentifier: ClustrGalaxy.Unity::ClustrGalaxy.World.GalaxyVisualCatalog
+  anomalyPrefabs:
+  - {fileID: 7353530685368549450, guid: 947c9ab0d2e32085097f045d91fdb294, type: 3}
+  - {fileID: 5852268271482114645, guid: 9494f6d4e019a43a1bd959fb285b34a2, type: 3}
+  - {fileID: 6572866386803096202, guid: 0d9f9ee392fea191f8902b3416dff377, type: 3}
+  - {fileID: 5670968796472012494, guid: 7889c8b426bcfe32f99c966c48079b88, type: 3}
+  - {fileID: 7283087125098751908, guid: 91fde0d895466821794b51a1f1282366, type: 3}
+  - {fileID: 7801965606652159968, guid: cf14f864fd99211c787d16820ff7b0c4, type: 3}
+  keepsakePrefabs:
+  - {fileID: 7733110374052089935, guid: 24a2c4031180d550090de3800fb8c062, type: 3}
+  - {fileID: 6206093111093692640, guid: a1de25809df5326c7820dd62f4eb30b4, type: 3}
+  - {fileID: 2589507297072345219, guid: 495c2486ef0dc84b69a1c70a266f24a9, type: 3}
+  observatoryPlatformPrefab: {fileID: 1348805929988264979, guid: 0a0706d300c5b4b10ae5ba84612930b0, type: 3}
+  userShipPrefabs:
+  - {fileID: 909896894237664339, guid: c484e9ee88e6f4942ad5c8a0461c6493, type: 3}
+  - {fileID: 301440150206615204, guid: 759dff70eb5bd9248bb05b82a5e93cc6, type: 3}
+  - {fileID: 8279969143979241102, guid: ff23e3972c8602b4e87bf04fe4395c79, type: 3}
+  - {fileID: 4443853831605296070, guid: 62990642302a7cc498dad6b168295e7d, type: 3}
+  - {fileID: 901983964859913192, guid: 375d8a55f513af3499bbcd48ead0bdd4, type: 3}
+  - {fileID: 7046610107163128614, guid: 7b1193876daceb3438726c4a3adee451, type: 3}
+  discussionSatellitePrefab: {fileID: 2638649845463096286, guid: 039da3b2afefb39499dd20ea57ec484b, type: 3}
+  explorationInstruments:
+  - {fileID: 8300000, guid: f0d1a8a6eac44af9b4ce8999c4e31b79, type: 3}
+  - {fileID: 8300000, guid: 3e8d156a52e842a58c3b9ccf8438fead, type: 3}
+  - {fileID: 8300000, guid: 71d239cda9d9477e876ad2c0573df3a1, type: 3}

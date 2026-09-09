@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace ClustrGalaxy.Data
@@ -14,9 +16,10 @@ namespace ClustrGalaxy.Data
         private readonly string root;
         private readonly string indexPath;
         private readonly long maximumBytes;
+        private readonly Action beforeIndexCommit;
         private readonly Dictionary<string, CacheEntry> entries = new(StringComparer.Ordinal);
 
-        public SnapshotCache(string cacheRoot, long maxBytes = DefaultMaximumBytes)
+        public SnapshotCache(string cacheRoot, long maxBytes = DefaultMaximumBytes, Action beforeIndexCommit = null)
         {
             if (string.IsNullOrWhiteSpace(cacheRoot))
             {
@@ -27,19 +30,67 @@ namespace ClustrGalaxy.Data
                 throw new ArgumentOutOfRangeException(nameof(maxBytes));
             }
 
+            this.beforeIndexCommit = beforeIndexCommit;
             root = cacheRoot;
             maximumBytes = maxBytes;
             indexPath = Path.Combine(root, "index.json");
             Directory.CreateDirectory(root);
+            RejectLinks();
             LoadIndex();
+            RecoverUnreferencedFiles();
+            EnsureRoom(0);
         }
 
         public static string DefaultRoot =>
-            Path.Combine(Application.persistentDataPath, "ClustrGalaxy", "cache", "v1");
+            Path.Combine(Application.persistentDataPath, "ClustrGalaxy", "cache", "v2");
+
+        public long UsedBytes => Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Sum(path => new FileInfo(path).Length);
+        private static bool IsDocumentName(string name) => Regex.IsMatch(name,
+            @"\A[0-9a-f]{64}(?:-[0-9a-f]{64})?\.json\z");
+        private void RejectLinks()
+        {
+            if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0 ||
+                Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories).Any(path => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0))
+                throw new IOException("Cache links are not accepted.");
+        }
+        private void RecoverUnreferencedFiles()
+        {
+            var referenced = new HashSet<string>(entries.Values.Select(entry => entry.file_name), StringComparer.Ordinal);
+            foreach (var path in Directory.EnumerateFiles(root))
+            {
+                var name = Path.GetFileName(path);
+                var temporary = name.IndexOf(".tmp-", StringComparison.Ordinal);
+                if (IsDocumentName(name) && !referenced.Contains(name) ||
+                    temporary > 0 && (name.Substring(0,temporary) == "index.json" || IsDocumentName(name.Substring(0,temporary))))
+                    File.Delete(path);
+            }
+        }
+        private bool EvictOne(string preserveKey)
+        {
+            var corrupt = Directory.EnumerateFiles(root)
+                .Where(path => Path.GetFileName(path).Contains(".corrupt-", StringComparison.Ordinal))
+                .OrderBy(File.GetLastWriteTimeUtc).FirstOrDefault();
+            if (corrupt != null) { File.Delete(corrupt); return true; }
+            var oldest = entries.Values.Where(entry => !entry.pinned_base && entry.key != preserveKey)
+                .OrderBy(entry => entry.last_access_utc_ticks).FirstOrDefault();
+            if (oldest == null) return false;
+            var path = Path.Combine(root,oldest.file_name);
+            if (File.Exists(path)) File.Delete(path);
+            entries.Remove(oldest.key);
+            return true;
+        }
+        private void EnsureRoom(long additionalBytes, string preserveKey = null)
+        {
+            RejectLinks();
+            while (UsedBytes + additionalBytes > maximumBytes)
+                if (!EvictOne(preserveKey)) throw new IOException("Cache cannot reserve replacement bytes without evicting the active base.");
+        }
+        private byte[] IndexBytes() => Encoding.UTF8.GetBytes(JsonUtility.ToJson(new CacheIndex {
+            entries = entries.Values.OrderBy(entry => entry.key, StringComparer.Ordinal).ToArray() }));
 
         public bool Contains(string key) => entries.ContainsKey(key);
 
-        public string PathForKey(string key) => Path.Combine(root, FileNameForKey(key));
+        public string PathForKey(string key) => Path.Combine(root, entries.TryGetValue(key, out var entry) ? entry.file_name : FileNameForKey(key));
 
         public void Write(string key, string json, bool pinnedBase)
         {
@@ -49,20 +100,61 @@ namespace ClustrGalaxy.Data
             }
             json ??= string.Empty;
             var bytes = Encoding.UTF8.GetBytes(json);
-            var path = PathForKey(key);
-            AtomicWrite(path, bytes);
-
-            entries[key] = new CacheEntry
+            var checksum = Hash(bytes);
+            var path = Path.Combine(root, FileNameForKey(key).Replace(".json", "-" + checksum + ".json"));
+            if (File.Exists(path) && Hash(File.ReadAllBytes(path)) != checksum)
+                File.Move(path,path + ".corrupt-" + Guid.NewGuid().ToString("N"));
+            var candidate = new CacheEntry
             {
                 key = key,
                 file_name = Path.GetFileName(path),
-                checksum = Hash(bytes),
+                checksum = checksum,
                 size = bytes.LongLength,
                 last_access_utc_ticks = DateTime.UtcNow.Ticks,
                 pinned_base = pinnedBase
             };
-            EvictToBudget();
+            // Reserve the exact candidate index as eviction changes its size.
+            RejectLinks();
+            while (true)
+            {
+                entries.TryGetValue(key,out var old);
+                entries[key] = candidate;
+                var indexSize = IndexBytes().LongLength;
+                if (old == null) entries.Remove(key); else entries[key] = old;
+                if (UsedBytes + (File.Exists(path) ? 0 : bytes.LongLength) + indexSize <= maximumBytes) break;
+                if (!EvictOne(key)) throw new IOException("Cache cannot reserve replacement bytes without evicting the active base.");
+            }
             SaveIndex();
+            var previous = new Dictionary<string, CacheEntry>(entries, StringComparer.Ordinal);
+            var created = !File.Exists(path);
+            if (created) AtomicWrite(path, bytes);
+            entries[key] = candidate;
+            try
+            {
+                EvictToBudget();
+                beforeIndexCommit?.Invoke();
+                SaveIndex(key);
+            }
+            catch
+            {
+                entries.Clear();
+                foreach (var pair in previous) entries.Add(pair.Key, pair.Value);
+                if (created && File.Exists(path)) File.Delete(path);
+                throw;
+            }
+            DeleteUnreferenced(previous);
+        }
+
+        private void DeleteUnreferenced(Dictionary<string, CacheEntry> previous)
+        {
+            var referenced = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var value in entries.Values) referenced.Add(value.file_name);
+            foreach (var old in previous.Values)
+            {
+                if (referenced.Contains(old.file_name)) continue;
+                var oldPath = Path.Combine(root, old.file_name);
+                if (File.Exists(oldPath)) File.Delete(oldPath);
+            }
         }
 
         public bool TryRead(string key, out string json)
@@ -83,7 +175,7 @@ namespace ClustrGalaxy.Data
             var bytes = File.ReadAllBytes(path);
             if (!string.Equals(Hash(bytes), entry.checksum, StringComparison.Ordinal))
             {
-                RemoveEntry(key, path);
+                Quarantine(key);
                 return false;
             }
 
@@ -94,42 +186,31 @@ namespace ClustrGalaxy.Data
             return true;
         }
 
-        private void EvictToBudget()
+        public void ProtectOnly(params string[] keys)
         {
-            long total = 0;
-            foreach (var entry in entries.Values)
-            {
-                total += entry.size;
-            }
-
-            while (total > maximumBytes)
-            {
-                CacheEntry oldest = null;
-                foreach (var candidate in entries.Values)
-                {
-                    if (candidate.pinned_base)
-                    {
-                        continue;
-                    }
-                    if (oldest == null || candidate.last_access_utc_ticks < oldest.last_access_utc_ticks)
-                    {
-                        oldest = candidate;
-                    }
-                }
-                if (oldest == null)
-                {
-                    break;
-                }
-
-                total -= oldest.size;
-                entries.Remove(oldest.key);
-                var path = Path.Combine(root, oldest.file_name);
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
+            var protectedKeys = new HashSet<string>(keys, StringComparer.Ordinal);
+            foreach (var value in entries.Values) value.pinned_base = protectedKeys.Contains(value.key);
+            EvictToBudget(); SaveIndex();
         }
+
+        public void Quarantine(string key)
+        {
+            if (!entries.TryGetValue(key, out var entry)) return;
+            var path = Path.Combine(root, entry.file_name);
+            if (File.Exists(path)) File.Move(path, path + ".corrupt-" + Guid.NewGuid().ToString("N"));
+            entries.Remove(key);
+            var quarantine = Directory.EnumerateFiles(root).Where(file => Path.GetFileName(file).Contains(".corrupt-", StringComparison.Ordinal))
+                .OrderBy(File.GetLastWriteTimeUtc).ToArray();
+            long retained = quarantine.Sum(file => new FileInfo(file).Length);
+            foreach (var file in quarantine)
+            {
+                if (retained <= Math.Min(64L * 1024 * 1024, maximumBytes)) break;
+                retained -= new FileInfo(file).Length; File.Delete(file);
+            }
+            SaveIndex();
+        }
+
+        private void EvictToBudget() => EnsureRoom(0);
 
         private void LoadIndex()
         {
@@ -142,7 +223,8 @@ namespace ClustrGalaxy.Data
                 var index = JsonUtility.FromJson<CacheIndex>(File.ReadAllText(indexPath));
                 foreach (var entry in index?.entries ?? Array.Empty<CacheEntry>())
                 {
-                    if (entry != null && !string.IsNullOrWhiteSpace(entry.key))
+                    if (entry != null && !string.IsNullOrWhiteSpace(entry.key) && (entry.file_name == FileNameForKey(entry.key) || entry.file_name == FileNameForKey(entry.key).Replace(".json", "-" + entry.checksum + ".json")) &&
+                        entry.checksum != null && Regex.IsMatch(entry.checksum, @"\A[0-9a-f]{64}\z") && entry.size >= 0)
                     {
                         entries[entry.key] = entry;
                     }
@@ -155,12 +237,12 @@ namespace ClustrGalaxy.Data
             }
         }
 
-        private void SaveIndex()
+        private void SaveIndex(string preserveKey = null)
         {
-            var values = new CacheEntry[entries.Count];
-            entries.Values.CopyTo(values, 0);
-            Array.Sort(values, (left, right) => string.CompareOrdinal(left.key, right.key));
-            AtomicWrite(indexPath, Encoding.UTF8.GetBytes(JsonUtility.ToJson(new CacheIndex { entries = values })));
+            var bytes = IndexBytes();
+            EnsureRoom(bytes.LongLength, preserveKey);
+            bytes = IndexBytes();
+            AtomicWrite(indexPath, bytes);
         }
 
         private void RemoveEntry(string key, string path)
@@ -190,7 +272,8 @@ namespace ClustrGalaxy.Data
         private static void AtomicWrite(string destination, byte[] bytes)
         {
             var temporary = destination + ".tmp-" + Guid.NewGuid().ToString("N");
-            File.WriteAllBytes(temporary, bytes);
+            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            { stream.Write(bytes, 0, bytes.Length); stream.Flush(true); }
             if (File.Exists(destination))
             {
                 File.Replace(temporary, destination, null);

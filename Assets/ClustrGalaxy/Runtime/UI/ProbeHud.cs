@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Activities;
+using ClustrGalaxy.Bootstrap;
 using ClustrGalaxy.Core.Presentation;
 using ClustrGalaxy.Core.Survey;
 using ClustrGalaxy.Data;
@@ -11,242 +13,563 @@ using ClustrGalaxy.Interaction;
 using ClustrGalaxy.Scanning;
 using ClustrGalaxy.World;
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 
 namespace ClustrGalaxy.UI
 {
-    /// <summary>Thin IMGUI adapter: render a Core presentation and send intents.</summary>
-    public sealed class ProbeHud : MonoBehaviour
+    /// <summary>Retained, change-driven UI. Gameplay state belongs to the core session.</summary>
+    public sealed partial class ProbeHud : MonoBehaviour
     {
-        private ObserverProbeController flight = null!;
-        private ProbeTargeting targeting = null!;
-        private SpatialSceneLoader dataLoader = null!;
-        private GUIStyle titleStyle = null!;
-        private GUIStyle bodyStyle = null!;
-        private Texture2D panelTexture = null!;
-        private GalaxyPerformanceMonitor performance = null!;
-        private GalaxyNavigationController navigation = null!;
-        private GalaxyModeState modeState = null!;
-        private GalaxySurveyVisibilityController discoveryVisibility = null!;
-        private SignalScanner scanner = null!;
-        private CommentThreadController threadInspection = null!;
-        private Vector2 threadScrollPosition;
-        private ThreadInspectionModel observedThreadModel = null!;
-        private ConstellationTracker constellationTracker;
-        private PersonalConstellationStore personalConstellations;
-        private ConstellationSubmissionOutbox constellationOutbox;
-        private PersonalConstellationDraft personalConstellationDraft;
-        private SurveyProgression progression;
-        private EasterEggTracker easterEggTracker;
-        private InstancedStarfield starfield;
-        private EasterEggDiscovery latestEasterEgg;
-        private bool hasEasterEggTransmission;
-        private string progressionNotification = string.Empty;
-        private bool developerPerformanceVisible;
-        private bool constellationAuthoringExpanded;
-        private GalaxyBetaProfileRunner betaProfile;
-        private Vector2 constellationMemberScrollPosition;
-
-        public void Initialize(ObserverProbeController flightController, ProbeTargeting targetController,
-            SpatialSceneLoader spatialSceneLoader, GalaxyNavigationController navigationController,
-            GalaxyModeState galaxyModeState, GalaxySurveyVisibilityController visibilityController,
-            SignalScanner signalScanner = null, CommentThreadController commentThreadInspection = null)
+        private ObserverProbeController flight;
+        private ProbeTargeting targeting;
+        private SpatialSceneLoader dataLoader;
+        private GalaxyNavigationController navigation;
+        private GalaxyModeState modeState;
+        private GalaxySurveyVisibilityController visibility;
+        private SignalScanner scanner;
+        private CommentThreadController threadInspection;
+        private readonly ProbeHudPresenter presenter = new();
+        private readonly List<GalaxyEntityId> draftMembers = new();
+        private string draftName = "", draftReason = "", savedPersonalId = "", filter = "", errorText = "";
+        private SurveyTransitionOutcome latestOutcome;
+        private GameObject canvasObject, menu;
+        private RectTransform content;
+        private Text status;
+        private readonly Text[] speedDigits = new Text[4];
+        private readonly Text[] chargeDigits = new Text[3];
+        private static readonly string[] Digits = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+        private Font font;
+        private InputField nameField, reasonField, searchField;
+        private readonly List<Button> buttons = new();
+        private int usedButtons;
+        private int jumpPage;
+        private bool dirty = true;
+        private ScrollRect actionScroll;
+        private GameObject observedFocus;
+        private int observedSpeed = -1, observedCharge = -1;
+        private string observedTravel;
+        private GalaxyEntity observedTarget;
+        private object observedSurvey, observedThread;
+        private string observedStatus, observedHover;
+        private bool modalCaptured, menuBeforeModal;
+        private bool bodyWasKinematic, flightWasEnabled, navigationWasEnabled;
+        private float simulationRateBeforeModal;
+        private GameObject pauseIndicator;
+        private Vector3 bodyVelocity, bodyAngularVelocity;
+        public bool InputCaptured => modalCaptured || (menu != null && menu.activeSelf);
+        private readonly CockpitInputContext fallbackInput = new();
+        private CockpitInputContext InputContext => GetComponent<GalaxySessionBehaviour>()?.Session?.CockpitInput ?? fallbackInput;
+        public long AcquireStation()
         {
-            flight = flightController;
-            targeting = targetController;
-            dataLoader = spatialSceneLoader;
-            navigation = navigationController;
-            modeState = galaxyModeState;
-            discoveryVisibility = visibilityController;
-            scanner = signalScanner;
-            if (threadInspection != null)
+            var id = InputContext.AcquireModal(); ApplyModalCapture(InputContext.Paused); return id;
+        }
+        public void ReleaseStation(long id)
+        {
+            InputContext.ReleaseModal(id); ApplyModalCapture(InputContext.Paused);
+        }
+        public void SetModalInputCaptured(bool captured)
+        {
+            InputContext.SetCompatibilityModal(captured); ApplyModalCapture(InputContext.Paused);
+        }
+        private void ChartContextChanged(bool open)
+        { InputContext.SetChart(open); ApplyInputContext(); }
+        private void ApplyInputContext()
+        {
+            var context = InputContext;
+            if (flight != null) flight.SetPilotInputEnabled(context.PilotEnabled);
+            if (navigation != null) navigation.SetCockpitInputEnabled(context.NavigationEnabled, context.ChartOpen);
+            if (targeting != null) targeting.enabled = context.PilotEnabled;
+            if (scanner != null) scanner.enabled = context.PilotEnabled;
+            var pointer = !context.PilotEnabled;
+            Cursor.lockState = pointer ? CursorLockMode.None : CursorLockMode.Locked; Cursor.visible = pointer;
+        }
+        private void ApplyModalCapture(bool captured)
+        {
+            if (modalCaptured == captured) { ApplyInputContext(); return; }
+            var body = GetComponent<Rigidbody>();
+            if (captured)
             {
-                threadInspection.ModelChanged -= OnThreadModelChanged;
+                menuBeforeModal = menu.activeSelf; SetMenuOpen(false); modalCaptured = true;
+                simulationRateBeforeModal = Time.timeScale; Time.timeScale = 0;
+                if (pauseIndicator != null) pauseIndicator.SetActive(true);
+                if (flight != null) { flightWasEnabled = flight.enabled; flight.enabled = false; }
+                if (navigation != null) { navigationWasEnabled = navigation.enabled; navigation.enabled = false; }
+                if (targeting != null) targeting.enabled = false; if (scanner != null) scanner.enabled = false;
+                if (body != null) { bodyWasKinematic = body.isKinematic; bodyVelocity = body.linearVelocity; bodyAngularVelocity = body.angularVelocity; body.isKinematic = true; }
+                Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
             }
-            threadInspection = commentThreadInspection;
-            if (threadInspection != null)
+            else
             {
-                threadInspection.ModelChanged += OnThreadModelChanged;
+                modalCaptured = false;
+                Time.timeScale = simulationRateBeforeModal;
+                if (pauseIndicator != null) pauseIndicator.SetActive(false);
+                if (flight != null) flight.enabled = flightWasEnabled;
+                if (navigation != null) navigation.enabled = navigationWasEnabled;
+                if (body != null) { body.isKinematic = bodyWasKinematic; if (!bodyWasKinematic) { body.linearVelocity = bodyVelocity; body.angularVelocity = bodyAngularVelocity; } }
+                SetMenuOpen(menuBeforeModal);
             }
-            performance = GetComponent<GalaxyPerformanceMonitor>();
-            betaProfile = GetComponent<GalaxyBetaProfileRunner>();
+            ApplyInputContext();
         }
 
+        public void Initialize(ObserverProbeController flightController, ProbeTargeting targetController,
+            SpatialSceneLoader loader, GalaxyNavigationController navigationController,
+            GalaxyModeState modes, GalaxySurveyVisibilityController visibilityController,
+            SignalScanner signalScanner = null, CommentThreadController inspection = null)
+        {
+            flight = flightController; targeting = targetController; dataLoader = loader;
+            navigation = navigationController; modeState = modes; scanner = signalScanner; threadInspection = inspection;
+            modeState.Changed += Invalidate;
+            navigation.ModeChanged += ChartContextChanged;
+            BindSurveyOutcomes(visibilityController);
+            BuildUi(); InputContext.SetChart(navigation.IsMapOpen); ApplyInputContext();
+        }
         public void BindSurveyOutcomes(GalaxySurveyVisibilityController value)
         {
             if (visibility != null) visibility.SurveyTransitionCommitted -= OnSurveyOutcome;
             visibility = value;
             if (visibility != null) visibility.SurveyTransitionCommitted += OnSurveyOutcome;
+            dirty = true;
+        }
+        private void Invalidate() => dirty = true;
+        public void InvalidateExploration() => dirty = true;
+        private void Update()
+        {
+            if (menu == null) return;
+            UpdateFlightInstruments();
+            if (modalCaptured) return;
+            var editingText = InputCaptured && (nameField.isFocused || reasonField.isFocused || searchField.isFocused);
+            if (!editingText && (Keyboard.current?.tabKey.wasPressedThisFrame == true || Gamepad.current?.startButton.wasPressedThisFrame == true))
+                SetMenuOpen(!InputCaptured);
+            if (InputCaptured && (Keyboard.current?.escapeKey.wasPressedThisFrame == true ||
+                Gamepad.current?.buttonEast.wasPressedThisFrame == true)) SetMenuOpen(false);
+            var state = visibility?.SurveySession?.State;
+            var thread = threadInspection?.DisplayedModel;
+            if (observedTarget != targeting?.Target || !ReferenceEquals(observedSurvey, state) ||
+                !ReferenceEquals(observedThread, thread) || observedStatus != dataLoader?.StatusText || observedHover != navigation?.MapHoverStatus)
+            {
+                observedTarget = targeting?.Target; observedSurvey = state; observedThread = thread;
+                observedStatus = dataLoader?.StatusText; observedHover = navigation?.MapHoverStatus; dirty = true;
+            }
+            var speed = Mathf.RoundToInt((flight?.Speed ?? 0) * 10);
+            var charge = Mathf.RoundToInt((scanner?.Charge01 ?? 0) * 100);
+            if (speed != observedSpeed) { observedSpeed = speed; UpdateDigits(speedDigits, speed); }
+            if (charge != observedCharge) { observedCharge = charge; UpdateDigits(chargeDigits, charge); }
+            if (observedTravel != navigation?.TravelStatus) { observedTravel = navigation?.TravelStatus; dirty = true; }
+            if (dirty) Refresh();
+        }
+        public void SetMenuOpen(bool open)
+        {
+            if (menu == null || (!open && flight?.Simulation.Recovering == true)) return;
+            menu.SetActive(open);
+            InputContext.SetCommand(open); ApplyInputContext();
+            dirty = true;
+            if (open) Refresh();
+            status.SetAllDirty();
+            if (open && buttons.Count > 0) EventSystem.current?.SetSelectedGameObject(buttons[0].gameObject);
+        }
+        private void BuildUi()
+        {
+            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            font.RequestCharactersInTexture("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:;!?/%—•[]()-_", 16);
+            canvasObject = new GameObject("Galaxy HUD", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            canvasObject.transform.SetParent(transform, false);
+            canvasObject.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
+            var scale = canvasObject.GetComponent<CanvasScaler>();
+            scale.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scale.referenceResolution = new Vector2(1280, 720); scale.matchWidthOrHeight = 1;
+            if (EventSystem.current == null)
+            {
+                var events = new GameObject("Galaxy UI Input", typeof(EventSystem), typeof(InputSystemUIInputModule));
+                events.transform.SetParent(canvasObject.transform, false);
+            }
+            status = Label(canvasObject.transform, "Status");
+            var rect = status.rectTransform;
+            rect.anchorMin = new Vector2(0, 1); rect.anchorMax = new Vector2(0, 1); rect.pivot = new Vector2(0, 1);
+            rect.anchoredPosition = new Vector2(16, -66); rect.sizeDelta = new Vector2(560, 630);
+            BuildFlightDisplay();
+            pauseIndicator = new GameObject("Paused local simulation", typeof(RectTransform), typeof(Canvas));
+            pauseIndicator.transform.SetParent(canvasObject.transform, false);
+            var pauseCanvas = pauseIndicator.GetComponent<Canvas>(); pauseCanvas.overrideSorting = true; pauseCanvas.sortingOrder = 200;
+            var pauseLabel = Label(pauseIndicator.transform, "Pause context");
+            pauseLabel.text = "LOCAL SIMULATION PAUSED · CLOSE THIS VIEW TO RESUME";
+            pauseLabel.fontSize = 12; pauseLabel.alignment = TextAnchor.MiddleCenter; pauseLabel.raycastTarget = false;
+            var pauseRect = pauseLabel.rectTransform; pauseRect.anchorMin = pauseRect.anchorMax = new Vector2(.5f, 1);
+            pauseRect.pivot = new Vector2(.5f, 1); pauseRect.sizeDelta = new Vector2(560, 26); pauseRect.anchoredPosition = new Vector2(0, -8);
+            var pauseRoot = pauseIndicator.GetComponent<RectTransform>(); pauseRoot.anchorMin = Vector2.zero; pauseRoot.anchorMax = Vector2.one; pauseRoot.offsetMin = pauseRoot.offsetMax = Vector2.zero;
+            pauseIndicator.SetActive(false);
+            menu = new GameObject("Actions", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
+            var projection = new GameObject("Cockpit command projection", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+            var cockpitCamera = GetComponentInChildren<Camera>();
+            projection.transform.SetParent(cockpitCamera.transform, false);
+            projection.transform.localPosition = new Vector3(0, -.00375f, .55f);
+            projection.transform.localRotation = Quaternion.Euler(0, -4f, 0);
+            projection.transform.localScale = Vector3.one * .001f;
+            projection.GetComponent<RectTransform>().sizeDelta = new Vector2(1280, 720);
+            var projectionCanvas = projection.GetComponent<Canvas>();
+            projectionCanvas.renderMode = RenderMode.WorldSpace; projectionCanvas.worldCamera = cockpitCamera;
+            menu.transform.SetParent(projection.transform, false);
+            var panel = menu.GetComponent<RectTransform>();
+            panel.anchorMin = new Vector2(.025f, .035f); panel.anchorMax = new Vector2(.975f, .965f); panel.offsetMin = panel.offsetMax = Vector2.zero;
+            menu.GetComponent<Image>().color = new Color(.012f, .028f, .042f, .78f);
+            status.transform.SetParent(menu.transform,false);status.fontSize=13;
+            rect.anchorMin=new Vector2(.745f,.09f);rect.anchorMax=new Vector2(.975f,.82f);rect.offsetMin=rect.offsetMax=Vector2.zero;
+            var title=Label(menu.transform,"Command console title");title.text="S U R V E Y O R   /   COMMAND CONSOLE";title.fontSize=24;
+            PlaceMeter(title,28,22,1000);title.rectTransform.sizeDelta=new Vector2(1000,38);
+            var subtitle=Label(menu.transform,"Console guidance");subtitle.text="Choose a station. B / Escape returns you to flight.";subtitle.color=new Color(.55f,.68f,.72f);PlaceMeter(subtitle,28,62,950);
+            var rail=new GameObject("Console stations",typeof(RectTransform),typeof(VerticalLayoutGroup));rail.transform.SetParent(menu.transform,false);sectionRail=rail.transform;
+            var railRect=rail.GetComponent<RectTransform>();railRect.anchorMin=new Vector2(.02f,.06f);railRect.anchorMax=new Vector2(.22f,.82f);railRect.offsetMin=railRect.offsetMax=Vector2.zero;
+            var railLayout=rail.GetComponent<VerticalLayoutGroup>();railLayout.spacing=8;railLayout.childControlHeight=true;railLayout.childForceExpandHeight=false;
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+            viewport.transform.SetParent(panel, false); var viewportRect=viewport.GetComponent<RectTransform>();viewportRect.anchorMin=new Vector2(.245f,.07f);viewportRect.anchorMax=new Vector2(.72f,.82f);viewportRect.offsetMin=viewportRect.offsetMax=Vector2.zero;
+            var rows = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            rows.transform.SetParent(viewport.transform, false); content = rows.GetComponent<RectTransform>();
+            content.anchorMin = new Vector2(0, 1); content.anchorMax = new Vector2(1, 1); content.pivot = new Vector2(.5f, 1);
+            content.sizeDelta = Vector2.zero;
+            var layout = rows.GetComponent<VerticalLayoutGroup>(); layout.spacing = 6; layout.padding = new RectOffset(12,12,12,12);
+            layout.childControlHeight = true; layout.childForceExpandHeight = false;
+            rows.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            var scroll = actionScroll = menu.GetComponent<ScrollRect>(); scroll.viewport = viewport.GetComponent<RectTransform>(); scroll.content = content;
+            scroll.horizontal = false; scroll.movementType = ScrollRect.MovementType.Clamped;
+            searchField = Field("Search loaded entities", 100, value => { filter = value; selectedSection=ProbeHudSection.Selection;dirty = true; });
+            nameField = Field("Constellation name", 60, value => { draftName = value; dirty = true; });
+            reasonField = Field("Reason / note", 500, value => { draftReason = value; dirty = true; });
+            menu.SetActive(false);
+        }
+        private InputField Field(string placeholder, int limit, UnityEngine.Events.UnityAction<string> changed)
+        {
+            var go = new GameObject(placeholder, typeof(RectTransform), typeof(Image), typeof(InputField), typeof(LayoutElement));
+            go.transform.SetParent(content, false); go.GetComponent<LayoutElement>().preferredHeight = 46;
+            go.GetComponent<Image>().color = new Color(.12f,.16f,.2f);
+            var field = go.GetComponent<InputField>(); var label = Label(go.transform, "Text"); Stretch(label.rectTransform);
+            field.textComponent = label; field.characterLimit = limit;
+            var hint = Label(go.transform, "Placeholder"); Stretch(hint.rectTransform); hint.text = placeholder; hint.color = Color.gray;
+            field.placeholder = hint; field.onValueChanged.AddListener(changed); return field;
+        }
+        private Text Label(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Text)); go.transform.SetParent(parent, false);
+            var text = go.GetComponent<Text>(); text.font = font; text.fontSize = 16; text.color = new Color(.8f,.94f,.95f);
+            text.horizontalOverflow = HorizontalWrapMode.Wrap; text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.raycastTarget = false; return text;
+        }
+        private static void Stretch(RectTransform rect)
+        { rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one; rect.offsetMin = new Vector2(8,2); rect.offsetMax = new Vector2(-8,-2); }
+        private bool quitRequested;
+        private ProbeHudSection selectedSection=ProbeHudSection.Selection,currentSection;
+        private readonly List<ProbeHudSection> buttonSections=new();
+        private void AddButton(string label, UnityEngine.Events.UnityAction action)
+        {
+            Button button;
+            if (usedButtons == buttons.Count)
+            {
+                var go = new GameObject("Action", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+                go.transform.SetParent(content, false); go.GetComponent<LayoutElement>().preferredHeight = 46;
+                go.GetComponent<Image>().color = new Color(.075f,.12f,.16f);
+                button = go.GetComponent<Button>(); var text = Label(go.transform,"Label"); Stretch(text.rectTransform);
+                buttons.Add(button);buttonSections.Add(currentSection);
+            }
+            buttonSections[usedButtons]=currentSection;button = buttons[usedButtons++]; button.gameObject.SetActive(true);
+            button.GetComponent<LayoutElement>().preferredHeight = 46;
+            var station=label.StartsWith("SECTION:")||label=="RESUME FLIGHT"||label=="QUIT GAME";
+            button.transform.SetParent(station?sectionRail:content,false);
+            ConsoleTheme.Style(button);
+            button.gameObject.name=label;
+            var buttonText=button.GetComponentInChildren<Text>();buttonText.text=label.StartsWith("SECTION: ")?label.Substring(9):label;buttonText.fontSize=14;buttonText.alignment=TextAnchor.MiddleLeft; button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(action); button.onClick.AddListener(Invalidate);
+        }
+        private void Refresh()
+        {
+            dirty = false;
+            var model = ReadModel(); var presentation = presenter.Present(model);
+            RefreshFlightDisplay(model);
+            status.text = "FLIGHT BRIEF\n\n" + string.Join("\n", presentation.Lines) +
+                "\n" + errorText + "\nTab / Start: actions • R / X: hold scan\nM / Select: map • F / A: target\nLS: yaw / vertical thrust • RS: pitch / roll\nTriggers: forward / reverse • Bumpers: strafe";
+            if (threadInspection?.DisplayedModel != null) status.text += "\nThread replies: open Actions to read.";
+            if (!InputCaptured) return;
+            usedButtons = 0;currentSection=ProbeHudSection.Common;
+            AddButton("RESUME FLIGHT", () => { if (GetComponent<ShipSurfaceSafety>()?.Resume() != false) SetMenuOpen(false); });
+            if(quitRequested)
+            {
+                AddButton("CONFIRM QUIT — UNSAVED DRAFTS WILL BE DISCARDED",()=>Application.Quit());
+                AddButton("CANCEL QUIT",()=>quitRequested=false);
+            }
+            else AddButton("QUIT GAME",()=>quitRequested=true);
+            if (dataLoader?.DataMode == GalaxyDataMode.Failed && !dataLoader.OfflineOnly)
+                AddButton("OPEN AUTHORED LOCAL DEMO", ClustrGalaxy.Bootstrap.GalaxyPrototypeBootstrap.StartDemo);
+            foreach(var section in ProbeHudSections.Selectable)
+            {var chosen=section;AddButton("SECTION: "+ProbeHudSections.Title(section),()=>{selectedSection=chosen;content.anchoredPosition=Vector2.zero;});}
+            foreach (var action in presentation.Actions)
+            {
+                currentSection=ProbeHudSections.For(action);
+                if (action == ProbeHudAction.ChooseStartingSystem)
+                {
+                    foreach (var system in visibility.LoadedStartingSystems())
+                        AddButton("START AT " + system.DisplayName, () => visibility.StartAt(system.StableId));
+                }
+                else AddButton(ActionLabel(action), () => Dispatch(action));
+            }
+            currentSection=ProbeHudSection.Selection;
+            if (navigation.OrbitActive) AddButton("RELEASE ORBIT · COAST", navigation.ReleaseOrbit);
+            else if (targeting.Target != null && navigation.CanApproach(targeting.Target) && targeting.Target.GetComponent<ClustrGalaxy.Simulation.GravitySource>() != null)
+                AddButton("AUTO ORBIT SELECTED BODY", () => navigation.StartOrbit(targeting.Target));
+            var cruise = GetComponent<GalaxySystemCruiseController>();
+            if (cruise != null)
+            {
+                if (cruise.Active) AddButton("CANCEL CRUISE · SAFE DROP", cruise.Cancel);
+                else if (targeting.Target != null && navigation.CanApproach(targeting.Target))
+                {
+                    AddButton("SYSTEM CRUISE · AUTO APPROACH", () => cruise.Begin(targeting.Target, true));
+                    AddButton("SYSTEM CRUISE · MANUAL", () => cruise.Begin(targeting.Target, false));
+                }
+            }
+            var jump = GetComponent<GalaxyJumpController>();
+            if (jump?.Active == true) AddButton("CANCEL JUMP · KEEP CURRENT SYSTEM", jump.Cancel);
+            else if (jump != null)
+            {
+                var jumpSession = GetComponent<GalaxySessionBehaviour>().Session;
+                if (jumpSession != null)
+                {
+                    var destinations = jumpSession.JumpDestinations().Where(destination => string.IsNullOrWhiteSpace(filter) ||
+                        jumpSession.JumpDestinationLabel(destination).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
+                    jumpPage = Mathf.Clamp(jumpPage, 0, Math.Max(0, (destinations.Length - 1) / 30));
+                    for (var i = jumpPage * 30; i < Math.Min(destinations.Length, (jumpPage + 1) * 30); i++)
+                    {
+                        var destinationId = destinations[i].Id;
+                        AddButton("JUMP · " + (i + 1) + " · " + jumpSession.JumpDestinationLabel(destinations[i]), () => jump.Begin(destinationId));
+                    }
+                    if (jumpPage > 0) AddButton("PREVIOUS CONNECTIONS", () => { jumpPage--; dirty = true; });
+                    if ((jumpPage + 1) * 30 < destinations.Length) AddButton("MORE CONNECTIONS", () => { jumpPage++; dirty = true; });
+                }
+            }
+            currentSection=ProbeHudSection.Creations;
+            var state = visibility?.SurveySession?.State;
+            nameField.gameObject.SetActive(state != null&&ProbeHudSections.Visible(ProbeHudSection.Creations,selectedSection)); reasonField.gameObject.SetActive(state != null&&ProbeHudSections.Visible(ProbeHudSection.Creations,selectedSection));
+            foreach (var member in draftMembers.ToArray()) AddButton("REMOVE " + member.Value, () => draftMembers.Remove(member));
+            if (state != null) foreach (var item in state.PersonalConstellations)
+                AddButton("SAVED: " + item.Name + (state.QueuedPersonalConstellationIds.Contains(item.Id) ? " — QUEUED LOCALLY" : ""), () =>
+                {
+                    savedPersonalId = item.Id; draftMembers.Clear(); draftMembers.AddRange(item.Members);
+                    draftName = item.Name; draftReason = item.Reason;
+                    nameField.SetTextWithoutNotify(draftName); reasonField.SetTextWithoutNotify(draftReason);
+                });
+            currentSection=ProbeHudSection.Selection;
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                var count = 0;
+                foreach (var entity in visibility.Registry.Entities)
+                {
+                    if (count >= 30) break;
+                    if (!visibility.CanLabel(entity) || entity.DisplayName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    count++; AddButton(entity.DisplayName, () => { targeting.SelectTarget(entity); SetMenuOpen(false); });
+                }
+            }
+            foreach (var row in presentation.ThreadRows)
+            {
+                var prefix = new string(' ', Math.Min(row.Depth, 3) * 2);
+                AddButton(prefix + row.Author + ": " + row.Excerpt, () => { });
+                buttons[usedButtons - 1].GetComponent<LayoutElement>().preferredHeight = 100;
+            }
+            var activities = GetComponent<GalaxySessionBehaviour>()?.Session?.Activities;
+            var feedback = GetComponent<ExplorationFeedback>();
+            if (activities != null)
+            {
+                currentSection=ProbeHudSection.Creations;
+                if (modeState.WorldMode == GalaxyWorldMode.Survey && state != null && savedPersonalId.Length != 0)
+                {
+                    var selectedPersonal = state.PersonalConstellations.FirstOrDefault(item => item.Id == savedPersonalId);
+                    if (selectedPersonal != null) AddButton("EDIT SAVED CONSTELLATION DESIGN", () =>
+                        (GetComponent<ConstellationStudio>() ?? gameObject.AddComponent<ConstellationStudio>()).Open(selectedPersonal));
+                }
+                var activeSession=GetComponent<GalaxySessionBehaviour>().Session;
+                if(activeSession.SelectedPracticeGhost!=null)AddButton("CLEAR IMPORTED PRACTICE GHOST — "+activeSession.SelectedPracticeGhost.Replay.Identity.CourseId,activeSession.ClearPracticeGhost);
+                AddButton("CAPTURE SCREENSHOT",()=> (GetComponent<LocalImageViewer>()??gameObject.AddComponent<LocalImageViewer>()).Capture());
+                AddButton("OPEN JOURNEY DIARY",()=> (GetComponent<JourneyDiary>()??gameObject.AddComponent<JourneyDiary>()).Open());
+                AddButton("OPEN LOCAL CREATIONS",()=> (GetComponent<LocalCreationLibrary>()??gameObject.AddComponent<LocalCreationLibrary>()).Open());
+                AddButton("OPEN PROBE OBSERVATORY",()=> (GetComponent<ProbeObservatory>()??gameObject.AddComponent<ProbeObservatory>()).Open());
+                currentSection=ProbeHudSection.Discoveries;
+                GetComponent<CampaignController>()?.AddActions(AddButton);
+                currentSection=ProbeHudSection.Activities;
+                GetComponent<ExpeditionController>()?.AddActions(AddButton);
+                currentSection=ProbeHudSection.Preferences;
+                var prefs = activities.State.Preferences;
+                AddButton(prefs.SaveBestGhosts?"SAVE PERSONAL-BEST GHOSTS: ON":"SAVE PERSONAL-BEST GHOSTS: OFF",()=>
+                    ApplyPreferences(activities,prefs.With(saveBestGhosts:!prefs.SaveBestGhosts)));
+                AddButton(prefs.AutomaticTuning ? "AUTOMATIC TUNING: ON" : "AUTOMATIC TUNING: OFF", () =>
+                    ApplyPreferences(activities, prefs.With(automaticTuning: !prefs.AutomaticTuning)));
+                AddButton(prefs.MusicMuted ? "EXPLORATION AUDIO: MUTED" : "EXPLORATION AUDIO: ON", () =>
+                    ApplyPreferences(activities, prefs.With(musicMuted: !prefs.MusicMuted)));
+                AddButton("MUSIC TEMPO: " + prefs.Tempo + " BPM", () => ApplyPreferences(activities, prefs.With(tempo: prefs.Tempo >= 120 ? 60 : prefs.Tempo + 20)));
+                AddButton("MUSIC VOLUME: " + Mathf.RoundToInt(prefs.MusicVolume * 100) + "%", () =>
+                    ApplyPreferences(activities, prefs.With(musicVolume: prefs.MusicVolume >= .75f ? 0 : Mathf.Min(1, prefs.MusicVolume + .25f))));
+                var instrumentNames = new[] { "SOFT BELL", "WARM PLUCK", "AIRY GLASS" };
+                AddButton("INSTRUMENT: " + instrumentNames[prefs.MusicPreset], () => ApplyPreferences(activities, prefs.With(musicPreset: (prefs.MusicPreset + 1) % 3)));
+                AddButton(prefs.ReducedAudio ? "REDUCED AUDIO: ON" : "REDUCED AUDIO: OFF", () => ApplyPreferences(activities, prefs.With(reducedAudio: !prefs.ReducedAudio)));
+                AddButton("CELEBRATION INTENSITY: " + Mathf.RoundToInt(prefs.CelebrationIntensity*100) + "%", () =>
+                    ApplyPreferences(activities,prefs.With(celebrationIntensity: prefs.CelebrationIntensity >= .9f ? 0 : Mathf.Min(1,prefs.CelebrationIntensity+.2f))));
+                AddButton(prefs.ReducedMotion ? "REDUCED MOTION: ON" : "REDUCED MOTION: OFF", () => ApplyPreferences(activities, prefs.With(reducedMotion: !prefs.ReducedMotion)));
+                if (feedback != null)
+                {
+                    AddButton(feedback.MusicPlaying ? "PAUSE DISCOVERY MUSIC" : "PLAY DISCOVERY MUSIC — ARTISTIC SONIFICATION", feedback.ToggleMusic);
+                    if (draftMembers.Count >= 3) AddButton("PLAY DRAFT CONSTELLATION", () => feedback.PlayConstellation(draftMembers));
+                    foreach (var member in draftMembers) { var auditionId = member; AddButton("AUDITION " + member.Value, () => feedback.Audition(auditionId)); }
+                }
+                currentSection=ProbeHudSection.Activities;
+                var flightActivities=GetComponent<FlightActivitiesController>();
+                if(flightActivities!=null)
+                {
+                    AddButton("FLIGHT: "+flightActivities.Status,()=>{});
+                    foreach(var kind in new[]{FlightActivityKind.RingRun,FlightActivityKind.FigureEight,FlightActivityKind.StableOrbit})
+                    {var selectedKind=kind;AddButton("START "+kind,()=>flightActivities.StartPlayground(selectedKind,false));AddButton("PREVIEW "+kind,()=>flightActivities.StartPlayground(selectedKind,true));}
+                    AddButton(flightActivities.GhostVisible?"HIDE PERSONAL-BEST GHOST":"SHOW PERSONAL-BEST GHOST",flightActivities.ToggleGhost);
+                    AddButton("END FLIGHT ACTIVITY",flightActivities.Cancel);
+                    AddButton("SAVE COMPLETED FLIGHT RECORDING",flightActivities.SaveGhost);
+                    AddButton("VIEW LATEST FLIGHT RECORDING",flightActivities.ViewGhost);
+                    if(GetComponent<GalaxySessionBehaviour>().Session.FlightError.Length!=0)AddButton("RETRY FLIGHT RECORD SAVE",flightActivities.RetrySave);
+                    var coreSession=GetComponent<GalaxySessionBehaviour>().Session;
+                    var scenicChoices=0;
+                    foreach(var route in coreSession.Resident.LoadedRoutes)
+                    {
+                        if(targeting.Target==null || (route.SourceId.Value!=targeting.Target.StableId && route.TargetId.Value!=targeting.Target.StableId))continue;
+                        if(modeState.WorldMode==GalaxyWorldMode.Survey&&(state==null||!state.KnownRoutes.Contains(route.Id)))continue;
+                        var id=route.Id;
+                        var destination=route.SourceId.Value==targeting.Target.StableId?route.TargetId:route.SourceId;
+                        if(!coreSession.Resident.TryFindActive(destination,out var resident))continue;
+                        var label=modeState.WorldMode==GalaxyWorldMode.Survey&&!state.IsIdentified(destination)?"Unidentified destination":resident.DisplayName;
+                        scenicChoices++;
+                        for(var profile=0;profile<3;profile++){var choice=profile;AddButton("SCENIC "+new[]{"BROAD CURRENT","WINDING PASSAGE","EDGE RIBBON"}[profile]+" · "+scenicChoices+" · "+label,()=>flightActivities.StartScenic(id,choice));}
+                        if(scenicChoices>=8)break;
+                    }
+                    if(scenicChoices==8)AddButton("Showing up to 8 loaded routes for this selection",()=>{});
+                    foreach(var record in activities.State.Flights)AddButton("PERSONAL BEST · "+record.CourseId+" · "+record.Mode+" · "+record.Seconds.ToString("F1")+"s",()=>{});
+                }
+                currentSection=ProbeHudSection.Creations;
+                var recorder = GetComponent<JourneyRecorder>();
+                if (recorder != null) AddButton("SAVE ROLLING REPLAY — " + recorder.Status, recorder.Save);
+                foreach (var entry in activities.State.Diary.Reverse().Take(10)) AddButton("JOURNAL: " + entry.Text, () => { });
+            }
+            for(var i=0;i<usedButtons;i++)buttons[i].gameObject.SetActive(ProbeHudSections.Visible(buttonSections[i],selectedSection));
+            for (var i = usedButtons; i < buttons.Count; i++) buttons[i].gameObject.SetActive(false);
+            ConfigureConsoleNavigation();
+            var focused=EventSystem.current?.currentSelectedGameObject;if(focused!=null&&!focused.activeInHierarchy)EventSystem.current.SetSelectedGameObject(buttons[0].gameObject);
         }
 
-        private void OnGUI()
+        private readonly List<Button> visibleNavigation=new();
+        private void ConfigureConsoleNavigation()
         {
-            EnsureStyles();
-            var presentation = presenter.Present(ReadModel());
-            var panel = new Rect(18, 18, 390, Mathf.Min(Screen.height - 36, 900));
-            GUI.DrawTexture(panel, panelTexture);
-            GUILayout.BeginArea(new Rect(panel.x + 14, panel.y + 10, panel.width - 28, panel.height - 20));
-            GUILayout.Label("CLUSTR // OBSERVER PROBE", titleStyle);
-            GUILayout.Label($"SPEED  {flight?.Speed ?? 0f:000.0}", bodyStyle);
-            GUILayout.Label($"FLIGHT  {(flight != null && flight.GravityModeEnabled ? "GRAVITY / MOMENTUM" : "ASSISTED CRUISE")}", bodyStyle);
-            GUILayout.Label($"WORLD  {FormatWorldMode(modeState?.WorldMode ?? GalaxyWorldMode.Explore)}", bodyStyle);
-            GUILayout.Label($"PILOT  {FormatFlightMode(modeState?.FlightMode ?? FlightControlMode.PilotAssist)}", bodyStyle);
-            GUILayout.Label($"DATA  {dataLoader?.StatusText ?? "LOCAL DEMO"}", bodyStyle);
-            GUILayout.Label($"VIEW  {navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT"}", bodyStyle);
-            if (navigation != null && navigation.IsMapOpen)
+            visibleNavigation.Clear();Button firstAction=null,station=null;
+            for(var i=0;i<usedButtons;i++)if(buttons[i].gameObject.activeSelf){visibleNavigation.Add(buttons[i]);if(buttons[i].transform.parent==content&&firstAction==null)firstAction=buttons[i];if(buttons[i].gameObject.name=="SECTION: "+ProbeHudSections.Title(selectedSection))station=buttons[i];}
+            for(var i=0;i<visibleNavigation.Count;i++)
             {
-                GUILayout.Label($"MAP CURSOR  {navigation.MapHoverStatus}", bodyStyle);
+                var b=visibleNavigation[i];var nav=b.navigation;nav.mode=Navigation.Mode.Explicit;
+                nav.selectOnUp=visibleNavigation[(i+visibleNavigation.Count-1)%visibleNavigation.Count];nav.selectOnDown=visibleNavigation[(i+1)%visibleNavigation.Count];
+                nav.selectOnLeft=station??visibleNavigation[0];nav.selectOnRight=firstAction??nav.selectOnDown;b.navigation=nav;
             }
-            if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey && scanner != null)
+        }
+
+        private void ApplyPreferences(ActivitySession activities, ActivityPreferences preferences)
+        {
+            var result = activities.Apply(new ActivityIntent(Guid.NewGuid().ToString("N"), activities.State.Identity,
+                ActivityOperation.SetPreferences, DateTime.UtcNow, preferences: preferences));
+            errorText = result.Committed ? "" : result.Error;
+            dirty = true;
+        }
+        private void KeepFocusedRowVisible()
+        {
+            var selected = EventSystem.current?.currentSelectedGameObject;
+            if (selected == observedFocus || selected == null || !selected.transform.IsChildOf(content)) return;
+            observedFocus = selected;
+            var row = (RectTransform)selected.transform;
+            var top = -row.anchoredPosition.y;
+            var height = actionScroll.viewport.rect.height;
+            var offset = content.anchoredPosition.y;
+            if (top < offset) offset = top;
+            else if (top + row.rect.height > offset + height) offset = top + row.rect.height - height;
+            content.anchoredPosition = new Vector2(content.anchoredPosition.x,
+                Mathf.Clamp(offset, 0, Mathf.Max(0, content.rect.height - height)));
+        }
+
+        private void LateUpdate()
+        {
+            if (InputCaptured) KeepFocusedRowVisible();
+        }
+
+        private void BuildMeter(string title, Text[] digits, float x, float y, bool decimalPoint)
+        {
+            var label = Label(flightDisplay.transform, title);
+            PlaceMeter(label, x, y-22, 220);label.fontSize=11;label.color=new Color(.57f,.72f,.76f);
+            label.text = title;
+            for (var i = 0; i < digits.Length; i++)
             {
-                GUILayout.Label($"SIGNAL  {FormatSignalState(scanner.State)}  CHARGE {scanner.Charge01 * 100f:000}%  STR {scanner.SignalStrength01 * 100f:000}%", bodyStyle);
-                if (scanner.LastResult.AlreadyScanned)
-                {
-                    GUILayout.Label("ALREADY SURVEYED", titleStyle);
-                }
-                else if (scanner.LastResult.HasRevelations)
-                {
-                    GUILayout.Label($"REVEALED  {scanner.LastResult.RevealedEntityIds.Count} signal(s)  •  {scanner.LastResult.RevealedRouteIds.Count} route(s)", bodyStyle);
-                }
+                digits[i] = Label(flightDisplay.transform, title + i);
+                PlaceMeter(digits[i], x + i * 20 + (decimalPoint && i == digits.Length - 1 ? 10 : 0), y, 23);
+                digits[i].fontSize=25;digits[i].rectTransform.sizeDelta=new Vector2(24,35);digits[i].text = "0";
             }
-            RenderConstellationStatus();
-            RenderPersonalConstellationAuthoring();
-            RenderAuthoredDiscoveryTransmission();
-            RenderSurveyObjectives();
-            if (performance != null)
+            if (decimalPoint)
             {
-                GUILayout.Label($"PERF  P95 {performance.P95FrameMilliseconds:0.0} ms  •  MEM {performance.AllocatedMemoryBytes / (1024f * 1024f):0} MB", bodyStyle);
-                if (developerPerformanceVisible)
-                {
-                    GUILayout.Label($"DEV PERF  ACTIVE {performance.ActiveEntityCount}  •  POOLED {performance.PooledEntityCount}  •  VISIBLE {performance.VisibleNodeCount}  •  KNOWN {performance.KnownNodeCount}\nSCAN EVENTS {performance.ScanEventCount}  •  GC {performance.SteadyStateGcBytes} B/frame  •  MAIN {performance.MainThreadMilliseconds:0.00} ms", bodyStyle);
-                }
+                var point = Label(flightDisplay.transform, "Decimal");
+                PlaceMeter(point, x + (digits.Length - 1) * 20, y, 10);
+                point.text = ".";
             }
-            if (betaProfile != null)
+        }
+        private static void PlaceMeter(Text text, float x, float y, float width)
+        {
+            var rect = text.rectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0,1); rect.pivot = new Vector2(0,1);
+            rect.anchoredPosition = new Vector2(x,-y); rect.sizeDelta = new Vector2(width,24);
+        }
+        private static void UpdateDigits(Text[] digits, int value)
+        {
+            value = Math.Max(0,value);
+            for (var index = digits.Length - 1; index >= 0; index--)
             {
-                GUILayout.Label($"BETA PROFILE  {betaProfile.StatusText}", bodyStyle);
+                var next = Digits[value % 10]; value /= 10;
+                if (digits[index].text != next) digits[index].text = next;
             }
-            GUILayout.Space(5);
-            GUILayout.Label("WASD / left stick: strafe + thrust\nMouse / right stick: pitch + yaw\nSpace/Ctrl or triggers: vertical\nQ/E or bumpers: roll\n[/] or d-pad: pilot mode  •  Shift/L3: boost  •  X/B: brake\nF/A: target + inspect  •  R/X: hold to scan  •  M/Select: galaxy map  •  V/d-pad up: Survey map  •  Enter/A: confirm Survey start\nT/d-pad down: fast travel  •  P/R3: plot autopilot\nG or Y/Triangle: gravity flight", bodyStyle);
-            if (!string.IsNullOrWhiteSpace(navigation?.TravelStatus))
-            {
-                GUILayout.Label($"TRAVEL  {navigation.TravelStatus}", bodyStyle);
-            }
-            GUILayout.Space(5);
-            if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Explore)
-            {
-                if (GUILayout.Button("ENTER SURVEY // CHOOSE STARTING SYSTEM"))
-                {
-                    discoveryVisibility?.EnterSurvey();
-                }
-            }
-            else if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey && discoveryVisibility != null &&
-                     discoveryVisibility.RequiresStartingSystemChoice)
-            {
-                GUILayout.Label("SURVEY START // choose one loaded subreddit", titleStyle);
-                foreach (var system in discoveryVisibility.LoadedStartingSystems())
-                {
-                    if (GUILayout.Button(system.DisplayName))
-                    {
-                        discoveryVisibility.StartAt(system.StableId);
-                    }
-                }
-            }
-            else if (modeState != null && modeState.WorldMode == GalaxyWorldMode.Survey)
-            {
-                if (GUILayout.Button("RETURN TO EXPLORE"))
-                {
-                    discoveryVisibility?.ReturnToExplore();
-                }
-            }
-            if (targeting?.Target != null)
-            {
-                GUILayout.Space(8);
-                if (discoveryVisibility == null || discoveryVisibility.CanLabel(targeting.Target))
-                {
-                    GUILayout.Label($"TARGET  {targeting.Target.DisplayName}", titleStyle);
-                    GUILayout.Label($"{targeting.Target.EntityType}  •  value {targeting.Target.Value}\n{targeting.Target.StableId}", bodyStyle);
-                }
-                else
-                {
-                    GUILayout.Label("TARGET  UNIDENTIFIED SIGNAL", titleStyle);
-                    GUILayout.Label("Scan to identify this destination.", bodyStyle);
-                }
-                if (navigation != null)
-                {
-                    if (navigation.CanTravelTo(targeting.Target))
-                    {
-                        if (GUILayout.Button("FAST TRAVEL TO SYSTEM"))
-                        {
-                            navigation.TryFastTravel(targeting.Target);
-                        }
-                        if (GUILayout.Button("PLOT AUTOPILOT APPROACH"))
-                        {
-                            navigation.PlotAutopilot(targeting.Target);
-                        }
-                        if (modeState != null && modeState.FlightMode == FlightControlMode.PilotMastery &&
-                            GUILayout.Button("TRACK MASTERY APPROACH"))
-                        {
-                            navigation.TrackMasteryDestination(targeting.Target);
-                        }
-                    }
-                    else
-                    {
-                        GUILayout.Label("TRAVEL  INSPECT TARGETS AND UNKNOWN SIGNALS ARE NOT DESTINATIONS", bodyStyle);
-                    }
-                }
-                RenderThreadInspection(threadInspection?.DisplayedModel);
-            }
-            GUILayout.EndArea();
         }
 
         private ProbeHudReadModel ReadModel()
         {
             var target = targeting?.Target;
             var state = visibility?.SurveySession?.State;
-            var threadRows = threads?.DisplayedModel?.Presentation().Rows.Select(row =>
+            var threadRows = threadInspection?.DisplayedModel?.Presentation().Rows.Select(row =>
                 new ProbeHudThreadRow(row.Entry.Depth, row.Entry.Author, row.Entry.Score, row.Entry.ReplyCount,
                     row.Excerpt, row.Entry.HasMore)).ToArray() ?? Array.Empty<ProbeHudThreadRow>();
             return new ProbeHudReadModel
             {
                 Speed = flight?.Speed ?? 0f,
-                FlightMode = modes?.FlightMode.ToString().ToUpperInvariant() ?? "ASSIST",
-                Survey = modes?.WorldMode == GalaxyWorldMode.Survey,
+                FlightMode = modeState?.FlightMode.ToString().ToUpperInvariant() ?? "ASSIST",
+                Survey = modeState?.WorldMode == GalaxyWorldMode.Survey,
+                AuthoredContent = dataLoader?.DataMode == GalaxyDataMode.LocalDemo,
                 RequiresSurveyStart = visibility?.RequiresStartingSystemChoice == true,
-                DataStatus = loader?.StatusText ?? "LOCAL DEMO",
+                DataStatus = dataLoader?.StatusText ?? "LOCAL DEMO",
                 NavigationLevel = navigation?.Level.ToString().ToUpperInvariant() ?? "FLIGHT",
                 NavigationStatus = navigation?.TravelStatus ?? string.Empty,
                 TargetName = target?.DisplayName ?? string.Empty,
                 TargetKind = target?.Kind.ToString().ToUpperInvariant() ?? string.Empty,
                 TargetId = target?.StableId ?? string.Empty,
                 TargetKnown = target != null && visibility?.IsKnown(target) == true,
-                TargetIdentified = target != null && visibility?.IsIdentified(target) == true,
+                TargetIdentified = target != null && visibility?.CanLabel(target) == true,
                 TargetNavigable = target != null && navigation?.CanTravelTo(target) == true,
-                ScanAvailable = target != null && scanner != null && visibility?.IsKnown(target) == true,
+                TargetApproachable = target != null && navigation?.CanApproach(target) == true,
+                ScanAvailable = target != null && scanner != null && visibility?.IsKnown(target) == true &&
+                    state?.IsScanComplete((GalaxyEntityId)target.StableId) != true,
                 ScanCharge = scanner?.Charge01 ?? 0f,
                 ScannerLevel = state?.ScannerLevel ?? 1,
                 Objective = state == null ? string.Empty : $"{state.CompletedContracts.Count}/4 CONTRACTS",
                 Notification = latestOutcome?.Notifications.LastOrDefault() ?? string.Empty,
-                QueueStatus = latestOutcome?.QueueStatus ?? string.Empty,
+                QueueStatus = state == null ? string.Empty : !string.IsNullOrWhiteSpace(state.PendingQueueId)
+                    ? "AWAITING LOCAL QUEUE CONFIRMATION — NOTHING SENT"
+                    : state.QueuedPersonalConstellationIds.Contains(savedPersonalId) ? "QUEUED LOCALLY — NOTHING SENT" : string.Empty,
+                DraftName = draftName, DraftReason = draftReason, DraftMembers = draftMembers,
+                IdentifiedEntities = state?.IdentifiedEntities ?? Array.Empty<GalaxyEntityId>(),
+                SavedSelectionName = state?.PersonalConstellations.FirstOrDefault(item => item.Id == savedPersonalId)?.Name ?? string.Empty,
                 HasSavedPersonalConstellation = !string.IsNullOrWhiteSpace(savedPersonalId),
                 AwaitingQueueConfirmation = !string.IsNullOrWhiteSpace(state?.PendingQueueId),
                 ThreadRows = threadRows
             };
-        }
-
-        private void RenderActions(IReadOnlyList<ProbeHudAction> actions)
-        {
-            foreach (var action in actions)
-            {
-                if (action == ProbeHudAction.ChooseStartingSystem)
-                {
-                    foreach (var system in visibility.LoadedStartingSystems())
-                        if (GUILayout.Button("START AT " + system.DisplayName)) visibility.StartAt(system.StableId);
-                    continue;
-                }
-                if (!GUILayout.Button(ActionLabel(action))) continue;
-                Dispatch(action);
-            }
-            if (modes?.WorldMode == GalaxyWorldMode.Survey && visibility?.SurveySession != null)
-                RenderDraftFields();
         }
 
         private void Dispatch(ProbeHudAction action)
@@ -256,7 +579,7 @@ namespace ClustrGalaxy.UI
             {
                 case ProbeHudAction.EnterSurvey: visibility?.EnterSurvey(); break;
                 case ProbeHudAction.ReturnToExplore: visibility?.ReturnToExplore(); break;
-                case ProbeHudAction.Scan: scanner?.BeginScan(); break;
+                case ProbeHudAction.Scan: SetMenuOpen(false); break;
                 case ProbeHudAction.FastTravel: navigation?.TryFastTravel(target); break;
                 case ProbeHudAction.PlotAutopilot: navigation?.PlotAutopilot(target); break;
                 case ProbeHudAction.TrackMastery: navigation?.TrackMasteryDestination(target); break;
@@ -274,22 +597,6 @@ namespace ClustrGalaxy.UI
             }
         }
 
-        private void RenderDraftFields()
-        {
-            GUILayout.Label($"PERSONAL CONSTELLATION  {draftMembers.Count}/12", titleStyle);
-            foreach (var member in draftMembers.ToArray())
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label(member.Value, bodyStyle);
-                if (GUILayout.Button("REMOVE", GUILayout.Width(72))) draftMembers.Remove(member);
-                GUILayout.EndHorizontal();
-            }
-            GUILayout.Label("NAME", bodyStyle);
-            draftName = GUILayout.TextField(draftName, 60);
-            GUILayout.Label("REASON", bodyStyle);
-            draftReason = GUILayout.TextArea(draftReason, 500, GUILayout.Height(45));
-        }
-
         private void SaveDraft()
         {
             var session = visibility?.SurveySession;
@@ -299,35 +606,45 @@ namespace ClustrGalaxy.UI
             if (outcome?.Succeeded == true) savedPersonalId = outcome.PersonalConstellationId;
         }
 
-        private SurveyTransitionOutcome Apply(SurveyIntent intent) => visibility?.ApplySurveyIntent(intent);
+        private SurveyTransitionOutcome Apply(SurveyIntent intent)
+        {
+            var result = visibility?.ApplySurveyIntent(intent);
+            if (result != null) errorText = result.Succeeded ? string.Empty : result.Rejection;
+            dirty = true;
+            return result;
+        }
         private static string IntentId(string prefix) => prefix + ":" + Guid.NewGuid().ToString("N");
-        private static string ActionLabel(ProbeHudAction action) => action.ToString()
-            .Replace("PersonalConstellation", " Personal Constellation").Replace("LocalQueue", " Local Queue")
-            .Replace("Survey", " Survey").Replace("Autopilot", " Autopilot").ToUpperInvariant();
+        private static string ActionLabel(ProbeHudAction action) => action switch
+        {
+            ProbeHudAction.EnterSurvey => "ENTER SURVEY",
+            ProbeHudAction.ReturnToExplore => "RETURN TO EXPLORE",
+            ProbeHudAction.Scan => "RESUME AND HOLD R / X TO SCAN",
+            ProbeHudAction.FastTravel => "FAST TRAVEL",
+            ProbeHudAction.PlotAutopilot => "PLOT AUTOPILOT",
+            ProbeHudAction.TrackMastery => "TRACK MASTERY APPROACH",
+            ProbeHudAction.AddConstellationMember => "ADD CONSTELLATION MEMBER",
+            ProbeHudAction.SavePersonalConstellation => "SAVE LOCALLY",
+            ProbeHudAction.RequestLocalQueue => "QUEUE FOR REVIEW",
+            ProbeHudAction.ConfirmLocalQueue => "CONFIRM LOCAL QUEUE",
+            ProbeHudAction.CancelLocalQueue => "CANCEL LOCAL QUEUE",
+            _ => action.ToString()
+        };
 
         private void OnSurveyOutcome(SurveyTransitionOutcome outcome)
         {
-            latestOutcome = outcome;
+            latestOutcome = outcome; dirty = true;
             if (outcome.RevealedEntities.Count > 0 || outcome.RevealedRoutes.Count > 0)
                 GetComponent<GalaxyPerformanceMonitor>()?.RecordScanEvent();
         }
 
-        private void EnsureStyles()
-        {
-            if (titleStyle != null) return;
-            panelTexture = new Texture2D(1, 1);
-            panelTexture.SetPixel(0, 0, new Color(0.015f, 0.03f, 0.045f, 0.88f));
-            panelTexture.Apply();
-            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold,
-                normal = { textColor = new Color(0.72f, 1f, 0.55f) } };
-            bodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true,
-                normal = { textColor = new Color(0.78f, 0.9f, 0.94f) } };
-        }
 
         private void OnDestroy()
         {
-            if (visibility != null) visibility.SurveyTransitionCommitted -= OnSurveyOutcome;
-            if (panelTexture != null) Destroy(panelTexture);
+            if (modalCaptured) { Time.timeScale = simulationRateBeforeModal; modalCaptured = false; }
+            if (modeState != null) modeState.Changed -= Invalidate;
+            if (navigation != null) navigation.ModeChanged -= ChartContextChanged;
+            BindSurveyOutcomes(null);
+            if (canvasObject != null) Destroy(canvasObject);
         }
     }
 }

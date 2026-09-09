@@ -24,7 +24,9 @@ namespace ClustrGalaxy.Flight
         private ObserverProbeController flight = null!;
         private ProbeTargeting targeting = null!;
         private Rigidbody body = null!;
-        private Camera viewCamera = null!;
+        private Camera flightCamera = null!;
+        private ClustrGalaxy.UI.CockpitChartStation chartStation;
+        private Camera viewCamera => IsMapOpen && chartStation?.ChartCamera != null ? chartStation.ChartCamera : flightCamera;
         private InputAction toggleMap = null!;
         private InputAction back = null!;
         private InputAction mapCursor = null!;
@@ -33,13 +35,12 @@ namespace ClustrGalaxy.Flight
         private InputAction fastTravel = null!;
         private InputAction plotAutopilot = null!;
         private float blend;
-        private Vector3 storedVelocity;
-        private Vector3 storedAngularVelocity;
-        private readonly GalaxyNavigationHistory history = new();
-        private readonly CoreNavigation navigation = new();
+        private CoreNavigation navigation = new();
+        private ClustrGalaxy.Core.Session.GalaxySession session;
         private GalaxySurveyVisibilityController discoveryVisibility = null!;
         private GalaxyEntityRegistry registry = null!;
         private FloatingOrigin floatingOrigin = null!;
+        private Func<GalaxyEntityId, CoreNavigationTarget> resolveTarget;
         private string plottedDestinationId = string.Empty;
         private bool autopilotArrived;
         private bool masteryArrivalReported;
@@ -47,21 +48,100 @@ namespace ClustrGalaxy.Flight
         private const float AutopilotAnchorTolerance = 2.5f;
 
         public bool IsMapOpen { get; private set; }
-        public GalaxyNavigationLevel Level => history.Level;
-        public string FocusedStableId => history.StableId;
+        public GalaxyNavigationLevel Level => (GalaxyNavigationLevel)navigation.State.Level;
+        public string FocusedStableId => navigation.State.FocusedId.Value;
         public Vector2 MapCursorPosition { get; private set; } = new(0.5f, 0.5f);
         public string MapHoveredStableId { get; private set; } = string.Empty;
         public string MapHoverStatus { get; private set; } = "NO SELECTABLE SIGNAL";
         public string TravelStatus { get; private set; } = string.Empty;
+        public void ReportTravelStatus(string value) => TravelStatus = value ?? "";
         public string PlottedDestinationId => plottedDestinationId;
         public bool HasAutopilotArrival => autopilotArrived;
+        public bool OrbitActive => navigation.Orbit.Active;
+        public bool OrbitCaptured => navigation.Orbit.Captured;
+        public float OrbitAltitude => navigation.Orbit.Altitude;
+        public float OrbitSpeed => navigation.Orbit.CircularSpeed;
+
+        public void InterruptForRecovery()
+        {
+            session?.Travel?.Abort(session.Travel.State.OperationId, "RECOVERY · TRAVEL ABORTED");
+            activities?.Cancel(); ApplyNavigation(new ClustrGalaxy.Core.Navigation.ClearFlightGuidanceIntent());
+            flight.ClearAutopilotDesiredVelocity(); TravelStatus = "RECOVERY HOLD";
+        }
+
+        public bool StartOrbit(GalaxyEntity entity)
+        {
+            var gravity = entity != null ? entity.GetComponent<GravitySource>() : null;
+            var collider = entity != null ? entity.GetComponent<SphereCollider>() : null;
+            if (session?.Travel?.State.Active == true || flight.Simulation.Recovering || gravity == null || collider == null || !entity.gameObject.activeInHierarchy ||
+                (discoveryVisibility != null && discoveryVisibility.WorldMode == GalaxyWorldMode.Survey && !discoveryVisibility.IsKnown(entity)))
+            { TravelStatus = "ORBIT UNAVAILABLE — SELECT A KNOWN GRAVITY BODY"; return false; }
+            var orbit = entity.GetComponent<KeplerOrbit>();
+            var maximum = orbit != null ? OrbitStability.MaximumProgradeMoonAxis(
+                orbit.Elements.SemiMajorAxis * (1d - orbit.Elements.Eccentricity), gravity.GravitationalParameter, orbit.ParentMu) : double.PositiveInfinity;
+            var minimum = Math.Max(entity.SurfaceRadius * 1.6d, (gravity.Definition?.ExclusionRadius ?? entity.SurfaceRadius) + ShipSurfaceSafety.HullRadius * 2d + 2d);
+            if (maximum < minimum) { TravelStatus = "ORBIT UNAVAILABLE · NO TIDALLY SAFE BAND"; return false; }
+            var centerVelocity = gravity.CenterVelocity;
+            var candidate = new ClustrGalaxy.Core.Navigation.OrbitalAutopilot();
+            if (!candidate.Begin((GalaxyEntityId)entity.StableId, ToNumerics(body.position - entity.transform.position),
+                ToNumerics(body.linearVelocity - centerVelocity), gravity.GravitationalParameter, entity.SurfaceRadius, minimum, maximum, flight.Simulation.Ship.ForceLimits.X / flight.Simulation.Ship.Mass))
+            { TravelStatus = "ORBIT UNAVAILABLE — MOVE CLEAR OF THE SURFACE"; return false; }
+            activities?.Cancel();
+            ApplyNavigation(new ClustrGalaxy.Core.Navigation.ClearFlightGuidanceIntent());
+            navigation.Orbit.Begin((GalaxyEntityId)entity.StableId, ToNumerics(body.position - entity.transform.position),
+                ToNumerics(body.linearVelocity - centerVelocity), gravity.GravitationalParameter, entity.SurfaceRadius, minimum, maximum,
+                flight.Simulation.Ship.ForceLimits.X / flight.Simulation.Ship.Mass);
+            RefreshResidency();
+            flight.ModeState.SetFlightMode(FlightControlMode.Autopilot);
+            TravelStatus = "AUTO ORBIT · CAPTURING";
+            return true;
+        }
+
+        public void ReleaseOrbit()
+        {
+            navigation.Orbit.Cancel(); RefreshResidency(); flight.ClearAutopilotDesiredVelocity();
+            flight.ModeState.SetFlightMode(FlightControlMode.PilotMastery);
+            TravelStatus = "ORBIT RELEASED · INERTIAL FLIGHT";
+        }
+
+        private bool GuideOrbit()
+        {
+            if (!navigation.Orbit.Active) return false;
+            var entity = registry?.FindActiveEntity(navigation.Orbit.TargetId.Value);
+            if (entity == null || flight.ModeState.FlightMode != FlightControlMode.Autopilot || !flight.GravityModeEnabled ||
+                (discoveryVisibility != null && discoveryVisibility.WorldMode == GalaxyWorldMode.Survey && !discoveryVisibility.IsKnown(entity)))
+            { navigation.Orbit.Cancel(); RefreshResidency(); flight.ClearAutopilotDesiredVelocity(); return false; }
+            var centerVelocity = entity.GetComponent<KeplerOrbit>()?.WorldVelocity ?? Vector3.zero;
+            var velocity = navigation.Orbit.DesiredRelativeVelocity(ToNumerics(body.position - entity.transform.position),
+                ToNumerics(body.linearVelocity - centerVelocity));
+            if (!navigation.Orbit.Active) { RefreshResidency(); flight.ClearAutopilotDesiredVelocity(); return false; }
+            flight.SetAutopilotDesiredVelocity(centerVelocity + ToUnity(velocity), true);
+            TravelStatus = navigation.Orbit.Captured ? "AUTO ORBIT · STABLE" : "AUTO ORBIT · CAPTURING";
+            return true;
+        }
+        public event Action<ClustrGalaxy.Core.Data.SpatialScopeRequest> ScopeRequested = delegate { };
         public event Action<bool> ModeChanged = delegate { };
         public event Action<GalaxyNavigationLevel, string> ViewChanged = delegate { };
+
+        public void BindSession(ClustrGalaxy.Core.Session.GalaxySession owner)
+        { session = owner; navigation = owner.Navigation; }
+        public void RefreshResidency() => session?.RefreshNavigationReferences();
+        private ClustrGalaxy.Core.Navigation.NavigationOutcome ApplyNavigation(ClustrGalaxy.Core.Navigation.NavigationIntent intent)
+        {
+            var outcome = navigation.Apply(intent);
+            RefreshResidency();
+            return outcome;
+        }
 
         public void Initialize(ProbeTargeting probeTargeting, Camera camera)
         {
             targeting = probeTargeting;
-            viewCamera = camera;
+            flightCamera = camera;
+            if (GetComponent<ClustrGalaxy.UI.ProbeHud>() != null)
+            {
+                chartStation = gameObject.AddComponent<ClustrGalaxy.UI.CockpitChartStation>();
+                chartStation.Initialize(camera,this);
+            }
         }
 
         public void BindDiscoveryVisibility(GalaxySurveyVisibilityController visibilityController)
@@ -77,7 +157,7 @@ namespace ClustrGalaxy.Flight
             }
         }
 
-        private void SyncWorldMode(GalaxyWorldMode mode) => navigation.Apply(
+        private void SyncWorldMode(GalaxyWorldMode mode) => ApplyNavigation(
             new ClustrGalaxy.Core.Navigation.SetSurveyModeIntent(mode == GalaxyWorldMode.Survey,
                 discoveryVisibility?.RequiresStartingSystemChoice == true));
 
@@ -86,6 +166,7 @@ namespace ClustrGalaxy.Flight
 
         private void Awake()
         {
+            resolveTarget = id => ToTarget(registry?.FindActiveEntity(id.Value));
             flight = GetComponent<ObserverProbeController>();
             body = GetComponent<Rigidbody>();
             floatingOrigin = GetComponent<FloatingOrigin>();
@@ -93,7 +174,7 @@ namespace ClustrGalaxy.Flight
             toggleMap.AddBinding("<Gamepad>/select");
             toggleMap.performed += _ => SetMapOpen(!IsMapOpen);
             back = new InputAction("Back", InputActionType.Button, "<Keyboard>/escape");
-            back.AddBinding("<Gamepad>/start");
+            back.AddBinding("<Gamepad>/buttonEast");
             back.performed += _ => NavigateBack();
             mapCursor = new InputAction("Map Cursor", InputActionType.Value);
             mapCursor.AddCompositeBinding("2DVector")
@@ -115,6 +196,16 @@ namespace ClustrGalaxy.Flight
             plotAutopilot.AddBinding("<Gamepad>/rightStickPress");
             plotAutopilot.performed += _ => PlotAutopilot(targeting?.Target);
         }
+
+        public void SetPilotInputEnabled(bool value) { if (value) OnEnable(); else OnDisable(); }
+        public void SetCockpitInputEnabled(bool enabled, bool chart)
+        {
+            SetAction(toggleMap, enabled); SetAction(back, enabled && chart);
+            SetAction(mapCursor, enabled && chart); SetAction(mapSelect, enabled && chart);
+            SetAction(enterSurvey, enabled); SetAction(fastTravel, enabled); SetAction(plotAutopilot, enabled);
+        }
+        private static void SetAction(InputAction action, bool enabled)
+        { if (action == null || action.enabled == enabled) return; if (enabled) action.Enable(); else action.Disable(); }
 
         private void OnEnable()
         {
@@ -140,63 +231,51 @@ namespace ClustrGalaxy.Flight
 
         public void SetMapOpen(bool open)
         {
-            if (IsMapOpen == open)
+            if (open && session?.Travel?.State.Active == true)
+            { TravelStatus = "CANCEL THE ACTIVE DRIVE BEFORE OPENING THE MAP"; return; }
+            if (IsMapOpen == open && navigation.State.IsMapOpen == open)
             {
                 return;
             }
-            var outcome = navigation.Apply(new ClustrGalaxy.Core.Navigation.SetMapIntent(open, CorePose(),
+            var outcome = ApplyNavigation(new ClustrGalaxy.Core.Navigation.SetMapIntent(open, CorePose(),
                 ToNumerics(body.linearVelocity), ToNumerics(body.angularVelocity)));
             IsMapOpen = outcome.State.IsMapOpen;
-            targeting?.SetAcquisitionEnabled(!open);
-            if (open)
+            // Chart inspection owns input, not the ship's momentum or celestial clock.
+            if (GetComponent<ClustrGalaxy.UI.ProbeHud>() == null)
             {
-                storedVelocity = body.linearVelocity;
-                storedAngularVelocity = body.angularVelocity;
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-                body.isKinematic = true;
-                flight.enabled = false;
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
+                flight.SetPilotInputEnabled(!open);
+                targeting?.SetAcquisitionEnabled(!open);
+                Cursor.lockState = open ? CursorLockMode.None : CursorLockMode.Locked; Cursor.visible = open;
             }
-            else
-            {
-                body.isKinematic = false;
-                body.linearVelocity = storedVelocity;
-                body.angularVelocity = storedAngularVelocity;
-                flight.enabled = true;
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
-            }
+            chartStation?.SetVisible(open);
             ModeChanged(open);
         }
 
         public void NavigateTo(GalaxyNavigationLevel level, string stableId)
         {
             var entity = registry?.FindActiveEntity(stableId);
-            if (entity == null || !navigation.Apply(new ClustrGalaxy.Core.Navigation.InspectNavigationTargetIntent(
-                    ToTarget(entity), CorePose())).Succeeded) return;
-            history.Enter(level, stableId, CapturePose());
+            if (entity == null) return;
+            var outcome = ApplyNavigation(new ClustrGalaxy.Core.Navigation.InspectNavigationTargetIntent(ToTarget(entity), CorePose()));
+            if (!outcome.Succeeded) return;
             SetMapOpen(true);
-            ViewChanged(history.Level, history.StableId);
+            ViewChanged((GalaxyNavigationLevel)navigation.State.Level, navigation.State.FocusedId.Value);
+            if (outcome.Effect.ScopeToLoad.HasValue) ScopeRequested(outcome.Effect.ScopeToLoad.Value);
         }
 
+        public void ArriveAtSystem(string id)
+        {
+            var entity=registry.FindEntity(id);
+            if(entity!=null)ApplyNavigation(new ClustrGalaxy.Core.Navigation.InspectNavigationTargetIntent(ToTarget(entity), CorePose()));
+            SetMapOpen(false); ViewChanged(GalaxyNavigationLevel.System,id);
+        }
         public void NavigateBack()
         {
-            navigation.Apply(new ClustrGalaxy.Core.Navigation.ReturnNavigationIntent());
-            if (!history.TryBack(out var pose))
-            {
-                SetMapOpen(false);
-                return;
-            }
-
-            body.position = pose.Position;
-            body.rotation = pose.Rotation;
-            transform.SetPositionAndRotation(pose.Position, pose.Rotation);
-            ViewChanged(history.Level, history.StableId);
+            targeting?.SelectTarget(null);
+            var outcome = ApplyNavigation(new ClustrGalaxy.Core.Navigation.ReturnNavigationIntent());
+            if (!outcome.Effect.Teleport) { SetMapOpen(false); return; }
+            ViewChanged(Level, FocusedStableId);
+            if (outcome.Effect.ScopeToLoad.HasValue) ScopeRequested(outcome.Effect.ScopeToLoad.Value);
         }
-
-        private NavigationPose CapturePose() => new(body.position, body.rotation);
 
         private void Update()
         {
@@ -213,11 +292,14 @@ namespace ClustrGalaxy.Flight
             if (Mouse.current != null && Mouse.current.delta.ReadValue().sqrMagnitude > 0.1f)
             {
                 var mouse = Mouse.current.position.ReadValue();
-                MapCursorPosition = new Vector2(mouse.x / Screen.width, mouse.y / Screen.height);
+                if (chartStation != null)
+                { if (chartStation.TryPointer(mouse,out var chartPoint)) MapCursorPosition = chartPoint; }
+                else MapCursorPosition = new Vector2(mouse.x / Screen.width, mouse.y / Screen.height);
             }
             RefreshMapHover();
         }
 
+        public void ConfirmChartSelection() => SelectAtMapCursor();
         private void SelectAtMapCursor()
         {
             if (!IsMapOpen || viewCamera == null)
@@ -232,12 +314,18 @@ namespace ClustrGalaxy.Flight
             }
 
             var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
-            var selectedId = GalaxyMapSelection.NearestId(history.Level, MapCursorPosition,
+            var selectedId = GalaxyMapSelection.NearestId((GalaxyNavigationLevel)navigation.State.Level, MapCursorPosition,
                 BuildMapCandidates(), 0.12f, worldMode);
-            if (GalaxyEntity.TryGet(selectedId, out var selected))
+            if (TryGetActive(selectedId, out var selected))
             {
                 targeting.SelectTarget(selected);
             }
+        }
+
+        private bool TryGetActive(string id, out GalaxyEntity entity)
+        {
+            entity = registry?.FindActiveEntity(id);
+            return entity != null;
         }
 
         private void RefreshMapHover()
@@ -250,29 +338,38 @@ namespace ClustrGalaxy.Flight
             }
 
             var worldMode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
-            var nearest = GalaxyMapSelection.Nearest(history.Level, MapCursorPosition,
+            var nearest = GalaxyMapSelection.Nearest((GalaxyNavigationLevel)navigation.State.Level, MapCursorPosition,
                 BuildMapCandidates(), 0.12f, worldMode);
-            if (!nearest.HasValue || !GalaxyEntity.TryGet(nearest.Value.StableId, out var entity))
+            if (!nearest.HasValue || !TryGetActive(nearest.Value.StableId, out var entity))
             {
                 MapHoveredStableId = string.Empty;
                 MapHoverStatus = "NO SELECTABLE SIGNAL";
                 return;
             }
 
+            var changedTarget = MapHoveredStableId != entity.StableId;
             MapHoveredStableId = entity.StableId;
             var canLabel = discoveryVisibility == null || discoveryVisibility.CanLabel(entity);
+            if (!changedTarget && hoverEntity == entity && hoverName == entity.DisplayName && hoverLabelled == canLabel) return;
+            hoverEntity = entity; hoverName = entity.DisplayName; hoverLabelled = canLabel;
             MapHoverStatus = canLabel
-                ? $"{entity.DisplayName}  •  {nearest.Value.EntityType.ToUpperInvariant()}"
+                ? $"{entity.DisplayName}  •  {entity.Kind.ToString().ToUpperInvariant()}"
                 : "UNIDENTIFIED SIGNAL";
         }
 
+        private readonly List<GalaxyMapCandidate> mapCandidates = new();
+        private GalaxyEntity hoverEntity;
+        private string hoverName;
+        private bool hoverLabelled;
+
         private List<GalaxyMapCandidate> BuildMapCandidates()
         {
-            var candidates = new List<GalaxyMapCandidate>();
-            foreach (var entity in registry?.ActiveEntities ?? Array.Empty<GalaxyEntity>())
+            var candidates = mapCandidates;
+            candidates.Clear();
+            var entities = registry?.ActiveEntities ?? Array.Empty<GalaxyEntity>();
+            for (var index = 0; index < entities.Count; index++)
             {
-                var metadata = entity.GetComponent<LiveEntityMetadata>();
-                if (metadata?.Node == null) continue;
+                var entity = entities[index];
                 var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
                 candidates.Add(new GalaxyMapCandidate(entity.StableId, entity.Kind,
                     new Vector2(viewport.x, viewport.y), viewport.z > 0f,
@@ -288,7 +385,7 @@ namespace ClustrGalaxy.Flight
                 return false;
             }
             SetMapOpen(true);
-            navigation.Apply(new ClustrGalaxy.Core.Navigation.EnterSurveyNavigationIntent());
+            ApplyNavigation(new ClustrGalaxy.Core.Navigation.EnterSurveyNavigationIntent());
             discoveryVisibility.EnterSurvey();
             return true;
         }
@@ -310,20 +407,19 @@ namespace ClustrGalaxy.Flight
             var selectedId = GalaxyMapSelection.NearestId(GalaxyNavigationLevel.Region, MapCursorPosition,
                 candidates, 0.12f, GalaxyWorldMode.Explore);
             var started = !string.IsNullOrWhiteSpace(selectedId) && discoveryVisibility.StartAt(selectedId);
-            if (started) navigation.Apply(new ClustrGalaxy.Core.Navigation.ChooseSurveyStartIntent((GalaxyEntityId)selectedId));
             return started;
         }
 
         public bool CanTravelTo(GalaxyEntity entity)
         {
-            if (entity == null)
+            if (entity == null || flight?.Simulation.Recovering == true || session?.Travel?.State.Active == true)
             {
                 return false;
             }
 
             var mode = discoveryVisibility != null ? discoveryVisibility.WorldMode : GalaxyWorldMode.Explore;
             var known = discoveryVisibility == null || discoveryVisibility.IsKnown(entity);
-            return GalaxyTravelRules.IsEligibleDestination(mode, known, entity.Kind);
+            return GalaxyTravelRules.IsEligibleDestination(mode, known, entity.Kind) && session?.JumpEligibility((GalaxyEntityId)entity.StableId) == "";
         }
 
         public bool TryFastTravel(GalaxyEntity entity)
@@ -334,20 +430,23 @@ namespace ClustrGalaxy.Flight
                 return false;
             }
 
-            var outcome = navigation.Apply(new ClustrGalaxy.Core.Navigation.FastTravelIntent(ToTarget(entity)));
-            TravelStatus = outcome.Succeeded ? outcome.State.Status : outcome.Rejection;
-            return outcome.Succeeded;
+            return GetComponent<GalaxyJumpController>()?.Begin(entity) == true;
         }
+
+        public bool CanApproach(GalaxyEntity entity) => session?.Travel?.State.Active != true && flight?.Simulation.Recovering != true && entity != null && entity.gameObject.activeInHierarchy &&
+            (GalaxyKinds.IsNavigable(entity.Kind) || entity.Kind == GalaxyEntityKind.Post || entity.GetComponent<GravitySource>()?.Definition != null) &&
+            (discoveryVisibility == null || discoveryVisibility.WorldMode == GalaxyWorldMode.Explore || discoveryVisibility.IsKnown(entity));
 
         public bool PlotAutopilot(GalaxyEntity entity)
         {
-            if (!CanTravelTo(entity))
+            if (!CanApproach(entity))
             {
                 TravelStatus = "AUTOPILOT UNAVAILABLE — SELECT A KNOWN SYSTEM";
                 return false;
             }
 
-            var outcome = navigation.Apply(new ClustrGalaxy.Core.Navigation.PlotApproachIntent(ToTarget(entity), false));
+            activities?.Cancel();
+            var outcome = ApplyNavigation(new ClustrGalaxy.Core.Navigation.PlotApproachIntent(ToTarget(entity), false));
             if (!outcome.Succeeded) { TravelStatus = outcome.Rejection; return false; }
             plottedDestinationId = entity.StableId;
             autopilotArrived = false;
@@ -360,13 +459,14 @@ namespace ClustrGalaxy.Flight
         /// <summary>Tracks an eligible system while the pilot flies manually.</summary>
         public bool TrackMasteryDestination(GalaxyEntity entity)
         {
-            if (!CanTravelTo(entity))
+            if (!CanApproach(entity))
             {
                 TravelStatus = "MASTERY DESTINATION UNAVAILABLE — SELECT A KNOWN SYSTEM";
                 return false;
             }
 
-            var outcome = navigation.Apply(new ClustrGalaxy.Core.Navigation.PlotApproachIntent(ToTarget(entity), true));
+            activities?.Cancel();
+            var outcome = ApplyNavigation(new ClustrGalaxy.Core.Navigation.PlotApproachIntent(ToTarget(entity), true));
             if (!outcome.Succeeded) { TravelStatus = outcome.Rejection; return false; }
             plottedDestinationId = entity.StableId;
             autopilotArrived = false;
@@ -375,8 +475,35 @@ namespace ClustrGalaxy.Flight
             return true;
         }
 
+        private ClustrGalaxy.UI.FlightActivitiesController activities;
+        public void BindActivities(ClustrGalaxy.UI.FlightActivitiesController value)=>activities=value;
+        private float nextTelemetry;
+        private void UpdateTelemetry()
+        {
+            if (Time.unscaledTime < nextTelemetry) return;
+            nextTelemetry = Time.unscaledTime + .2f;
+            var source = targeting?.Target != null ? targeting.Target.GetComponent<GravitySource>() : null;
+            if (source?.Definition == null)
+            {
+                var strongest = 0d; var sources = GravitySource.ActiveSources;
+                for (var i = 0; i < sources.Count; i++)
+                {
+                    var candidate = sources[i]; if (candidate?.Definition == null) continue;
+                    var strength = candidate.GravitationalParameter / Math.Max(1d, (candidate.transform.position - body.position).sqrMagnitude);
+                    if (strength > strongest) { strongest = strength; source = candidate; }
+                }
+            }
+            flight.Simulation.SetTelemetry(source?.Definition == null ? default : ClustrGalaxy.Core.Navigation.FlightTelemetry.Calculate(
+                source.Definition, ToNumerics(body.position - source.transform.position), ToNumerics(body.linearVelocity - source.CenterVelocity), GalaxyTuning.BrakeAcceleration));
+        }
         private void FixedUpdate()
         {
+            if (session?.Travel?.State.Active == true)
+            { flight.Simulation.SetTelemetry(default); TravelStatus = session.Travel.Status; return; }
+            UpdateTelemetry();
+            if (flight.Simulation.Recovering) { TravelStatus = flight.Simulation.RecoveryReason; return; }
+            if (GuideOrbit()) return;
+            if(activities!=null&&activities.GuidePhysics())return;
             var mode = flight.ModeState.FlightMode switch
             {
                 FlightControlMode.Autopilot => CoreNavigationFlightMode.Autopilot,
@@ -384,7 +511,7 @@ namespace ClustrGalaxy.Flight
                 _ => CoreNavigationFlightMode.PilotAssist
             };
             var outcome = navigation.AdvancePhysics(CorePose(), ToNumerics(body.linearVelocity), mode,
-                id => ToTarget(registry?.FindActiveEntity(id.Value)), GalaxyTuning.BrakeAcceleration,
+                resolveTarget, GalaxyTuning.BrakeAcceleration,
                 AutopilotAnchorTolerance);
             TravelStatus = outcome.State.Status;
             plottedDestinationId = outcome.State.PlottedDestinationId.Value ?? string.Empty;
@@ -392,8 +519,6 @@ namespace ClustrGalaxy.Flight
             masteryArrivalReported = outcome.State.MasteryArrivalReported;
             if (outcome.Effect.Teleport)
             {
-                storedVelocity = Vector3.zero;
-                storedAngularVelocity = Vector3.zero;
                 body.linearVelocity = Vector3.zero;
                 body.angularVelocity = Vector3.zero;
                 var position = ToUnity(outcome.Effect.Position);
@@ -406,7 +531,7 @@ namespace ClustrGalaxy.Flight
                 flight.SetAutopilotDesiredVelocity(ToUnity(outcome.Effect.Velocity));
             else
                 flight.ClearAutopilotDesiredVelocity();
-            if (!outcome.Effect.MasteryArrival.IsEmpty && discoveryVisibility?.SurveySession != null)
+            if (!outcome.Effect.MasteryArrival.IsEmpty && discoveryVisibility?.WorldMode == GalaxyWorldMode.Survey && discoveryVisibility.SurveySession != null)
             {
                 var session = discoveryVisibility.SurveySession;
                 discoveryVisibility.ApplySurveyIntent(new PilotMasteryArrivalIntent(
@@ -421,12 +546,14 @@ namespace ClustrGalaxy.Flight
         {
             if (entity == null) return null;
             var collider = entity.GetComponent<Collider>();
-            var collisionRadius = collider != null ? collider.bounds.extents.magnitude : 0f;
+            var collisionRadius = entity.SurfaceRadius > 0 ? entity.SurfaceRadius : collider != null ? collider.bounds.extents.magnitude : 0f;
+            if (entity.VisualKind == GalaxyVisualKind.Star) collisionRadius += (float)ClustrGalaxy.Generation.CelestialLayout.StellarClearance;
             var gravity = entity.GetComponent<GravitySource>();
             return new CoreNavigationTarget((GalaxyEntityId)entity.StableId, entity.Kind, entity.DisplayName,
                 ToNumerics(entity.transform.position), entity.gameObject.activeInHierarchy,
                 discoveryVisibility == null || discoveryVisibility.IsKnown(entity), collisionRadius,
-                gravity == null ? 0f : (float)gravity.SofteningRadius);
+                gravity == null ? 0f : (float)gravity.SofteningRadius,
+                ToNumerics(gravity != null ? gravity.CenterVelocity : entity.GetComponent<KeplerOrbit>()?.WorldVelocity ?? Vector3.zero), gravity?.Definition);
         }
         private static NumericsVector3 ToNumerics(Vector3 value) => new(value.x, value.y, value.z);
         private static Vector3 ToUnity(NumericsVector3 value) => new(value.X, value.Y, value.Z);
@@ -437,17 +564,18 @@ namespace ClustrGalaxy.Flight
             {
                 return;
             }
+            if (chartStation != null && !IsMapOpen) return;
             blend = Mathf.MoveTowards(blend, IsMapOpen ? 1f : 0f, Time.unscaledDeltaTime / 0.8f);
             var eased = blend * blend * (3f - 2f * blend);
             GalaxyEntity focused = null;
-            var hasFocusedEntity = !string.IsNullOrWhiteSpace(history.StableId) &&
-                GalaxyEntity.TryGet(history.StableId, out focused);
+            var hasFocusedEntity = !string.IsNullOrWhiteSpace(navigation.State.FocusedId.Value) &&
+                TryGetActive(navigation.State.FocusedId.Value, out focused);
             var hasTarget = targeting != null && targeting.Target != null;
-            var focus = ResolveMapFocus(history.Level,
+            var focus = ResolveMapFocus((GalaxyNavigationLevel)navigation.State.Level,
                 hasFocusedEntity, hasFocusedEntity ? focused.transform.position : Vector3.zero,
                 hasTarget, hasTarget ? targeting.Target.transform.position : Vector3.zero,
                 transform.position, transform.forward);
-            var distance = history.Level switch
+            var distance = (GalaxyNavigationLevel)navigation.State.Level switch
             {
                 GalaxyNavigationLevel.Region => 3200f * GalaxyTuning.RegionDistanceScale,
                 GalaxyNavigationLevel.System => 1500f * GalaxyTuning.SystemDistanceScale,

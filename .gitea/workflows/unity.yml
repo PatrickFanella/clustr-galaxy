@@ -1,0 +1,12 @@
+name: Linux beta gates
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  unity:
+    runs-on: unity-6000.4.10f1-linux
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test exact checkout
+        run: python3 scripts/validate.py
+      - name: Build Linux players
+        run: python3 scripts/build.py

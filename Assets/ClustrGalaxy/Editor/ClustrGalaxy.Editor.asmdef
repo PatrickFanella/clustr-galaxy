@@ -5,7 +5,8 @@
     "ClustrGalaxy.Unity",
     "ClustrGalaxy.Core",
     "UnityEditor.TestRunner",
-    "Unity.RenderPipelines.Universal.Runtime"
+    "Unity.RenderPipelines.Universal.Runtime",
+    "Unity.Addressables.Editor"
   ],
   "includePlatforms": [
     "Editor"

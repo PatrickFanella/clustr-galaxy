@@ -29,18 +29,25 @@ namespace ClustrGalaxy.Editor
         }
 
         [MenuItem("Clustr Galaxy/Build Linux Beta %#&l")]
-        public static void BuildLinuxBeta()
+        public static void BuildLinuxBeta() => Build(true);
+        [MenuItem("Clustr Galaxy/Build Linux Release")]
+        public static void BuildLinuxRelease() => Build(false);
+        private static void Build(bool development)
         {
             ConfigurePlayer();
             EnsureLaunchScene();
+            GalaxyVisualCatalogBuilder.Build();
+            UnityEditor.AddressableAssets.Settings.AddressableAssetSettings.BuildPlayerContent(out var assets);
+            if (!string.IsNullOrEmpty(assets.Error)) throw new InvalidOperationException(assets.Error);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(BuildPath) ?? "Builds/Linux");
+            var buildPath = development ? BuildPath : "Builds/LinuxRelease/ClustrGalaxy.x86_64";
+            Directory.CreateDirectory(Path.GetDirectoryName(buildPath));
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = new[] { LaunchScenePath },
-                locationPathName = BuildPath,
+                locationPathName = buildPath,
                 target = BuildTarget.StandaloneLinux64,
-                options = BuildOptions.Development
+                options = development ? BuildOptions.Development : BuildOptions.None
             });
 
             if (report.summary.result != BuildResult.Succeeded)
@@ -59,7 +66,8 @@ namespace ClustrGalaxy.Editor
         {
             PlayerSettings.companyName = "Subcult";
             PlayerSettings.productName = "Clustr Galaxy";
-            PlayerSettings.bundleVersion = "0.1.0-beta";
+            var source = Environment.GetEnvironmentVariable("CLUSTR_SOURCE_SHA");
+            PlayerSettings.bundleVersion = "0.1.0-beta+" + (string.IsNullOrWhiteSpace(source) ? "unrecorded" : source);
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Standalone, "tv.subcult.clustr.galaxy");
             PlayerSettings.runInBackground = true;
             PlayerSettings.defaultScreenWidth = 2560;
