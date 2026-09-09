@@ -28,9 +28,9 @@ namespace ClustrGalaxy.Tests
                 body.SetActive(true);
                 yield return new WaitForFixedUpdate();
                 Assert.That(gravity.CenterPosition, Is.EqualTo(body.transform.position));
-                Assert.That(GravitySource.ActiveSources, Does.Contain(gravity));
+                Assert.That(GravitySource.ActiveSources, Has.Member(gravity));
                 body.SetActive(false);
-                Assert.That(GravitySource.ActiveSources, Does.Not.Contain(gravity));
+                Assert.That(GravitySource.ActiveSources, Has.No.Member(gravity));
             }
             finally { Object.DestroyImmediate(body); Object.DestroyImmediate(parent); }
         }
