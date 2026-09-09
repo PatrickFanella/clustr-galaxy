@@ -222,6 +222,7 @@ namespace ClustrGalaxy.UI
             gpu_cpu_timer_frequency = FrameTimingManager.GetCpuTimerFrequency(),
             warm_cache_available = warmCacheAvailable,
             warm_cache_overview_seconds = warmCacheSeconds,
+            warm_cache_measurement_scope = "verified cached-source open only; process-to-rendered startup is a separate warm-start gate",
             cache_usage_bytes = cacheUsageBytes,
             moving_flight_verified = movingFlightVerified,
             measured_flight_distance = flightDistance,

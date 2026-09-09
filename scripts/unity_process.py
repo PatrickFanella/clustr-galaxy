@@ -17,7 +17,7 @@ def _terminate(process):
         process.wait()
 
 
-def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_stdout=False):
+def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_stdout=False, readiness_marker=None):
     # Convert harness termination into a normal unwind so owned display/audio
     # contexts clean up and a detached Unity player cannot survive its runner.
     previous = None
@@ -29,23 +29,27 @@ def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_std
     output_stream = None
     try:
         if capture_stdout: output_stream = pathlib.Path(log).open("a")
-        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout, output_stream=output_stream)
+        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout, output_stream=output_stream, readiness_marker=readiness_marker)
     finally:
         if output_stream is not None: output_stream.close()
         if previous is not None: signal.signal(signal.SIGTERM, previous)
 
 
-def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_stream=None):
+def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_stream=None, readiness_marker=None):
     log = pathlib.Path(log)
+    started = time.monotonic()
     process = subprocess.Popen(command, env=env, stdout=output_stream if output_stream is not None else subprocess.DEVNULL,
                                stderr=subprocess.STDOUT, start_new_session=True)
-    started = time.monotonic()
+    readiness_seconds = None
     shutdown_started = None
     timed_out = False
     diagnostic = str(log.with_suffix(".processes.txt"))
     try:
-        while process.poll() is None:
+        while True:
             content = log.read_text(errors="replace") if log.exists() else ""
+            if readiness_marker is not None and readiness_seconds is None and readiness_marker in content.splitlines():
+                readiness_seconds = time.monotonic() - started
+            if process.poll() is not None: break
             if "Test run completed. Exiting with code" in content or "Batchmode quit successfully invoked" in content:
                 if shutdown_started is None:
                     shutdown_started = time.monotonic()
@@ -63,7 +67,7 @@ def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_str
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
                 break
-            time.sleep(.25)
+            time.sleep(.01 if readiness_marker is not None and readiness_seconds is None else .25)
     except BaseException as error:
         _terminate(process)
         log.with_suffix(".interrupted.json").write_text(json.dumps({
@@ -73,7 +77,8 @@ def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_str
         raise
     return {"command": command, "process_exit": process.returncode, "timed_out": timed_out,
             "elapsed_seconds": round(time.monotonic() - started, 3),
-            "log": str(log), "timeout_diagnostics": diagnostic if timed_out else None}
+            "log": str(log), "timeout_diagnostics": diagnostic if timed_out else None,
+            "readiness_seconds": readiness_seconds}
 
 
 def player_errors(content):

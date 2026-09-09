@@ -93,12 +93,17 @@ def main():
             report["steps"].append(dict(name="recipient-import", passed=False, reason="Missing exported replay")); save()
         step("cockpit-interactions", "interaction_profile.py", ["--profile-from", str(storage / "profiles/v2"), "--window-system", "wayland", "--single-threaded-rendering"])
     graphics = ["--window-system", "wayland", "--single-threaded-rendering"]
-    step("hierarchy-offline-jumps", "hierarchy_smoke.py", ["--jump", "--offline-restart", *graphics])
+    hierarchy = step("hierarchy-offline-jumps", "hierarchy_smoke.py", ["--jump", "--offline-restart", *graphics])
+    if hierarchy:
+        step("fixture-warm-start", "warm_start_smoke.py", ["--fixture", "--cache-from", str(hierarchy[0].parent / "config/unity3d/Subcult/Clustr Galaxy/ClustrGalaxy/fixture-cache/v2")])
+    else:
+        report["steps"].append(dict(name="fixture-warm-start", passed=False, reason="Verified fixture cache unavailable")); save()
     step("development-hierarchy", "hierarchy_smoke.py", ["--player", "Builds/Linux/ClustrGalaxy.x86_64", *graphics])
     step("active-stress", "hierarchy_smoke.py", ["--stress", "--active-features", "--profile-seconds", str(args.profile_seconds), *graphics])
     if not args.no_live:
         live = step("public-hierarchy-jumps", "hierarchy_smoke.py", ["--live", "--jump", *graphics])
         if live:
+            step("public-warm-start", "warm_start_smoke.py", ["--cache-from", str(live[0].parent / "config/unity3d/Subcult/Clustr Galaxy/ClustrGalaxy/cache/v2")])
             step("public-performance", "hierarchy_smoke.py", ["--live", "--active-features", "--profile-seconds", str(args.profile_seconds), *graphics])
         else:
             report["steps"].append(dict(name="public-performance", passed=False, reason="Public hierarchy prerequisite failed; no repeat provider traversal"))

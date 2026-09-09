@@ -20,5 +20,10 @@ embedded package and restore its registry entry in packages-lock.json; the
 original cold-import API-update failure will return. A future official package
 fix should replace this embedding only with fresh clean-import evidence.
 
-Validation status: implemented; fresh-import validation pending. This patch does
-not establish Linux release qualification or hosted CI acceptance.
+Validation status: automatically verified from an empty Library at source
+`49fae2afa80c0d20e6dd0e5d1b74c0afd70fd475`, validation
+`20260909T062133917114Z`: 289 EditMode and 433 PlayMode tests pass, with no
+compiler errors or Clustr-code warnings. Two upstream EntityId CS0618
+deprecations remain inventoried in the validation report. Both Linux player
+configurations build from that checkout. This does not establish release
+qualification or hosted CI acceptance.

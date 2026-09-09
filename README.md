@@ -248,3 +248,26 @@ Current artifact, automated results and the explicit remaining gates are collect
 The local chart is projected into the cockpit. Opening it suppresses pilot input while gravity, motion and guidance continue; closing it returns control without restoring an old velocity. Creations, diary, observatory and replay views visibly pause local simulation. Nested views keep that pause until the last view closes. The accepted flight bindings are unchanged.
 
 Scenic corridors and playgrounds use body exclusion clearances. If safe space is unavailable, the activity reports that condition. Course version 2 keeps older recordings available for standalone viewing while separating current competitive ghosts. Expedition stop proximity is measured outside the destination exclusion boundary, so a star can be visited without entering it. Player evidence and unresolved release gates are tracked in `docs/beta-completion.md`.
+
+
+### Cached process startup evidence
+
+`scripts/warm_start_smoke.py --cache-from /path/to/cache/v2` copies a verified
+v2 cache into a private configuration and launches the release player offline.
+For a deterministic fixture cache, also pass `--fixture`; an owned HTTP sentinel
+then verifies that no fixture requests occur. The source cache is hashed before
+and after and is never used as writable player storage.
+
+The three-second measurement begins before process creation and ends when the
+player has submitted the overview and cockpit HUD, saved a 2560×1440 screenshot,
+and published its readiness marker. The external monotonic observer includes
+screenshot writing and log-poll latency, so it is a conservative rendered-startup
+bound. Missing markers, failed rendering, incorrect resolution, mismatched source
+identity or elapsed time above three seconds fail the command. Compositor setup
+and copying the already warm cache precede measurement. This gate is distinct
+from the performance report's explicitly labelled cached-source-open timer.
+
+The full-pass command runs fixture and public-cache startup checks alongside its
+functional and 600-second performance matrix. Neither a passing performance
+report nor a passing startup check establishes deferred human, Ubuntu licensing,
+or hosted CI acceptance.

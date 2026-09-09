@@ -32,6 +32,7 @@ namespace ClustrGalaxy.UI
         public ulong gpu_cpu_timer_frequency;
         public bool warm_cache_available;
         public float warm_cache_overview_seconds;
+        public string warm_cache_measurement_scope;
         public long cache_usage_bytes = -1;
         public bool moving_flight_verified;
         public float measured_flight_distance;

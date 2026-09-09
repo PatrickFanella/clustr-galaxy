@@ -697,3 +697,55 @@ Eight new regression cases cover this boundary.
 
 This repair does not itself establish clean-source, full live performance,
 Ubuntu, hosted CI, or deferred human acceptance. Those remain separate gates.
+
+
+## Reproduced blockers and candidate verification — 2026-09-09
+
+The original working tree and index are preserved. A separate local candidate
+branch/checkouts provide immutable source identity without replacing the inherited
+implementation or pushing anything. Initial clean candidate
+`a63edb20a73b3d27761ef563aaccc20f4a3bc091` passed 279 EditMode and 23 PlayMode
+tests and built both Linux configurations. Unity-generated Addressables link
+files are excluded from source so a fresh build does not dirty its own checkout.
+
+The same candidate passed the real hierarchy and a 600-second live active-feature
+performance run (`20260909T044018161644Z-hierarchy`): CPU p95 8.340 ms, GPU p95
+0.301 ms, maximum ordinary frame 34.782 ms, zero managed allocation. Its stress
+run (`20260909T045054483312Z-hierarchy`) failed the unchanged 50 ms stall limit
+with a 405.880 ms frame. These reports remain historical, artifact-specific
+evidence, not qualification of later revisions. The reported warm-cache duration
+measures verified cached-source opening, not process-to-visible-overview latency.
+
+Bounded frame traces now retain all samples, native thread/process CPU deltas,
+context switches, major faults, GC collections, GPU-memory-query cost, fixed steps
+and celestial-update work. A diagnostic stress reproduction on `6e6064c` still
+failed with a 74.690 ms stall; its trace rules out a GC collection or slow GPU
+memory query for that event and records substantial main-thread work and
+preemption. This is diagnosis, not a claimed performance improvement.
+
+A subsequent 30-second attribution run (`20260909T054227644944Z-hierarchy`)
+measured 7,046 orbital updates per fixed step and 2.426 ms average orbital work.
+The implementation now prepares invariant Kepler coefficients and reuses only
+same-time local ephemerides while recomposing parent positions and origin frames.
+Exact-equation regression and cache/pooling/frame tests passed (288 EditMode,
+24 PlayMode). Post-change player performance must pass independently.
+
+The cold-import failure was a locked third-party package compatibility defect:
+serialization 3.1.5 referenced UnityEditor.GUID, then Unity's API updater repaired
+two cached files after logging compiler errors. The [documented compatibility
+patch](third-party-patches/unity-serialization-3.1.5.md) embeds that same package
+version with only those two editor adapter namespace corrections. All other
+package bytes, licenses and tests are retained. Warm validation passes 289
+EditMode / 433 PlayMode tests, including the newly enabled upstream tests. The
+remaining upstream EntityId deprecation warnings are inventoried separately.
+A new checkout with no Library is undergoing first-import validation and the full
+player matrix at source `49fae2a`; no result is presumed before it finishes.
+
+The Ubuntu container's missing compiler is repaired by rebuilding the documented
+24.04 image with build-essential. Its Editor now starts but exits 198 with
+"No valid Unity Editor license found" before test discovery. Existing host license
+files were mounted read-only; no machine identity or licensing was bypassed.
+Evidence: `Builds/evidence/20260909T043033Z-clean-candidate/ubuntu-result.json`.
+The existing Gitea runner advertises Ubuntu and kvant labels, but not the required
+licensed Unity label. Ubuntu licensing and CI activation remain actual external
+dependencies. Human testing remains deferred; the expanded beta is unqualified.
