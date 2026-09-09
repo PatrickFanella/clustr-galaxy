@@ -78,7 +78,9 @@ def main():
         report[name] = {k: v for k, v in identity.items() if k != "files_sha256"}
     save()
     step("controller-smoke", "ui_smoke.py", ["--player", "Builds/LinuxRelease/ClustrGalaxy.x86_64"])
-    step("performance-preflight", "hierarchy_smoke.py", ["--stress", "--active-features", "--profile-seconds", "30", "--window-system", "wayland", "--single-threaded-rendering"])
+    preflight = step("performance-preflight", "hierarchy_smoke.py", ["--stress", "--active-features", "--profile-seconds", "30", "--window-system", "wayland", "--single-threaded-rendering"])
+    if preflight and not step("stress-cache-warm-start", "warm_start_smoke.py", ["--fixture", "--cache-from", str(preflight[0].parent / "config/unity3d/Subcult/Clustr Galaxy/ClustrGalaxy/fixture-cache/v2")]):
+        report["stopped_reason"] = "Rendered cached startup gate failed"; save(); return 2
     demo = step("campaign-1440", "demo_journey.py", ["--campaign", "--flight-activities", "--expeditions", "--resolution", "2560x1440"])
     for resolution in ("1280x720", "1920x1080", "2560x1440"):
         step("visual-" + resolution, "visual_smoke.py", ["--resolution", resolution])
