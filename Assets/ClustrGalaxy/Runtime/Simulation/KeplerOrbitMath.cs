@@ -9,6 +9,42 @@ namespace ClustrGalaxy.Simulation
     {
         private const double Tau = Math.PI * 2d;
 
+        /// <summary>Invariant coefficients for the same Kepler equations and operation order.</summary>
+        public readonly struct PreparedOrbit
+        {
+            private readonly bool active;
+            private readonly double axis, eccentricity, meanMotion, epoch, minorRatio;
+            private readonly double argCos, argSin, inclinationCos, inclinationSin, nodeCos, nodeSin;
+            public PreparedOrbit(OrbitalElements elements, double parentMu)
+            {
+                this = default;
+                active = !(elements.SemiMajorAxis <= 0d || parentMu <= 0d);
+                if (!active) return;
+                axis = elements.SemiMajorAxis;
+                eccentricity = Math.Max(0d, Math.Min(0.95d, elements.Eccentricity));
+                meanMotion = Math.Sqrt(parentMu / (axis * axis * axis));
+                epoch = elements.MeanAnomalyAtEpochRadians;
+                minorRatio = Math.Sqrt(1d - eccentricity * eccentricity);
+                argCos = Math.Cos(elements.ArgumentOfPeriapsisRadians); argSin = Math.Sin(elements.ArgumentOfPeriapsisRadians);
+                inclinationCos = Math.Cos(elements.InclinationRadians); inclinationSin = Math.Sin(elements.InclinationRadians);
+                nodeCos = Math.Cos(elements.LongitudeAscendingNodeRadians); nodeSin = Math.Sin(elements.LongitudeAscendingNodeRadians);
+            }
+            public DoubleVector3 PositionAtTime(double simulationTime)
+            {
+                if (!active) return DoubleVector3.Zero;
+                var anomaly = SolveEccentricAnomaly(WrapRadians(epoch + meanMotion * simulationTime), eccentricity);
+                var x = axis * (Math.Cos(anomaly) - eccentricity);
+                var z = axis * minorRatio * Math.Sin(anomaly);
+                var rotatedX = argCos * x + argSin * z;
+                z = -argSin * x + argCos * z;
+                var y = -inclinationSin * z;
+                z = inclinationCos * z;
+                var finalX = nodeCos * rotatedX + nodeSin * z;
+                z = -nodeSin * rotatedX + nodeCos * z;
+                return new DoubleVector3(finalX, y, z);
+            }
+        }
+
         public static double Period(OrbitalElements elements, double parentGravitationalParameter)
         {
             if (elements.SemiMajorAxis <= 0d || parentGravitationalParameter <= 0d)

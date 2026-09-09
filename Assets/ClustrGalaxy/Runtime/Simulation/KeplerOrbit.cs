@@ -11,6 +11,9 @@ namespace ClustrGalaxy.Simulation
         public static long AppliedOrbitCount { get; private set; }
         private Transform parentBody = null!;
         private OrbitalElements elements;
+        private KeplerOrbitMath.PreparedOrbit ephemeris;
+        private double cachedLocalTime = double.NaN;
+        private DoubleVector3 cachedLocalPosition;
         private double parentGravitationalParameter;
         private double timeScale = 1d;
         private KeplerOrbit parentOrbit;
@@ -19,9 +22,16 @@ namespace ClustrGalaxy.Simulation
             System.Math.Sqrt(parentGravitationalParameter / elements.SemiMajorAxis * (1d + elements.Eccentricity) / (1d - elements.Eccentricity)) * timeScale + (parentOrbit != null ? parentOrbit.MaximumSpeed : 0d) : 0d;
         public Transform ParentBody => parentBody;
         public double ParentMu => parentGravitationalParameter;
-        public DoubleVector3 LogicalPositionAt(double time) =>
-            (parentOrbit != null ? parentOrbit.LogicalPositionAt(time) : parentLogicalPosition)
-                .Add(KeplerOrbitMath.PrecisePositionAtTime(elements, parentGravitationalParameter, time * timeScale));
+        public DoubleVector3 LogicalPositionAt(double time)
+        {
+            if (time != cachedLocalTime)
+            {
+                cachedLocalPosition = ephemeris.PositionAtTime(time * timeScale);
+                cachedLocalTime = time;
+            }
+            // Cache only the local offset: parent reinitialization and rebasing must remain visible.
+            return (parentOrbit != null ? parentOrbit.LogicalPositionAt(time) : parentLogicalPosition).Add(cachedLocalPosition);
+        }
 
         public OrbitalElements Elements => elements;
         public double SimulationTime { get; private set; }
@@ -30,8 +40,8 @@ namespace ClustrGalaxy.Simulation
             get
             {
                 var time = Time.timeAsDouble * timeScale;
-                var before = KeplerOrbitMath.PrecisePositionAtTime(elements, parentGravitationalParameter, time - .01d * timeScale);
-                var after = KeplerOrbitMath.PrecisePositionAtTime(elements, parentGravitationalParameter, time + .01d * timeScale);
+                var before = ephemeris.PositionAtTime(time - .01d * timeScale);
+                var after = ephemeris.PositionAtTime(time + .01d * timeScale);
                 var velocity = after.RelativeTo(before) / .02f;
                 return velocity + (parentOrbit != null ? parentOrbit.WorldVelocity : Vector3.zero);
             }
@@ -51,6 +61,8 @@ namespace ClustrGalaxy.Simulation
             elements = orbitalElements;
             parentGravitationalParameter = parentMu;
             timeScale = simulationTimeScale;
+            ephemeris = new KeplerOrbitMath.PreparedOrbit(elements, parentGravitationalParameter);
+            cachedLocalTime = double.NaN;
             ApplyPosition(Time.timeAsDouble);
         }
 

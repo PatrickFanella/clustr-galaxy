@@ -9,6 +9,33 @@ namespace ClustrGalaxy.Tests
 {
     public sealed class CelestialFrameTests
     {
+        [Test] public void CachedLocalEphemerisTracksParentChangesAndPooledReinitialization()
+        {
+            var root = new GameObject("Cache root"); var parent = new GameObject("Cache parent"); var moon = new GameObject("Cache moon");
+            try
+            {
+                var parentOrbit = parent.AddComponent<KeplerOrbit>();
+                var childOrbit = moon.AddComponent<KeplerOrbit>();
+                var parentElements = new OrbitalElements(1000, .2, .3, .4, .5, .6);
+                var childElements = new OrbitalElements(20, .1, .2, .3, .4, .5);
+                parentOrbit.Initialize(root.transform, parentElements, 1000000);
+                childOrbit.Initialize(parent.transform, childElements, 1000);
+                const double time = 100;
+                var original = childOrbit.LogicalPositionAt(time);
+                Assert.That(childOrbit.LogicalPositionAt(time), Is.EqualTo(original));
+                childOrbit.LogicalPositionAt(time + 50);
+                Assert.That(childOrbit.LogicalPositionAt(time), Is.EqualTo(original));
+                parentOrbit.Initialize(root.transform, new OrbitalElements(2000, .3, .4, .5, .6, .7), 2000000);
+                var expected = parentOrbit.LogicalPositionAt(time).Add(KeplerOrbitMath.PrecisePositionAtTime(childElements, 1000, time));
+                Assert.That(childOrbit.LogicalPositionAt(time), Is.EqualTo(expected));
+                Assert.That(childOrbit.LogicalPositionAt(time), Is.Not.EqualTo(original));
+                childElements = new OrbitalElements(40, .2, .3, .4, .5, .6);
+                childOrbit.Initialize(parent.transform, childElements, 2000);
+                expected = parentOrbit.LogicalPositionAt(time).Add(KeplerOrbitMath.PrecisePositionAtTime(childElements, 2000, time));
+                Assert.That(childOrbit.LogicalPositionAt(time), Is.EqualTo(expected));
+            }
+            finally { Object.DestroyImmediate(moon); Object.DestroyImmediate(parent); Object.DestroyImmediate(root); }
+        }
         [Test] public void ReusedStaticBodyDoesNotInheritADisabledOrbitVelocity()
         {
             var parent = new GameObject("Old orbit center"); var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);

@@ -6,6 +6,38 @@ namespace ClustrGalaxy.Tests.EditMode
 {
     public sealed class CelestialLayoutTests
     {
+        [TestCase(300d, 0d)]
+        [TestCase(300d, .95d)]
+        [TestCase(80000000d, .4d)]
+        [TestCase(80000000d, 1.2d)]
+        [TestCase(300d, -.2d)]
+        public void PreparedEphemerisMatchesReferenceEquations(double axis, double eccentricity)
+        {
+            var elements = new OrbitalElements(axis, eccentricity, .7, -2.1, 1.3, -.5);
+            var prepared = new ClustrGalaxy.Simulation.KeplerOrbitMath.PreparedOrbit(elements, 24000000d);
+            var times = new[] { -1e9, -10d, 0d, .02d, 1d, 1e4, 1e9 };
+            foreach (var time in times)
+            {
+                var expected = ClustrGalaxy.Simulation.KeplerOrbitMath.PrecisePositionAtTime(elements, 24000000d, time);
+                var actual = prepared.PositionAtTime(time);
+                Assert.That(actual.X, Is.EqualTo(expected.X));
+                Assert.That(actual.Y, Is.EqualTo(expected.Y));
+                Assert.That(actual.Z, Is.EqualTo(expected.Z));
+            }
+        }
+        [TestCase(0d, 1d)]
+        [TestCase(-1d, 1d)]
+        [TestCase(1d, 0d)]
+        [TestCase(1d, -1d)]
+        public void PreparedInactiveOrbitsPreserveZeroFallback(double axis, double mu)
+        {
+            var elements = new OrbitalElements(axis, .2, 1, 2, 3, 4);
+            Assert.That(new ClustrGalaxy.Simulation.KeplerOrbitMath.PreparedOrbit(elements, mu).PositionAtTime(10),
+                Is.EqualTo(ClustrGalaxy.World.DoubleVector3.Zero));
+            Assert.That(default(ClustrGalaxy.Simulation.KeplerOrbitMath.PreparedOrbit).PositionAtTime(double.NaN),
+                Is.EqualTo(ClustrGalaxy.World.DoubleVector3.Zero));
+        }
+
         [Test]
         public void DistantOrbitRetainsSubmeterMotionBeforeLocalConversion()
         {
