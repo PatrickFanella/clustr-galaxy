@@ -29,9 +29,12 @@ namespace ClustrGalaxy.UI
         private ExecutionSample[] executionSamples = Array.Empty<ExecutionSample>();
         private double[] memoryQueryMilliseconds = Array.Empty<double>();
         private ulong[] frameTimestamps = Array.Empty<ulong>();
+        private int[] collectionCounts = Array.Empty<int>();
+        private int previousCollectionCount;
         private ExecutionSample previousExecution;
         private double previousMemoryQueryMilliseconds;
         public bool ExecutionCountersAvailable { get; private set; }
+        public bool CaptureFinished => frozen;
         private readonly FrameTiming[] recentTimings = new FrameTiming[32];
         private GpuTimingWindow gpuWindow;
         private bool prepared, capture, draining, frozen, cpuOverflow;
@@ -116,6 +119,7 @@ namespace ClustrGalaxy.UI
             gcAllocatedBytes = new long[capacity]; intervals = new byte[capacity];
             floatScratch = new float[capacity]; longScratch = new long[capacity];
             executionSamples = new ExecutionSample[capacity];
+            collectionCounts = new int[capacity];
             memoryQueryMilliseconds = new double[capacity]; frameTimestamps = new ulong[capacity];
             gpuWindow = new GpuTimingWindow(capacity);
             ResetSamplingWindow(); prepared = true;
@@ -210,6 +214,7 @@ namespace ClustrGalaxy.UI
             if (!prepared || frozen) return;
             long allocation = gcAllocated.Valid ? gcAllocated.LastValue : -1;
             long residentBytes = -1, graphicsBytes = -1;
+            var currentCollectionCount = GC.CollectionCount(0);
             var executionDelta = default(ExecutionSample);
             var currentMemoryQueryMilliseconds = 0d;
 #if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
@@ -252,11 +257,13 @@ namespace ClustrGalaxy.UI
             // frame. Finish its slot before opening the current frame's slot.
             if (pending >= 0)
             {
+                collectionCounts[pending] = currentCollectionCount - previousCollectionCount;
                 executionSamples[pending] = executionDelta;
                 memoryQueryMilliseconds[pending] = previousMemoryQueryMilliseconds;
                 CompleteCpuFrame(pending, Time.unscaledDeltaTime, MainThreadMilliseconds, allocation, residentBytes, graphicsBytes);
                 pending = -1;
             }
+            previousCollectionCount = currentCollectionCount;
             previousMemoryQueryMilliseconds = currentMemoryQueryMilliseconds;
             if (capture)
             {
@@ -309,7 +316,7 @@ namespace ClustrGalaxy.UI
             if (!frozen) throw new InvalidOperationException("Finish capture before exporting frame evidence.");
             using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
             using var writer = new StreamWriter(stream);
-            writer.WriteLine("sample,timestamp,interval,frame_ms,main_thread_marker_ms,gc_bytes,gpu_memory_query_ms,execution_available,update_thread_cpu_ms,update_process_cpu_ms,voluntary_switches,involuntary_switches,major_faults");
+            writer.WriteLine("sample,timestamp,interval,frame_ms,main_thread_marker_ms,gc_bytes,gpu_memory_query_ms,execution_available,update_thread_cpu_ms,update_process_cpu_ms,voluntary_switches,involuntary_switches,major_faults,gc_collections");
             for (var i = 0; i < count; i++)
             {
                 var execution = executionSamples[i];
@@ -320,7 +327,7 @@ namespace ClustrGalaxy.UI
                     (execution.ThreadCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
                     (execution.ProcessCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
                     execution.VoluntarySwitches.ToString(CultureInfo.InvariantCulture), execution.InvoluntarySwitches.ToString(CultureInfo.InvariantCulture),
-                    execution.MajorFaults.ToString(CultureInfo.InvariantCulture)));
+                    execution.MajorFaults.ToString(CultureInfo.InvariantCulture), collectionCounts[i].ToString(CultureInfo.InvariantCulture)));
             }
             writer.Flush(); stream.Flush(true);
         }
