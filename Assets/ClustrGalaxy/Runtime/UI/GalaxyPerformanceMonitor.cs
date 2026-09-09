@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using ClustrGalaxy.Core.Diagnostics;
 using ClustrGalaxy.Data;
@@ -19,6 +21,17 @@ namespace ClustrGalaxy.UI
         private float[] floatScratch = Array.Empty<float>();
         private long[] longScratch = Array.Empty<long>();
         private byte[] intervals = Array.Empty<byte>();
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ExecutionSample
+        {
+            public long ThreadCpuNanoseconds, ProcessCpuNanoseconds, VoluntarySwitches, InvoluntarySwitches, MajorFaults;
+        }
+        private ExecutionSample[] executionSamples = Array.Empty<ExecutionSample>();
+        private double[] memoryQueryMilliseconds = Array.Empty<double>();
+        private ulong[] frameTimestamps = Array.Empty<ulong>();
+        private ExecutionSample previousExecution;
+        private double previousMemoryQueryMilliseconds;
+        public bool ExecutionCountersAvailable { get; private set; }
         private readonly FrameTiming[] recentTimings = new FrameTiming[32];
         private GpuTimingWindow gpuWindow;
         private bool prepared, capture, draining, frozen, cpuOverflow;
@@ -28,6 +41,7 @@ namespace ClustrGalaxy.UI
         private ulong latestAvailableTimestamp;
 #if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
         private ulong previousAllocated;
+        [DllImport("clustrtelemetry")] private static extern int clustr_execution_snapshot(out ExecutionSample sample);
         [DllImport("clustrtelemetry")] private static extern int clustr_allocation_available();
         [DllImport("clustrtelemetry")] private static extern ulong clustr_allocated_bytes();
         [DllImport("clustrtelemetry")] private static extern long clustr_gpu_memory_bytes();
@@ -101,6 +115,8 @@ namespace ClustrGalaxy.UI
             frameMilliseconds = new float[capacity]; cpuMilliseconds = new float[capacity];
             gcAllocatedBytes = new long[capacity]; intervals = new byte[capacity];
             floatScratch = new float[capacity]; longScratch = new long[capacity];
+            executionSamples = new ExecutionSample[capacity];
+            memoryQueryMilliseconds = new double[capacity]; frameTimestamps = new ulong[capacity];
             gpuWindow = new GpuTimingWindow(capacity);
             ResetSamplingWindow(); prepared = true;
         }
@@ -175,6 +191,7 @@ namespace ClustrGalaxy.UI
                         var probe = new byte[4096]; GC.KeepAlive(probe);
                         nativeAllocations = clustr_allocated_bytes() >= before + 4096;
                     }
+                    ExecutionCountersAvailable = clustr_execution_snapshot(out previousExecution) != 0;
                     previousAllocated = clustr_allocated_bytes();
                     nativeMemory = clustr_gpu_memory_bytes() > 0;
                     nativeResidentMemory = clustr_process_peak_rss_bytes() > 0;
@@ -193,7 +210,23 @@ namespace ClustrGalaxy.UI
             if (!prepared || frozen) return;
             long allocation = gcAllocated.Valid ? gcAllocated.LastValue : -1;
             long residentBytes = -1, graphicsBytes = -1;
+            var executionDelta = default(ExecutionSample);
+            var currentMemoryQueryMilliseconds = 0d;
 #if UNITY_STANDALONE_LINUX && !UNITY_EDITOR
+            if (ExecutionCountersAvailable)
+            {
+                ExecutionCountersAvailable = clustr_execution_snapshot(out var currentExecution) != 0;
+                if (ExecutionCountersAvailable)
+                {
+                    executionDelta = new ExecutionSample {
+                        ThreadCpuNanoseconds = currentExecution.ThreadCpuNanoseconds - previousExecution.ThreadCpuNanoseconds,
+                        ProcessCpuNanoseconds = currentExecution.ProcessCpuNanoseconds - previousExecution.ProcessCpuNanoseconds,
+                        VoluntarySwitches = currentExecution.VoluntarySwitches - previousExecution.VoluntarySwitches,
+                        InvoluntarySwitches = currentExecution.InvoluntarySwitches - previousExecution.InvoluntarySwitches,
+                        MajorFaults = currentExecution.MajorFaults - previousExecution.MajorFaults };
+                    previousExecution = currentExecution;
+                }
+            }
             if (nativeAllocations)
             {
                 var current = clustr_allocated_bytes();
@@ -207,7 +240,11 @@ namespace ClustrGalaxy.UI
             }
             if (nativeMemory)
             {
+                var queryStarted = ProfilerUnsafeUtility.Timestamp;
                 graphicsBytes = clustr_gpu_memory_bytes();
+                var conversion = ProfilerUnsafeUtility.TimestampToNanosecondsConversionRatio;
+                currentMemoryQueryMilliseconds = (ProfilerUnsafeUtility.Timestamp - queryStarted) *
+                    (double)conversion.Numerator / conversion.Denominator / 1000000d;
                 if (graphicsBytes < 0) nativeMemory = false;
             }
 #endif
@@ -215,15 +252,19 @@ namespace ClustrGalaxy.UI
             // frame. Finish its slot before opening the current frame's slot.
             if (pending >= 0)
             {
+                executionSamples[pending] = executionDelta;
+                memoryQueryMilliseconds[pending] = previousMemoryQueryMilliseconds;
                 CompleteCpuFrame(pending, Time.unscaledDeltaTime, MainThreadMilliseconds, allocation, residentBytes, graphicsBytes);
                 pending = -1;
             }
+            previousMemoryQueryMilliseconds = currentMemoryQueryMilliseconds;
             if (capture)
             {
                 if (count == frameMilliseconds.Length) cpuOverflow = true;
                 else
                 {
                     pending = count++;
+                    frameTimestamps[pending] = (ulong)ProfilerUnsafeUtility.Timestamp;
                     var loading = loader?.IsLoading == true;
                     var ordinary = !loading && navigation != null && !navigation.IsMapOpen && hud?.InputCaptured != true && flight != null && flight.enabled;
                     intervals[pending] = loading ? (byte)1 : ordinary ? (byte)2 : (byte)3;
@@ -260,6 +301,28 @@ namespace ClustrGalaxy.UI
                 OrdinaryPeakGcBytes = Math.Max(OrdinaryPeakGcBytes, allocation);
             }
             else OtherGameplaySamples++;
+        }
+        // Preserve raw order and write only after the measured window has been frozen.
+        // Execution counters describe Update-to-Update intervals, not profiler marker durations.
+        public void WriteFrameEvidence(string path)
+        {
+            if (!frozen) throw new InvalidOperationException("Finish capture before exporting frame evidence.");
+            using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            using var writer = new StreamWriter(stream);
+            writer.WriteLine("sample,timestamp,interval,frame_ms,main_thread_marker_ms,gc_bytes,gpu_memory_query_ms,execution_available,update_thread_cpu_ms,update_process_cpu_ms,voluntary_switches,involuntary_switches,major_faults");
+            for (var i = 0; i < count; i++)
+            {
+                var execution = executionSamples[i];
+                writer.WriteLine(string.Join(",", i.ToString(CultureInfo.InvariantCulture), frameTimestamps[i].ToString(CultureInfo.InvariantCulture),
+                    intervals[i].ToString(CultureInfo.InvariantCulture), frameMilliseconds[i].ToString("R", CultureInfo.InvariantCulture),
+                    cpuMilliseconds[i].ToString("R", CultureInfo.InvariantCulture), gcAllocatedBytes[i].ToString(CultureInfo.InvariantCulture),
+                    memoryQueryMilliseconds[i].ToString("R", CultureInfo.InvariantCulture), ExecutionCountersAvailable ? "1" : "0",
+                    (execution.ThreadCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
+                    (execution.ProcessCpuNanoseconds / 1000000d).ToString("R", CultureInfo.InvariantCulture),
+                    execution.VoluntarySwitches.ToString(CultureInfo.InvariantCulture), execution.InvoluntarySwitches.ToString(CultureInfo.InvariantCulture),
+                    execution.MajorFaults.ToString(CultureInfo.InvariantCulture)));
+            }
+            writer.Flush(); stream.Flush(true);
         }
         private void OnDisable()
         {

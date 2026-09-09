@@ -111,3 +111,20 @@ __attribute__((visibility("default"))) int64_t clustr_process_peak_rss_bytes(voi
         (uint64_t)usage.ru_maxrss > INT64_MAX / 1024) return -1;
     return (int64_t)usage.ru_maxrss * 1024;
 }
+
+// Diagnostic execution counters, sampled at Update boundaries without heap allocation.
+struct clustr_execution_sample {
+    int64_t thread_cpu_ns, process_cpu_ns, voluntary_switches, involuntary_switches, major_faults;
+};
+__attribute__((visibility("default"))) int clustr_execution_snapshot(struct clustr_execution_sample *sample) {
+    struct rusage thread, process;
+    if (!sample || getrusage(RUSAGE_THREAD, &thread) != 0 || getrusage(RUSAGE_SELF, &process) != 0) return 0;
+    sample->thread_cpu_ns = ((int64_t)thread.ru_utime.tv_sec + thread.ru_stime.tv_sec) * 1000000000 +
+        ((int64_t)thread.ru_utime.tv_usec + thread.ru_stime.tv_usec) * 1000;
+    sample->process_cpu_ns = ((int64_t)process.ru_utime.tv_sec + process.ru_stime.tv_sec) * 1000000000 +
+        ((int64_t)process.ru_utime.tv_usec + process.ru_stime.tv_usec) * 1000;
+    sample->voluntary_switches = thread.ru_nvcsw;
+    sample->involuntary_switches = thread.ru_nivcsw;
+    sample->major_faults = process.ru_majflt;
+    return 1;
+}

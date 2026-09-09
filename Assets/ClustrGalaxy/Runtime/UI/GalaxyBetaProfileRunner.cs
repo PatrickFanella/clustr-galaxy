@@ -170,11 +170,17 @@ namespace ClustrGalaxy.UI
             InputSystem.settings.backgroundBehavior = previousBackground;
         }
 
-        private static bool WriteReport(GalaxyBetaProfileReport report, out string path)
+        private bool WriteReport(GalaxyBetaProfileReport report, out string path)
         {
             path = null;
             try
             {
+                var directory = Path.GetDirectoryName(ReportPath);
+                Directory.CreateDirectory(directory);
+                var frameTrace = "frames-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ") + "-" + Guid.NewGuid().ToString("N") + ".csv";
+                monitor.WriteFrameEvidence(Path.Combine(directory, frameTrace));
+                report.frame_trace_file = frameTrace;
+                report.execution_counter_available = monitor.ExecutionCountersAvailable;
                 path = ClustrGalaxy.Core.Diagnostics.QualificationReportStore.Write(
                     Path.GetDirectoryName(ReportPath), JsonUtility.ToJson(report, prettyPrint: true));
                 return true;

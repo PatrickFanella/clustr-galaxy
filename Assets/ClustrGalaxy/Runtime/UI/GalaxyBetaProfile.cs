@@ -6,6 +6,8 @@ namespace ClustrGalaxy.UI
     [Serializable]
     public sealed class GalaxyBetaProfileReport
     {
+        public string frame_trace_file;
+        public bool execution_counter_available;
         public string source_sha = string.Empty;
         public string build_id = string.Empty;
         public string scenario = string.Empty;
