@@ -121,18 +121,23 @@ region, system, discussion, and one parent thread. Add
 `--clustr-beta-profile=600` to warm up, sample ten minutes, write a JSON report,
 and exit the Linux player. Duration is bounded to 30–3600 seconds. The report
 is written beneath Unity's persistent data directory at
-`ClustrGalaxy/reports/latest-beta-profile.json` and records the pinned IDs,
+`ClustrGalaxy/reports/<timestamp>-<run-id>.json` (the separate
+`latest-report-path.txt` points to the latest report) and records the pinned IDs,
 resolution, CPU/GPU p95, maximum frame stall, p95 and peak per-frame GC allocation,
 player memory, GPU memory, and an exact threshold verdict. Missing GPU counters
 are a failed/unavailable measurement, never silently treated as a pass.
 
-Example release-evidence run:
+Example isolated release-artifact evidence run (Vulkan, Wayland, direct rendering):
 
 ```bash
-Builds/Linux/ClustrGalaxy.x86_64 --clustr-live-smoke --clustr-beta-profile=600 \
-  -screen-fullscreen 0 -screen-width 2560 -screen-height 1440 \
-  -logFile /tmp/clustr-galaxy-beta-profile.log
+python3 scripts/hierarchy_smoke.py --live --active-features --profile-seconds 600 \
+  --window-system wayland --single-threaded-rendering
 ```
+
+The harness uses `Builds/LinuxRelease/ClustrGalaxy.x86_64`, a private compositor,
+and isolated local storage. Run the deterministic near-limit scenario separately
+with `--stress` in place of `--live`. Passing one scenario does not qualify the
+other, or replace the functional, platform, and human acceptance gates.
 
 ## Prototype controls
 

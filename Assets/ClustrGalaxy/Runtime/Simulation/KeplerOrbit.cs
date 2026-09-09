@@ -9,6 +9,8 @@ namespace ClustrGalaxy.Simulation
         public static bool CaptureTiming { get; set; }
         public static long AppliedOrbitTicks { get; private set; }
         public static long AppliedOrbitCount { get; private set; }
+        private Transform bodyTransform;
+        private void Awake() => bodyTransform = transform;
         private Transform parentBody = null!;
         private OrbitalElements elements;
         private KeplerOrbitMath.PreparedOrbit ephemeris;
@@ -84,7 +86,7 @@ namespace ClustrGalaxy.Simulation
             }
 
             SimulationTime = time;
-            transform.position = LogicalPositionAt(time).RelativeTo(
+            bodyTransform.position = LogicalPositionAt(time).RelativeTo(
                 FloatingOrigin.Active != null ? FloatingOrigin.Active.LogicalOrigin : DoubleVector3.Zero);
         }
     }

@@ -21,6 +21,15 @@ def evidence_passed(process, reports, expected=1):
             and all(value.get("passed", value.get("build_gate_passed")) is True for value in reports))
 
 
+def host_identity(text):
+    values = dict(line.split("=", 1) for line in text.splitlines() if "=" in line and not line.startswith("#"))
+    return values.get("ID", "").strip('"\''), values.get("ID_LIKE", "").strip('"\'').split()
+
+
+def is_arch_family(os_id, os_like):
+    return os_id == "arch" or "arch" in os_like
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile-seconds", type=int, choices=(30, 600), default=600)
@@ -62,8 +71,7 @@ def main():
 
     report["library_cache_present_at_start"] = (ROOT / "Library").exists()
     os_release = pathlib.Path("/etc/os-release")
-    report["host_os_id"] = next((line.split("=", 1)[1].strip('"') for line in os_release.read_text().splitlines()
-                                 if line.startswith("ID=")), "") if os_release.exists() else ""
+    report["host_os_id"], report["host_os_like"] = host_identity(os_release.read_text() if os_release.exists() else "")
     save()
     checks = run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], output / "python-tests.log", timeout=120, capture_stdout=True)
     checks.update(name="python-tests", passed=checks["process_exit"] == 0 and not checks["timed_out"])
@@ -111,7 +119,7 @@ def main():
             report["steps"].append(dict(name="public-performance", passed=False, reason="Public hierarchy prerequisite failed; no repeat provider traversal"))
     report["source_unchanged"] = (subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip() == report["source_sha"]
                                   and not subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT))
-    report["arch_clean_source_verified"] = (report["host_os_id"] == "arch" and not report["source_dirty"] and report["source_unchanged"]
+    report["arch_clean_source_verified"] = (is_arch_family(report["host_os_id"], report["host_os_like"]) and not report["source_dirty"] and report["source_unchanged"]
                                              and not report["library_cache_present_at_start"]
                                              and all(s["passed"] for s in report["steps"] if s["name"] in ("validation", "build")))
     if report["arch_clean_source_verified"]: report["external_gates"].remove("Clean-source Arch verification")

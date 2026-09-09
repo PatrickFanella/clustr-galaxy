@@ -7,12 +7,15 @@ namespace ClustrGalaxy.Simulation
     {
         private static readonly List<GravitySource> Sources = new();
 
+        private Transform bodyTransform;
+        private void Awake() => bodyTransform = transform;
+        public Vector3 CenterPosition => bodyTransform.position;
         private KeplerOrbit orbit;
         private ClustrGalaxy.World.DoubleVector3 logicalPosition;
         public void RefreshStaticPosition()
         {
             if (Definition != null && (orbit == null || !orbit.enabled))
-                transform.position = logicalPosition.RelativeTo(ClustrGalaxy.World.FloatingOrigin.Active != null ?
+                bodyTransform.position = logicalPosition.RelativeTo(ClustrGalaxy.World.FloatingOrigin.Active != null ?
                     ClustrGalaxy.World.FloatingOrigin.Active.LogicalOrigin : ClustrGalaxy.World.DoubleVector3.Zero);
         }
         public ClustrGalaxy.World.DoubleVector3 LogicalPosition => orbit != null ? orbit.LogicalPositionAt(orbit.SimulationTime) : logicalPosition;
@@ -29,7 +32,7 @@ namespace ClustrGalaxy.Simulation
             GravitationalParameter = gravitationalParameter;
             SofteningRadius = softeningRadius;
             MaximumAcceleration = maximumAcceleration;
-            logicalPosition = staticLogicalPosition ?? (ClustrGalaxy.World.FloatingOrigin.Active != null ? ClustrGalaxy.World.FloatingOrigin.Active.LogicalOrigin : ClustrGalaxy.World.DoubleVector3.Zero).Add(transform.position);
+            logicalPosition = staticLogicalPosition ?? (ClustrGalaxy.World.FloatingOrigin.Active != null ? ClustrGalaxy.World.FloatingOrigin.Active.LogicalOrigin : ClustrGalaxy.World.DoubleVector3.Zero).Add(CenterPosition);
             var candidateOrbit = GetComponent<KeplerOrbit>();
             orbit = candidateOrbit != null && candidateOrbit.enabled ? candidateOrbit : null;
             MaximumSpeed = orbit != null ? orbit.MaximumSpeed : 0d;
@@ -53,7 +56,7 @@ namespace ClustrGalaxy.Simulation
 
                 acceleration += GravityMath.Acceleration(
                     position,
-                    source.transform.position,
+                    source.CenterPosition,
                     source.GravitationalParameter,
                     source.SofteningRadius,
                     source.MaximumAcceleration);

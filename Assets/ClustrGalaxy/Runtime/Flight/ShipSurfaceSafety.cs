@@ -29,7 +29,7 @@ namespace ClustrGalaxy.Flight
         {
             if (flight.Simulation.Recovering)
             {
-                if (recoveryBody != null) { body.position = recoveryBody.transform.position + recoveryOffset; transform.position = body.position; }
+                if (recoveryBody != null) { body.position = recoveryBody.CenterPosition + recoveryOffset; transform.position = body.position; }
                 return;
             }
             if (body.isKinematic || !flight.enabled) return;
@@ -37,11 +37,12 @@ namespace ClustrGalaxy.Flight
             var predictedVelocity = body.linearVelocity + flight.AppliedAcceleration * dt;
             var sources = GravitySource.ActiveSources;
             var shipSpeed = predictedVelocity.magnitude;
+            var shipPosition = body.position;
             for (var index = 0; index < sources.Count; index++)
             {
                 var source = sources[index];
                 if (source == null || source.Definition == null) continue;
-                var start = body.position - source.transform.position;
+                var start = shipPosition - source.CenterPosition;
                 var radius = source.Definition.ExclusionRadius + HullRadius;
                 var reach = radius + (shipSpeed + source.MaximumSpeed) * dt + 16 * dt * dt;
                 if (start.sqrMagnitude > reach * reach) continue;
@@ -59,15 +60,15 @@ namespace ClustrGalaxy.Flight
         }
         private void Recover(GravitySource source, Vector3 normal)
         {
-            var candidate = source.transform.position + normal * ((float)source.Definition.ExclusionRadius + 500f);
+            var candidate = source.CenterPosition + normal * ((float)source.Definition.ExclusionRadius + 500f);
             var found = IsClear(candidate);
             for (var shell = 1; shell <= 8 && !found; shell++) foreach (var direction in Directions)
             {
-                candidate = source.transform.position + direction * ((float)source.Definition.ExclusionRadius + 500f * shell);
+                candidate = source.CenterPosition + direction * ((float)source.Definition.ExclusionRadius + 500f * shell);
                 if (IsClear(candidate)) { found = true; break; }
             }
             if (!found) candidate = body.position; // Remain protected and require a later safe resume.
-            recoveryBody = source; recoveryOffset = candidate - source.transform.position;
+            recoveryBody = source; recoveryOffset = candidate - source.CenterPosition;
             flight.Simulation.BeginRecovery(found ? "RECOVERED · SELECT RESUME FLIGHT" : "RECOVERY HOLD · SAFE POSITION UNAVAILABLE", source.Definition.Id);
             GetComponent<GalaxyNavigationController>()?.InterruptForRecovery();
             flight.ClearAutopilotDesiredVelocity();
@@ -90,7 +91,7 @@ namespace ClustrGalaxy.Flight
             for (var index = 0; index < sources.Count; index++)
             {
                 var source = sources[index];
-                if (source != null && source.Definition != null && Vector3.Distance(point, source.transform.position) <= source.Definition.ExclusionRadius + HullRadius + 1) return false;
+                if (source != null && source.Definition != null && Vector3.Distance(point, source.CenterPosition) <= source.Definition.ExclusionRadius + HullRadius + 1) return false;
             }
             return true;
         }

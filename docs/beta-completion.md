@@ -779,3 +779,34 @@ claim an independent network packet capture. Validation `20260909T070353567394Z`
 passes 292 EditMode / 433 PlayMode tests with no project compiler diagnostics.
 The fixture screenshot was visually inspected. Full final-source performance,
 platform, physical-course and human acceptance still require their own evidence.
+
+
+### 2026-09-09 full automated pass and remaining stress repair
+
+Clean checkout `a8ba789ff5e9fee03443220d8932c16cd88b2ca3` started without a
+Library and passed 292 EditMode plus 433 PlayMode tests, both Linux builds,
+all three resolutions of automated cockpit/simulation/creation journeys,
+complete campaign/resume/restart, isolated replay import, fixture/offline/jump
+journeys, rendered cached startup, and the public hierarchy. Full matrix:
+`Builds/worktrees/flight-first-final-20260909T0710Z/Builds/evidence/20260909T070954916173Z-full-pass/summary.json`.
+
+The public 600-second performance run passed (CPU p95 8.338 ms, GPU p95
+0.296 ms, ordinary maximum 22.020 ms, zero managed allocation). Near-limit
+active stress failed its unchanged 50 ms ordinary-stall threshold: maximum
+99.379 ms, CPU p95 12.369 ms, GPU p95 0.803 ms, zero managed allocation.
+Raw traces show a five-physics-step catch-up burst without GC collection.
+This remains an unresolved gate, not a qualified beta.
+
+Native userspace sampling with exact installed Unity symbols identified
+repeated Component/Transform access and job scheduler overhead. An unchanged
+artifact trial with eight job workers reduced process CPU but failed with a
+79.481 ms stall; no worker-count change was adopted. The subsequent repair
+caches Transform references and reads the ship position once per surface
+sweep instead of once per resident body. Its validation is pending.
+
+The harness now records ID_LIKE and accepts the exact `arch` token while
+preserving Omarchy as the actual OS identity. Two regression tests cover
+Arch derivatives, unrelated distributions and substring rejection (20 Python
+checks pass). Earlier reports are preserved; their OS classification is not
+rewritten. Ubuntu licensing, licensed CI activation and deferred human
+acceptance remain separate open requirements.
