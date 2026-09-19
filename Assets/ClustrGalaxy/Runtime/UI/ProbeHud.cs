@@ -163,12 +163,36 @@ namespace ClustrGalaxy.UI
         public void SetMenuOpen(bool open)
         {
             if (menu == null || (!open && flight?.Simulation.Recovering == true)) return;
+            if (menu.activeSelf != open) GetComponent<ShipAudioFeedback>()?.PlayInterface();
             menu.SetActive(open);
             InputContext.SetCommand(open); ApplyInputContext();
             dirty = true;
             if (open) Refresh();
             status.SetAllDirty();
             if (open && buttons.Count > 0) EventSystem.current?.SetSelectedGameObject(buttons[0].gameObject);
+        }
+        private void PlayInterfaceSound() => GetComponent<ShipAudioFeedback>()?.PlayInterface();
+        public void ApplyPrompts(ClustrGalaxy.World.GalaxyVisualCatalog catalog)
+        {
+            if (menu == null || catalog == null || menu.transform.Find("Controller prompts") != null) return;
+            var parent = new GameObject("Controller prompts", typeof(RectTransform));
+            parent.transform.SetParent(menu.transform, false);
+            var root = parent.GetComponent<RectTransform>(); root.anchorMin = root.anchorMax = new Vector2(0, 0);
+            root.pivot = Vector2.zero; root.anchoredPosition = new Vector2(28, 4); root.sizeDelta = new Vector2(750, 25);
+            var sprites = new[] { catalog.confirmPrompt, catalog.backPrompt };
+            for (var i = 0; i < sprites.Length; i++)
+            {
+                var image = new GameObject("Xbox reference glyph", typeof(RectTransform), typeof(Image));
+                image.transform.SetParent(root, false); var graphic = image.GetComponent<Image>();
+                graphic.sprite = sprites[i]; graphic.preserveAspect = true; graphic.raycastTarget = false;
+                var rect = image.GetComponent<RectTransform>(); rect.anchorMin = rect.anchorMax = new Vector2(0,.5f);
+                rect.anchoredPosition = new Vector2(12+i*280,0); rect.sizeDelta = new Vector2(24,24);
+                graphic.enabled = sprites[i] != null;
+                var label = Label(root, "Control equivalent"); label.fontSize = 12;
+                label.text = i == 0 ? "A / South / Enter · Confirm" : "B / East / Escape · Back";
+                var lr = label.rectTransform;lr.anchorMin=lr.anchorMax=new Vector2(0,.5f);lr.pivot=new Vector2(0,.5f);
+                lr.anchoredPosition=new Vector2(30+i*280,0);lr.sizeDelta=new Vector2(248,24);
+            }
         }
         private void BuildUi()
         {
@@ -278,7 +302,7 @@ namespace ClustrGalaxy.UI
             ConsoleTheme.Style(button);
             button.gameObject.name=label;
             var buttonText=button.GetComponentInChildren<Text>();buttonText.text=label.StartsWith("SECTION: ")?label.Substring(9):label;buttonText.fontSize=14;buttonText.alignment=TextAnchor.MiddleLeft; button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(action); button.onClick.AddListener(Invalidate);
+            button.onClick.AddListener(action); button.onClick.AddListener(Invalidate); button.onClick.AddListener(PlayInterfaceSound);
         }
         private void Refresh()
         {
@@ -402,7 +426,7 @@ namespace ClustrGalaxy.UI
                 AddButton(prefs.MusicMuted ? "EXPLORATION AUDIO: MUTED" : "EXPLORATION AUDIO: ON", () =>
                     ApplyPreferences(activities, prefs.With(musicMuted: !prefs.MusicMuted)));
                 AddButton("MUSIC TEMPO: " + prefs.Tempo + " BPM", () => ApplyPreferences(activities, prefs.With(tempo: prefs.Tempo >= 120 ? 60 : prefs.Tempo + 20)));
-                AddButton("MUSIC VOLUME: " + Mathf.RoundToInt(prefs.MusicVolume * 100) + "%", () =>
+                AddButton("AUDIO VOLUME: " + Mathf.RoundToInt(prefs.MusicVolume * 100) + "%", () =>
                     ApplyPreferences(activities, prefs.With(musicVolume: prefs.MusicVolume >= .75f ? 0 : Mathf.Min(1, prefs.MusicVolume + .25f))));
                 var instrumentNames = new[] { "SOFT BELL", "WARM PLUCK", "AIRY GLASS" };
                 AddButton("INSTRUMENT: " + instrumentNames[prefs.MusicPreset], () => ApplyPreferences(activities, prefs.With(musicPreset: (prefs.MusicPreset + 1) % 3)));

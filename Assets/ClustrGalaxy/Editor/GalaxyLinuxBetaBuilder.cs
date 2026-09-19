@@ -56,6 +56,12 @@ namespace ClustrGalaxy.Editor
                     $"Linux beta build failed: {report.summary.result}, {report.summary.totalErrors} errors.");
             }
 
+            var notices = Path.Combine(Path.GetDirectoryName(buildPath), "AssetNotices");
+            Directory.CreateDirectory(notices);
+            File.Copy("docs/free-asset-notices.md", Path.Combine(notices, "README.md"), true);
+            File.Copy(FreePresentationAssetBuilder.Root + "/provenance.json", Path.Combine(notices, "provenance.json"), true);
+            foreach (var pack in new[] { "space-kit", "space-station-kit", "sci-fi-sounds", "interface-sounds", "input-prompts", "SolarSystemScope" })
+                File.Copy(FreePresentationAssetBuilder.Root + "/" + pack + "/License.txt", Path.Combine(notices, pack + "-License.txt"), true);
             var sizeMiB = report.summary.totalSize / (1024d * 1024d);
             Debug.Log(
                 $"[ClustrGalaxy.Build] Linux beta succeeded: {BuildPath}, {sizeMiB:F1} MiB, " +

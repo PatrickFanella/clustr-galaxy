@@ -276,3 +276,7 @@ The full-pass command runs fixture and public-cache startup checks alongside its
 functional and 600-second performance matrix. Neither a passing performance
 report nor a passing startup check establishes deferred human, Ubuntu licensing,
 or hosted CI acceptance.
+
+### Free presentation assets
+
+The September 19 free-only presentation pass has passed Unity import tests and Linux builds; player and qualification evidence is tracked in the completion ledger. It adds textured celestial surfaces, curated cockpit/ship models, bounded audio feedback and controller glyphs. See [asset notices](docs/free-asset-notices.md) and the [implementation/verification record](docs/superpowers/plans/2026-09-19-free-presentation-assets.md). No new qualified player is claimed.

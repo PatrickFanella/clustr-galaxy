@@ -30,6 +30,18 @@ namespace ClustrGalaxy.UI
                 for(var i=0;i<5;i++) Beam("Sill switch",new Vector3(side*(.52f+i*.072f),-.65f,.73f),new Vector3(side*(.52f+i*.072f),-.64f,.77f),.022f,.025f,rim);
             }
         }
+        public void ApplyCatalog(ClustrGalaxy.World.GalaxyVisualCatalog catalog)
+        {
+            if (deck == null || catalog?.cockpitConsole == null || deck.transform.Find("Port console") != null) return;
+            for (var side = -1; side <= 1; side += 2)
+            {
+                var console = Instantiate(catalog.cockpitConsole, deck.transform, false);
+                console.name = side < 0 ? "Port console" : "Starboard console";
+                console.transform.localPosition = new Vector3(side * .72f, -.64f, .92f);
+                console.transform.localRotation = Quaternion.Euler(0, 180 - side * 18, 0);
+                console.transform.localScale = Vector3.one * .43f;
+            }
+        }
         private static Material Surface(Shader shader,Color color)
         {var m=new Material(shader);m.color=color;if(m.HasProperty("_BaseColor"))m.SetColor("_BaseColor",color);return m;}
         private void Beam(string name,Vector3 a,Vector3 b,float width,float depth,Material material)

@@ -3,6 +3,8 @@
 import os, pathlib, subprocess, sys, datetime, argparse, json, hashlib
 from unity_process import run
 from private_audio import private_audio
+from isolated_display import isolated_display
+from contextlib import nullcontext
 from native_build import build_native
 root = pathlib.Path(__file__).resolve().parents[1]
 build_native(root)
@@ -21,7 +23,11 @@ for method in methods:
     settings = root / "ProjectSettings/ProjectSettings.asset"
     settings_before = settings.read_bytes()
     try:
-        with private_audio(out / (method + "-audio")) as audio_env:
+        # Texture import workers still open X even when the main Editor uses -nographics.
+        # On unattended hosts, own a private display instead of using the user's desktop.
+        with (isolated_display(out / (method + "-display")) if not os.environ.get("DISPLAY") else nullcontext({})) as display_env, private_audio(out / (method + "-audio")) as audio_env:
+            for key in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DRI_PRIME", "LD_LIBRARY_PATH"):
+                if key in display_env: audio_env[key] = display_env[key]
             process = run([editor, "-batchmode", "-nographics", "-noaudio", "-quit", "-projectPath", str(root),
                 "-executeMethod", "ClustrGalaxy.Editor.GalaxyLinuxBetaBuilder." + method, "-logFile", str(log)],
                 log, env=dict(audio_env, CLUSTR_SOURCE_SHA=sha))

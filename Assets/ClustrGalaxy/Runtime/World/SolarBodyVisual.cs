@@ -6,12 +6,12 @@ namespace ClustrGalaxy.World
     public sealed class SolarBodyVisual : MonoBehaviour
     {
         private Material surface, atmosphere;
-        private bool sun, ownsMesh;
+        private bool sun, stellar, ownsMesh;
         private static Mesh smoothSphere;
         private static int meshUsers;
         public void Initialize(Color tint,bool isSun,bool illuminates=false)
         {
-            sun=illuminates;
+            sun=illuminates; stellar=isSun;
             var shader=Resources.Load<Shader>("GalaxyPlanetSurface");
             if(shader==null)return;
             if(smoothSphere==null)smoothSphere=BuildSphere();
@@ -28,6 +28,11 @@ namespace ClustrGalaxy.World
                 halo.transform.SetParent(transform,false);halo.transform.localScale=Vector3.one*(isSun?1.16f:1.035f);
                 halo.GetComponent<MeshFilter>().sharedMesh=smoothSphere;halo.GetComponent<Renderer>().sharedMaterial=atmosphere;
             }
+        }
+        public void ApplyCatalog(GalaxyVisualCatalog catalog)
+        {
+            var material = catalog?.SurfaceFor(GetComponent<GalaxyEntity>()?.StableId ?? name, stellar);
+            if (surface != null && material != null) surface.CopyPropertiesFromMaterial(material);
         }
         private void LateUpdate(){if(sun)Shader.SetGlobalVector("_GalaxySunPosition",transform.position);}
         private static Mesh BuildSphere()

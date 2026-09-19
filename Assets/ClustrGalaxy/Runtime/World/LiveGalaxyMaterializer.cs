@@ -384,6 +384,9 @@ namespace ClustrGalaxy.World
             var body = AcquireEntity(node, PrimitiveType.Sphere, parent);
             body.transform.localPosition = position;
             body.transform.localScale = Vector3.one * radius * 2f * (type == "post planet" ? GalaxyTuning.PlanetRadiusScale : 1f);
+            var catalog = loader.GetComponent<GalaxyVisualCatalogProvider>()?.Catalog;
+            if (type == "post planet" || type == "subreddit star")
+                material = catalog?.SurfaceFor(node.id, type == "subreddit star") ?? material;
             body.GetComponent<MeshRenderer>().sharedMaterial = material;
             InitializeEntity(body, node, type);
             if (type == "post planet" || type == "subreddit star") GetOrAdd<CelestialMeshDetail>(body).Configure();

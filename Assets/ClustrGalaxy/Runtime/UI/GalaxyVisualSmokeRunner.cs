@@ -9,7 +9,14 @@ namespace ClustrGalaxy.UI
     public sealed class GalaxyVisualSmokeRunner : MonoBehaviour
     {
         [Serializable] private sealed class Result
-        {public bool passed,origin_preserved,orbit_started,orbit_captured,orbit_released_bound,approach_started,approach_scanned,approach_clear,collision_recovered,recovery_resumed,recovery_progress_unchanged,moon_orbit_started,moon_orbit_captured,moon_coast_clear,stellar_recovered,trajectory_available;public string source,build;public int orbit_guides,minimum_orbit_vertices,width,height;public float planet_diameter,sun_diameter,orbit_minimum_radius,orbit_maximum_radius;}
+        {public bool free_assets_loaded,planet_near_detail,engine_audio_played,interface_audio_played,reduced_audio_stopped,muted_audio_stopped,scanner_audio_played,scanner_audio_stopped,passed,origin_preserved,orbit_started,orbit_captured,orbit_released_bound,approach_started,approach_scanned,approach_clear,collision_recovered,recovery_resumed,recovery_progress_unchanged,moon_orbit_started,moon_orbit_captured,moon_coast_clear,stellar_recovered,trajectory_available;public string source,build;public int orbit_guides,minimum_orbit_vertices,width,height;public float planet_diameter,sun_diameter,orbit_minimum_radius,orbit_maximum_radius;}
+        private static void SetPreferences(GalaxySessionBehaviour owner, ClustrGalaxy.Core.Activities.ActivityPreferences preferences)
+        {
+            var activities = owner.Session.Activities;
+            var outcome = activities.Apply(new ClustrGalaxy.Core.Activities.ActivityIntent(Guid.NewGuid().ToString("N"), activities.State.Identity,
+                ClustrGalaxy.Core.Activities.ActivityOperation.SetPreferences, DateTime.UtcNow, preferences: preferences));
+            if (!outcome.Committed) throw new InvalidOperationException(outcome.Error);
+        }
         private IEnumerator Start()
         {
             yield return new WaitForSecondsRealtime(3);
@@ -17,21 +24,48 @@ namespace ClustrGalaxy.UI
             var folder=Path.Combine(Application.persistentDataPath,"ClustrGalaxy","visual-smoke");Directory.CreateDirectory(folder);
             var planet=owner.Registry.FindEntity("post:open-source-ai");var sun=owner.Registry.FindEntity("subreddit:technology");
             var result=new Result{source=Application.version,build=Application.buildGUID,width=Screen.width,height=Screen.height,minimum_orbit_vertices=int.MaxValue};
+            var catalog = owner.PresentationAssets;
+            result.free_assets_loaded = catalog != null && catalog.starSurface != null && catalog.cockpitConsole != null && catalog.confirmPrompt != null && GetComponent<ShipAudioFeedback>() != null;
             foreach(var line in FindObjectsByType<LineRenderer>())if(line.name.StartsWith("Orbit ",StringComparison.Ordinal)){result.orbit_guides++;result.minimum_orbit_vertices=Math.Min(result.minimum_orbit_vertices,line.positionCount);}
             result.planet_diameter=planet.GetComponent<Renderer>().bounds.size.x;result.sun_diameter=sun.GetComponent<Renderer>().bounds.size.x;
-            result.passed=result.orbit_guides>=5&&result.minimum_orbit_vertices>=512&&result.planet_diameter>=240&&result.sun_diameter>=4000&&GetComponent<CockpitFlightDeck>()!=null&&planet.GetComponent<Renderer>().sharedMaterial.shader.isSupported;
+            result.passed=result.free_assets_loaded&&result.orbit_guides>=5&&result.minimum_orbit_vertices>=512&&result.planet_diameter>=240&&result.sun_diameter>=4000&&GetComponent<CockpitFlightDeck>()!=null&&planet.GetComponent<Renderer>().sharedMaterial.shader.isSupported;
             ScreenCapture.CaptureScreenshot(Path.Combine(folder,"flight.png"));yield return new WaitForSecondsRealtime(.6f);
             hud.SetMenuOpen(true);yield return new WaitForSecondsRealtime(.5f);
             ScreenCapture.CaptureScreenshot(Path.Combine(folder,"console.png"));yield return new WaitForSecondsRealtime(.6f);
             hud.SetMenuOpen(false);
             var position=planet.transform.position+new Vector3(660,225,-780);transform.SetPositionAndRotation(position,Quaternion.LookRotation(planet.transform.position-position));
-            yield return new WaitForSecondsRealtime(.5f);ScreenCapture.CaptureScreenshot(Path.Combine(folder,"planet.png"));yield return new WaitForSecondsRealtime(.6f);
+            yield return new WaitForSecondsRealtime(.5f);
+            var detail = planet.GetComponent<LODGroup>();
+            Debug.Log("[ClustrGalaxy.VisualSmoke] Detail bias="+QualitySettings.lodBias+" size="+detail.size+" localRef="+detail.localReferencePoint+" scale="+planet.transform.lossyScale+" mesh="+planet.GetComponent<MeshFilter>().sharedMesh.vertexCount);
+            foreach(var renderer in planet.GetComponentsInChildren<Renderer>()) Debug.Log("[ClustrGalaxy.VisualSmoke] Renderer "+renderer.name+" enabled="+renderer.enabled+" visible="+renderer.isVisible+" vertices="+renderer.GetComponent<MeshFilter>()?.sharedMesh.vertexCount);
+            result.planet_near_detail = planet.GetComponent<MeshRenderer>().isVisible && planet.GetComponent<MeshFilter>().sharedMesh.vertexCount >= 8000;
+            result.passed &= result.planet_near_detail;
+            ScreenCapture.CaptureScreenshot(Path.Combine(folder,"planet.png"));yield return new WaitForSecondsRealtime(.6f);
             var body=GetComponent<Rigidbody>();
             var relative=planet.transform.position-body.position;
             GetComponent<FloatingOrigin>().Rebase(-transform.position);
             result.origin_preserved=Vector3.Distance(relative,planet.transform.position-body.position)<.02f;
             result.passed &= result.origin_preserved;
             yield return new WaitForSecondsRealtime(.5f);ScreenCapture.CaptureScreenshot(Path.Combine(folder,"origin.png"));yield return new WaitForSecondsRealtime(.6f);
+            var audio = GetComponent<ShipAudioFeedback>();
+            var engineVoice = transform.Find("Engine feedback").GetComponent<AudioSource>();
+            var interfaceVoice = transform.Find("Interface feedback").GetComponent<AudioSource>();
+            var scannerVoice = transform.Find("Scanner feedback").GetComponent<AudioSource>();
+            var preferences = owner.Session.Activities.State.Preferences;
+            SetPreferences(owner, preferences.With(musicMuted: false, reducedAudio: false, musicVolume: .5f));
+            var gamepad = UnityEngine.InputSystem.InputSystem.AddDevice<UnityEngine.InputSystem.Gamepad>();
+            UnityEngine.InputSystem.InputSystem.QueueStateEvent(gamepad, new UnityEngine.InputSystem.LowLevel.GamepadState { rightTrigger = 1 });
+            yield return new WaitForSecondsRealtime(.12f);
+            result.engine_audio_played = engineVoice.isPlaying && engineVoice.volume > 0;
+            audio.PlayInterface(); result.interface_audio_played = interfaceVoice.isPlaying;
+            SetPreferences(owner, preferences.With(musicMuted: false, reducedAudio: true));
+            yield return null; result.reduced_audio_stopped = !engineVoice.isPlaying && !scannerVoice.isPlaying;
+            SetPreferences(owner, preferences.With(musicMuted: true, reducedAudio: false));
+            audio.PlayInterface(); yield return null;
+            result.muted_audio_stopped = !engineVoice.isPlaying && !interfaceVoice.isPlaying && !scannerVoice.isPlaying;
+            UnityEngine.InputSystem.InputSystem.RemoveDevice(gamepad);
+            SetPreferences(owner, preferences);
+            result.passed &= result.engine_audio_played && result.interface_audio_played && result.reduced_audio_stopped && result.muted_audio_stopped;
             var navigation=GetComponent<ClustrGalaxy.Flight.GalaxyNavigationController>();
             var targeting=GetComponent<ClustrGalaxy.Interaction.ProbeTargeting>();
             targeting.SelectTarget(planet);
@@ -51,9 +85,13 @@ namespace ClustrGalaxy.UI
             }
             var scanner = GetComponent<ClustrGalaxy.Scanning.SignalScanner>();
             scanner.BeginScan();
+            yield return new WaitForSecondsRealtime(.05f);
+            result.scanner_audio_played = scannerVoice.isPlaying;
             var scanDeadline = Time.timeAsDouble + 2;
             while (Time.timeAsDouble < scanDeadline) yield return null;
             result.approach_scanned = scanner.State == ClustrGalaxy.Scanning.SignalScanState.Complete;
+            result.scanner_audio_stopped = !scannerVoice.isPlaying;
+            result.passed &= result.scanner_audio_played && result.scanner_audio_stopped;
             result.passed &= result.approach_started && result.approach_clear && result.approach_scanned;
             Time.timeScale = 1;
             var radius=planet.GetComponent<SphereCollider>().bounds.extents.x;

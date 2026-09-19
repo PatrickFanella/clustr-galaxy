@@ -57,13 +57,14 @@ namespace ClustrGalaxy.Editor
             };
             catalog.userShipPrefabs = ships;
             catalog.discussionSatellitePrefab = satellite;
+            FreePresentationAssetBuilder.Configure(catalog);
             var settings = AddressableAssetSettingsDefaultObject.GetSettings(true);
             var entry = settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(CatalogPath), settings.DefaultGroup);
             entry.address = "galaxy-visual-catalog";
             EditorUtility.SetDirty(settings);
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
-            Debug.Log("[ClustrGalaxy.Assets] Visual catalog linked to six ship prefabs and Sputnik.");
+            Debug.Log("[ClustrGalaxy.Assets] Visual catalog rebuilt with local presentation assets and fallbacks.");
         }
 
         private static GameObject LoadPrefab(string path) =>

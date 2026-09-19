@@ -115,6 +115,14 @@ namespace ClustrGalaxy.Bootstrap
             if(this!=null)PresentationAssets=assets.Catalog;
             if (this != null)
             {
+                if (assets.Catalog != null)
+                {
+                    foreach (var entity in Registry.Entities)
+                        entity.GetComponent<SolarBodyVisual>()?.ApplyCatalog(assets.Catalog);
+                    GetComponent<ClustrGalaxy.UI.CockpitFlightDeck>()?.ApplyCatalog(assets.Catalog);
+                    hud.ApplyPrompts(assets.Catalog);
+                    gameObject.AddComponent<ClustrGalaxy.UI.ShipAudioFeedback>().Initialize(this, flight, scanner, assets.Catalog);
+                }
                 gameObject.AddComponent<ExplorationFeedback>().Initialize(this, scanner, assets);
                 gameObject.AddComponent<ExplorationCelebrations>().Initialize(this);
                 gameObject.AddComponent<JourneyRecorder>();

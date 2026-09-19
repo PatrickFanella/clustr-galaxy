@@ -810,3 +810,15 @@ Arch derivatives, unrelated distributions and substring rejection (20 Python
 checks pass). Earlier reports are preserved; their OS classification is not
 rewritten. Ubuntu licensing, licensed CI activation and deferred human
 acceptance remain separate open requirements.
+
+## Free presentation pass — 2026-09-19
+
+The zero-cost asset pass is implemented in source: six attributed Solar System Scope maps, six CC0 ship models, a satellite dish, a console and its palette atlas, three sound clips and two controller glyphs (20 original asset files). The catalog builder generates project-compatible materials and normalized presentation prefabs. Runtime adapters preserve procedural fallbacks and existing controls/physics, and audio respects mute, reduced audio and local pause. License notices are copied beside future builds.
+
+See [asset notices](free-asset-notices.md) and [implementation plan](superpowers/plans/2026-09-19-free-presentation-assets.md). Status: **implemented, not Unity-verified or player accepted**. All 23 Python checks passed. Standalone Roslyn compilation of Core, Unity, Editor and EditMode test assemblies passed against installed Unity libraries with no diagnostics. Six new Unity asset-contract tests await execution.
+
+Both Unity suites attempted at `Builds/worktrees/free-presentation-assets-20260919/Builds/validation/20260919T164438242790Z/` exited 198 before import/compilation: no valid Unity Editor license. This pass has no new player artifact, shader/import proof, visual/audio acceptance or performance result. Refresh the local free Personal entitlement in Unity Hub, then run the normal validation/build and isolated-player journeys. The prior ecba4ba evidence remains historical; it does not qualify these changes.
+
+### Free presentation follow-up: license restored
+
+The license blockage above was resolved by signing into Unity Hub. Import defects and FBX centering were repaired; validation `20260919T174433348728Z` passes 298 EditMode + 434 PlayMode tests. Both Linux players built. Initial 1080p player screenshots and approach/orbit/recovery checks passed, and exposed a coarse-planet LOD issue now corrected with quality-normalized detail thresholds. An updated visual harness also asserts catalog and audio behavior. Full updated-artifact evidence is recorded in timestamped `Builds/evidence/` reports; historical failures are preserved. Human acceptance, Ubuntu licensing and CI remain distinct requirements.

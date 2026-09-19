@@ -25,14 +25,27 @@ MonoBehaviour:
   - {fileID: 2589507297072345219, guid: 495c2486ef0dc84b69a1c70a266f24a9, type: 3}
   observatoryPlatformPrefab: {fileID: 1348805929988264979, guid: 0a0706d300c5b4b10ae5ba84612930b0, type: 3}
   userShipPrefabs:
-  - {fileID: 909896894237664339, guid: c484e9ee88e6f4942ad5c8a0461c6493, type: 3}
-  - {fileID: 301440150206615204, guid: 759dff70eb5bd9248bb05b82a5e93cc6, type: 3}
-  - {fileID: 8279969143979241102, guid: ff23e3972c8602b4e87bf04fe4395c79, type: 3}
-  - {fileID: 4443853831605296070, guid: 62990642302a7cc498dad6b168295e7d, type: 3}
-  - {fileID: 901983964859913192, guid: 375d8a55f513af3499bbcd48ead0bdd4, type: 3}
-  - {fileID: 7046610107163128614, guid: 7b1193876daceb3438726c4a3adee451, type: 3}
-  discussionSatellitePrefab: {fileID: 2638649845463096286, guid: 039da3b2afefb39499dd20ea57ec484b, type: 3}
+  - {fileID: 8609934710715256729, guid: 1b37d55ee92ed840c82055c7c52ad7db, type: 3}
+  - {fileID: 901321737132240339, guid: e5f6dbc5890cfd56ca3ae5334a2a92bd, type: 3}
+  - {fileID: 6311671099687644213, guid: 213bd78d00ef610b0a3799e7a2447461, type: 3}
+  - {fileID: 4499975535244270896, guid: f538bbfed5d0180e59768c3ad48032ca, type: 3}
+  - {fileID: 5113710067230016453, guid: 31f73516ce45f667890785724e87eb65, type: 3}
+  - {fileID: 2706856561113509155, guid: 12bc37fcf4a0270f3927d6b37cbdeec9, type: 3}
+  discussionSatellitePrefab: {fileID: 1406495621437270840, guid: a8a80d33e5ba362cab7798c2e6a6123d, type: 3}
   explorationInstruments:
   - {fileID: 8300000, guid: f0d1a8a6eac44af9b4ce8999c4e31b79, type: 3}
   - {fileID: 8300000, guid: 3e8d156a52e842a58c3b9ccf8438fead, type: 3}
   - {fileID: 8300000, guid: 71d239cda9d9477e876ad2c0573df3a1, type: 3}
+  starSurface: {fileID: 2100000, guid: e66e6c770430ddb00adc7916db5f047c, type: 2}
+  planetSurfaces:
+  - {fileID: 2100000, guid: f1a66b6493685888cbcdf6bb791092bf, type: 2}
+  - {fileID: 2100000, guid: 679ab8d14c81fd26a943173282178d29, type: 2}
+  - {fileID: 2100000, guid: 524a77008d3239cfb9a02f8adfbd1522, type: 2}
+  - {fileID: 2100000, guid: e54302e2a72ed36a9ba052003e041c7b, type: 2}
+  - {fileID: 2100000, guid: 7a556b5dc2d4c95e1ad55126b19f5a48, type: 2}
+  cockpitConsole: {fileID: 6661399368458204902, guid: 5ce04f8a549dfb7d3b1e4785de8d8ad8, type: 3}
+  engineSound: {fileID: 8300000, guid: 6fad383e50c851b79e01df2e685ee012, type: 3}
+  scannerSound: {fileID: 8300000, guid: da49fa9fe95555f2bb2c98bb19c8381b, type: 3}
+  interfaceSound: {fileID: 8300000, guid: 46ffd88b51185e908fd2d26d6daaf875, type: 3}
+  confirmPrompt: {fileID: 21300000, guid: 1955fea24b8354718cbc7a5a741dc643, type: 3}
+  backPrompt: {fileID: 21300000, guid: 7aee1fc6c9c75cc59b7eb26cd3423d23, type: 3}

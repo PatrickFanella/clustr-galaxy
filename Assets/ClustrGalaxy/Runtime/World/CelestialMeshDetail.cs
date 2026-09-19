@@ -2,17 +2,18 @@ using UnityEngine;
 
 namespace ClustrGalaxy.World
 {
-    /// <summary>Two shared meshes; native LOD selection needs no per-body Update allocation.</summary>
+    /// <summary>Three shared meshes; native LOD selection needs no per-body Update allocation.</summary>
     public sealed class CelestialMeshDetail : MonoBehaviour
     {
-        private static Mesh nearMesh, farMesh;
-        private MeshRenderer distant;
+        private static Mesh nearMesh, middleMesh, farMesh;
+        private MeshRenderer distant, middle;
         private void Start() { if (enabled) Configure(); }
         public void ReleaseDetail()
         {
             enabled = false;
             var group = GetComponent<LODGroup>(); if (group != null) group.enabled = false;
             if (distant != null) distant.gameObject.SetActive(false);
+            if (middle != null) middle.gameObject.SetActive(false);
             GetComponent<MeshRenderer>().enabled = true;
             if (farMesh != null) GetComponent<MeshFilter>().sharedMesh = farMesh;
         }
@@ -21,7 +22,8 @@ namespace ClustrGalaxy.World
             enabled = true;
             var renderer = GetComponent<MeshRenderer>();
             if (renderer == null) return;
-            if (nearMesh == null) nearMesh = Sphere(64, 32);
+            if (nearMesh == null) nearMesh = Sphere(128, 64);
+            if (middleMesh == null) middleMesh = Sphere(32, 16);
             if (farMesh == null) farMesh = Sphere(16, 8);
             GetComponent<MeshFilter>().sharedMesh = nearMesh;
             if (distant == null)
@@ -30,11 +32,23 @@ namespace ClustrGalaxy.World
                 child.AddComponent<MeshFilter>().sharedMesh = farMesh;
                 distant = child.AddComponent<MeshRenderer>();
             }
+            if (middle == null)
+            {
+                var child = new GameObject("Middle surface"); child.transform.SetParent(transform, false);
+                child.AddComponent<MeshFilter>().sharedMesh = middleMesh;
+                middle = child.AddComponent<MeshRenderer>();
+            }
+            middle.gameObject.SetActive(true);
+            middle.sharedMaterial = renderer.sharedMaterial;
             distant.gameObject.SetActive(true);
             distant.sharedMaterial = renderer.sharedMaterial;
             var group = GetComponent<LODGroup>() ?? gameObject.AddComponent<LODGroup>();
             group.enabled = true;
-            group.SetLODs(new[] { new LOD(.12f, new Renderer[] { renderer }), new LOD(0f, new Renderer[] { distant }) });
+            // Unity multiplies projected height by the global quality bias. Keep these
+            // silhouette thresholds tied to actual screen coverage at every launch quality.
+            var bias = Mathf.Max(.01f, QualitySettings.lodBias);
+            group.SetLODs(new[] { new LOD(.12f * bias, new Renderer[] { renderer }),
+                new LOD(.015f * bias, new Renderer[] { middle }), new LOD(0f, new Renderer[] { distant }) });
             group.RecalculateBounds();
         }
         private static Mesh Sphere(int longitude, int latitude)

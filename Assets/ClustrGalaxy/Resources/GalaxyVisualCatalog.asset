@@ -12,11 +12,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 83ffe32569b9fec2fbbbcab491d8d97b, type: 3}
   m_Name: GalaxyVisualCatalog
   m_EditorClassIdentifier: ClustrGalaxy.Runtime::ClustrGalaxy.World.GalaxyVisualCatalog
+  anomalyPrefabs: []
+  keepsakePrefabs: []
+  observatoryPlatformPrefab: {fileID: 0}
   userShipPrefabs:
-  - {fileID: 909896894237664339, guid: c484e9ee88e6f4942ad5c8a0461c6493, type: 3}
-  - {fileID: 301440150206615204, guid: 759dff70eb5bd9248bb05b82a5e93cc6, type: 3}
-  - {fileID: 8279969143979241102, guid: ff23e3972c8602b4e87bf04fe4395c79, type: 3}
-  - {fileID: 4443853831605296070, guid: 62990642302a7cc498dad6b168295e7d, type: 3}
-  - {fileID: 901983964859913192, guid: 375d8a55f513af3499bbcd48ead0bdd4, type: 3}
-  - {fileID: 7046610107163128614, guid: 7b1193876daceb3438726c4a3adee451, type: 3}
-  discussionSatellitePrefab: {fileID: 2638649845463096286, guid: 039da3b2afefb39499dd20ea57ec484b, type: 3}
+  - {fileID: 8609934710715256729, guid: 1b37d55ee92ed840c82055c7c52ad7db, type: 3}
+  - {fileID: 901321737132240339, guid: e5f6dbc5890cfd56ca3ae5334a2a92bd, type: 3}
+  - {fileID: 6311671099687644213, guid: 213bd78d00ef610b0a3799e7a2447461, type: 3}
+  - {fileID: 4499975535244270896, guid: f538bbfed5d0180e59768c3ad48032ca, type: 3}
+  - {fileID: 5113710067230016453, guid: 31f73516ce45f667890785724e87eb65, type: 3}
+  - {fileID: 2706856561113509155, guid: 12bc37fcf4a0270f3927d6b37cbdeec9, type: 3}
+  discussionSatellitePrefab: {fileID: 1406495621437270840, guid: a8a80d33e5ba362cab7798c2e6a6123d, type: 3}
+  explorationInstruments: []
+  starSurface: {fileID: 0}
+  planetSurfaces: []
+  cockpitConsole: {fileID: 0}
+  engineSound: {fileID: 0}
+  scannerSound: {fileID: 0}
+  interfaceSound: {fileID: 0}
+  confirmPrompt: {fileID: 0}
+  backPrompt: {fileID: 0}
