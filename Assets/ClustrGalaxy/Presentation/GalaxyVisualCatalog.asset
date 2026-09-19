@@ -36,6 +36,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: f0d1a8a6eac44af9b4ce8999c4e31b79, type: 3}
   - {fileID: 8300000, guid: 3e8d156a52e842a58c3b9ccf8438fead, type: 3}
   - {fileID: 8300000, guid: 71d239cda9d9477e876ad2c0573df3a1, type: 3}
+  activityMaterial: {fileID: 2100000, guid: 8aa8e85c315789f32ab3eb17b76e4959, type: 2}
   starSurface: {fileID: 2100000, guid: e66e6c770430ddb00adc7916db5f047c, type: 2}
   planetSurfaces:
   - {fileID: 2100000, guid: f1a66b6493685888cbcdf6bb791092bf, type: 2}

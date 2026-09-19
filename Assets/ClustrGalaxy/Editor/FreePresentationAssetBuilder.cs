@@ -14,6 +14,7 @@ namespace ClustrGalaxy.Editor
         {
             if (!Directory.Exists(Root)) return;
             if (!AssetDatabase.IsValidFolder(Generated)) AssetDatabase.CreateFolder(Root, "Generated");
+            catalog.activityMaterial = ActivityMaterial();
             EnsureTextureShapes();
             var names = new[] { "mars", "jupiter", "moon", "mercury", "neptune" };
             catalog.planetSurfaces = new Material[names.Length];
@@ -32,10 +33,22 @@ namespace ClustrGalaxy.Editor
             var fallback = AssetDatabase.LoadAssetAtPath<GalaxyVisualCatalog>("Assets/ClustrGalaxy/Resources/GalaxyVisualCatalog.asset");
             if (fallback != null)
             {
+                fallback.activityMaterial = catalog.activityMaterial;
                 fallback.userShipPrefabs = catalog.userShipPrefabs;
                 fallback.discussionSatellitePrefab = catalog.discussionSatellitePrefab;
                 EditorUtility.SetDirty(fallback);
             }
+        }
+        private static Material ActivityMaterial()
+        {
+            // Keep the runtime activity shader and its emission variant as an explicit
+            // dependency, independent of whichever third-party ships are selected.
+            var path = Generated + "/activity-display.mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null) { material = new Material(Shader.Find("Universal Render Pipeline/Lit")); AssetDatabase.CreateAsset(material, path); }
+            material.color = new Color(.4f, .8f, .9f);
+            material.EnableKeyword("_EMISSION"); material.SetColor("_EmissionColor", new Color(.25f, .6f, .75f));
+            EditorUtility.SetDirty(material); return material;
         }
         private static void EnsureTextureShapes()
         {

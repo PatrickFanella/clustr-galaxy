@@ -32,7 +32,12 @@ namespace ClustrGalaxy.UI
             texture=new RenderTexture(1024,512,24){name="Observatory local view"};texture.Create();viewport.GetComponent<RawImage>().texture=texture;
             var cameraObject=new GameObject("Diorama camera",typeof(Camera));cameraObject.transform.SetParent(world.transform,false);cameraObject.transform.localPosition=new Vector3(0,7,-12);cameraObject.transform.LookAt(world.transform.position+Vector3.up*.8f);
             var camera=dioramaCamera=cameraObject.GetComponent<Camera>();camera.orthographic=true;camera.orthographicSize=3.9f;camera.targetTexture=texture;camera.clearFlags=CameraClearFlags.SolidColor;camera.backgroundColor=new Color(.03f,.055f,.08f);camera.cullingMask=1<<31;camera.nearClipPlane=.1f;camera.farClipPlane=50;
-            var shader=Shader.Find("Universal Render Pipeline/Lit");if(shader!=null){material=new Material(shader);material.EnableKeyword("_EMISSION");material.SetColor("_EmissionColor",new Color(.25f,.6f,.75f));material.color=new Color(.4f,.8f,.9f);}
+            if (assets?.activityMaterial != null) material = new Material(assets.activityMaterial);
+            else
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Resources.Load<Shader>("GalaxyPlanetSurface");
+                if (shader != null) { material = new Material(shader); material.color = new Color(.4f,.8f,.9f); }
+            }
             if(assets?.observatoryPlatformPrefab!=null)
             {
                 var platform=Instantiate(assets.observatoryPlatformPrefab,world.transform);platform.transform.localScale=Vector3.one*1.5f;SetLayer(platform);
@@ -89,9 +94,10 @@ namespace ClustrGalaxy.UI
             {
                 var design=activity.State.Designs.FirstOrDefault(x=>x.PersonalId==display.Reference);
                 if(design==null)Card(item.transform,"Historical creation unavailable");
+                else if(material==null)Card(item.transform,"Creation saved · display material unavailable");
                 else
                 {
-                    var styled=new Material(material);var color=ConstellationDiagram.PaletteColor(design.Palette);styled.color=color;styled.SetColor("_EmissionColor",color*.4f);ownedMaterials[index]=styled;
+                    var styled=new Material(material);var color=ConstellationDiagram.PaletteColor(design.Palette);styled.color=color;if(styled.HasProperty("_EmissionColor"))styled.SetColor("_EmissionColor",color*.4f);ownedMaterials[index]=styled;
                     foreach(var node in design.Nodes)
                     {var body=GameObject.CreatePrimitive(PrimitiveType.Sphere);Destroy(body.GetComponent<Collider>());body.transform.SetParent(item.transform,false);body.transform.localPosition=new Vector3(node.X*.8f,.2f,node.Y*.8f);body.transform.localScale=Vector3.one*.12f;if(material!=null)body.GetComponent<Renderer>().sharedMaterial=styled;}
                     foreach(var edge in design.Edges)

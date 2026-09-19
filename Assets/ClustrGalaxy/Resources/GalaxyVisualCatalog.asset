@@ -24,6 +24,7 @@ MonoBehaviour:
   - {fileID: 2706856561113509155, guid: 12bc37fcf4a0270f3927d6b37cbdeec9, type: 3}
   discussionSatellitePrefab: {fileID: 1406495621437270840, guid: a8a80d33e5ba362cab7798c2e6a6123d, type: 3}
   explorationInstruments: []
+  activityMaterial: {fileID: 2100000, guid: 8aa8e85c315789f32ab3eb17b76e4959, type: 2}
   starSurface: {fileID: 0}
   planetSurfaces: []
   cockpitConsole: {fileID: 0}

@@ -11,6 +11,7 @@ namespace ClustrGalaxy.World
         public GameObject discussionSatellitePrefab = null!;
         public AudioClip[] explorationInstruments = System.Array.Empty<AudioClip>();
 
+        public Material activityMaterial;
         public Material starSurface;
         public Material[] planetSurfaces = System.Array.Empty<Material>();
         public GameObject cockpitConsole;

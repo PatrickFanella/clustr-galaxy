@@ -85,6 +85,14 @@ namespace ClustrGalaxy.Tests.EditMode
             Assert.That(fallback.planetSurfaces, Is.Empty); Assert.That(fallback.starSurface, Is.Null);
         }
         [Test]
+        public void ActivityShaderIsExplicitlyRetainedIndependentOfShipMaterials()
+        {
+            Assert.That(Catalog.activityMaterial, Is.Not.Null);
+            Assert.That(Catalog.activityMaterial.shader.name, Is.EqualTo("Universal Render Pipeline/Lit"));
+            Assert.That(Catalog.activityMaterial.IsKeywordEnabled("_EMISSION"), Is.True);
+            Assert.That(GalaxyVisualCatalog.Load().activityMaterial, Is.SameAs(Catalog.activityMaterial));
+        }
+        [Test]
         public void SoundsAndControllerPromptsAreLocalAndReadyToUse()
         {
             foreach (var clip in new[] { Catalog.engineSound, Catalog.scannerSound, Catalog.interfaceSound })
