@@ -90,6 +90,7 @@ namespace ClustrGalaxy.Tests.EditMode
             Assert.That(Catalog.activityMaterial, Is.Not.Null);
             Assert.That(Catalog.activityMaterial.shader.name, Is.EqualTo("Universal Render Pipeline/Lit"));
             Assert.That(Catalog.activityMaterial.IsKeywordEnabled("_EMISSION"), Is.True);
+            Assert.That(Catalog.activityMaterial.GetColor("_Color"), Is.EqualTo(Catalog.activityMaterial.color));
             Assert.That(GalaxyVisualCatalog.Load().activityMaterial, Is.SameAs(Catalog.activityMaterial));
         }
         [Test]

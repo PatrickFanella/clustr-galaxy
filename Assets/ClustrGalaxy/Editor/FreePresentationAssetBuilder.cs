@@ -47,6 +47,7 @@ namespace ClustrGalaxy.Editor
             var material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material == null) { material = new Material(Shader.Find("Universal Render Pipeline/Lit")); AssetDatabase.CreateAsset(material, path); }
             material.color = new Color(.4f, .8f, .9f);
+            material.SetColor("_Color", material.color); // URP synchronizes this legacy alias during builds.
             material.EnableKeyword("_EMISSION"); material.SetColor("_EmissionColor", new Color(.25f, .6f, .75f));
             EditorUtility.SetDirty(material); return material;
         }
