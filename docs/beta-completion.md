@@ -811,6 +811,57 @@ checks pass). Earlier reports are preserved; their OS classification is not
 rewritten. Ubuntu licensing, licensed CI activation and deferred human
 acceptance remain separate open requirements.
 
+
+### 2026-09-09 final automated pass — ecba4ba
+
+The final clean source revision is `ecba4baffca5fb5e21d637150bdf4232b31faeea`.
+All **24 stages** of `scripts/full_pass.py` passed from a fresh checkout with no
+Library. Source remained clean and unchanged through validation, both builds,
+all player checks and both full performance scenarios. Tests: **20 Python,
+292 EditMode and 434 PlayMode**, no skips, zero project compiler errors/warnings;
+upstream Serialization deprecations remain separately inventoried.
+
+Evidence: `Builds/worktrees/flight-first-ecba4ba-final/Builds/evidence/20260909T084545864318Z-full-pass/summary.json`.
+Local handoff: `Builds/handoffs/ecba4ba/qualification-manifest.json` and
+`Builds/handoffs/ecba4ba/evidence/index.json`.
+
+| Final release performance | Active near-limit fixture | Pinned public hierarchy |
+| --- | ---: | ---: |
+| Measured duration | 600.005 s | 600.008 s |
+| Samples, all with GPU timing | 67,974 | 71,997 |
+| Resident nodes / routes | 14,053 / 57,000 | 901 / 1,816 |
+| CPU p95 | 11.207 ms | 8.337 ms |
+| GPU p95 | 0.804 ms | 0.396 ms |
+| Maximum ordinary frame | 18.380 ms | 9.734 ms |
+| Peak managed allocation/frame | 0 B | 0 B |
+| Peak player RSS | 1,433,571,328 B | 464,363,520 B |
+| Peak GPU requested buffers | 490,860,544 B | 417,071,104 B |
+| Cache size | 18,225,621 B | 666,902 B |
+
+Both runs used the same release build identity `30e4aab0dd7c4eb0adcec7d4f2ca0a4a`,
+2560×1440, Vulkan/Wayland/direct rendering on Ryzen 9 9900X / Radeon RX 7900 XT.
+No invalid samples, missing GPU measurements, allocation or ordinary stalls above
+50 ms. Separate rendered warm starts passed: stress cache 2.764 s, small fixture
+2.573 s, public cache 2.555 s. Public traversal pinned revision 246/catalog 14.
+
+The final initialization repair caches Transform references during explicit
+Initialize as well as Awake, preserving newly streamed hidden Survey bodies.
+Its activation/deactivation regression passes. The earlier 6ebedc2 full matrix
+was explicitly superseded; its passing individual reports are historical only.
+The final matrix includes all required resolutions, full demo campaign/resume/
+restart, real-propulsion simulation journeys, isolated recipient replay import,
+separate cockpit measurements, fixture/offline/jump journeys, development smoke,
+and public hierarchy/jumps. Fixture-assisted course/campaign coverage is still
+labelled; human scoring, comfort and enjoyment are not inferred from it.
+
+**Automated pass: passed. Release qualification: not qualified.** Remaining
+mandatory gates are deferred real-controller/human enjoyment acceptance, a valid
+Unity editor license for the isolated Ubuntu 24.04 build and its player smoke,
+and licensed Gitea runner activation/execution. The Omarchy host explicitly
+reports ID_LIKE=arch; the clean Arch-family source build is verified while its
+actual distribution identity is preserved. No public release or backend change
+was performed. Failed and superseded reports remain retained.
+
 ## Free presentation pass — 2026-09-19
 
 The zero-cost asset pass is implemented in source: six attributed Solar System Scope maps, six CC0 ship models, a satellite dish, a console and its palette atlas, three sound clips and two controller glyphs (20 original asset files). The catalog builder generates project-compatible materials and normalized presentation prefabs. Runtime adapters preserve procedural fallbacks and existing controls/physics, and audio respects mute, reduced audio and local pause. License notices are copied beside future builds.
@@ -822,3 +873,28 @@ Both Unity suites attempted at `Builds/worktrees/free-presentation-assets-202609
 ### Free presentation follow-up: license restored
 
 The license blockage above was resolved by signing into Unity Hub. Import defects and FBX centering were repaired; validation `20260919T174433348728Z` passes 298 EditMode + 434 PlayMode tests. Both Linux players built. Initial 1080p player screenshots and approach/orbit/recovery checks passed, and exposed a coarse-planet LOD issue now corrected with quality-normalized detail thresholds. An updated visual harness also asserts catalog and audio behavior. Full updated-artifact evidence is recorded in timestamped `Builds/evidence/` reports; historical failures are preserved. Human acceptance, Ubuntu licensing and CI remain distinct requirements.
+
+### Free presentation: clean-source functional verification (2026-09-19)
+
+Source `6f2546b0a7192e2f3695ab11d048109033bfb2d4` was tested from `Builds/worktrees/free-assets-qualified-6f2546b` with no Library cache at start. The full record is `Builds/evidence/20260919T181545598368Z-full-pass/summary.json` in that worktree. Source remained clean and unchanged; the clean-source Arch-family gate passed. This supersedes the license-blocked asset status above for this revision.
+
+- 23 Python tests and 299 EditMode + 434 PlayMode tests passed, with zero project-code compiler diagnostics. Seven asset contracts now cover the explicit retained activity shader as well as imports, centering, deterministic surfaces and fallbacks.
+- Both Linux configurations built at `Builds/build-logs/20260919T181737Z`. Release tree SHA-256: `bfba84a2c4999358bb6b469454dc702c7075aea4c89b6c564d3cda022b13dbc8`; development tree: `85371221f6156cf058913ad98b3fa1921bf8954bc23868bea5a8f13b3d112d51`.
+- Controller smoke, complete 1440p campaign/create/resume/restart, all three visual/audio and physical simulation resolutions, 720p/1080p creation/restart, recipient replay import, cockpit interaction measurements, fixture hierarchy/offline jumps and development hierarchy passed. Planet/cockpit screenshots were inspected at 720p, 1080p and 1440p; the repaired observatory was inspected at 1440p. These are automated and agent-inspected results, not human acceptance.
+- Stress-cache and fixture rendered startup measured 2.618 and 2.682 seconds. Public hierarchy and route jumps passed on revision 405 / catalog 14; public cached startup passed.
+- The 600-second live run passed: 71,941 samples, CPU p95 8.338 ms, GPU p95 0.395 ms, maximum ordinary stall 46.777 ms, zero managed allocation, player peak 474,607,616 bytes and GPU peak 432,369,664 bytes. Population: 901 resident nodes / 1,816 routes.
+- The original full matrix is **failed, 23/24 stages passed**. Its stress run measured 66,290 samples, CPU p95 12.682 ms, GPU p95 0.748 ms, zero allocation and memory within limits, but 27 ordinary-flight frames exceeded 50 ms; maximum 124.313 ms. All occurred 38.310–50.464 seconds into sampling. Scheduling interruptions and up to six physics catch-up steps coincide; concurrent container work was observed later, so causation is not established. The failure and raw trace remain preserved. An identical-artifact monitored repeat is recorded separately when complete.
+
+The first fresh-checkout attempt in `free-assets-final-20260919` passed every test assertion but failed process exit: Unity native HID enumeration crashed during shutdown (exit 255). Its `20260919T181116143384Z` validation remains failed. The unchanged PlayMode retry and subsequent complete fresh validation exited normally; no engine fix or controller disabling is claimed. Locked-package EntityId deprecation warnings and unused XR shader-variant diagnostics remain inventoried separately in build logs.
+
+Human/controller/visual/audio/enjoyment acceptance, licensed Ubuntu 24.04 build/runtime and licensed Gitea execution remain mandatory open gates. The beta is not release qualified. See [ADR 0007](adr/0007-local-presentation-assets.md) for the asset architecture.
+
+#### Monitored stress repeat, same artifact
+
+`20260919T190040351623Z-hierarchy` passed the unchanged 600-second stress scenario on the identical `6f2546b` release artifact/build ID. It recorded 68,227 valid samples, CPU p95 11.814 ms, GPU p95 0.751 ms, maximum ordinary frame 20.106 ms, zero managed allocation, player peak 1,522,913,280 bytes and GPU peak 506,908,672 bytes, with the same 14,053 resident nodes / 57,000 routes. The former 38–51-second failure interval peaked at 11.432 ms.
+
+No code, thresholds, populations or graphics settings changed between attempts. Timestamped host-load records and the trace comparison are retained under `Builds/handoffs/free-assets-*-host-load-20260919.jsonl` and `free-assets-stall-investigation.json`. Lower observed host pressure is consistent with transient interference, but the original burst was not host-profiled and its cause is not proven. No game-performance fix is claimed. The original full matrix remains failed; the separate repeat supplies passing stress evidence on the same source/artifact. Every required automated scenario now has passing evidence, while human, Ubuntu and CI gates still prevent release qualification.
+
+The local handoff is `Builds/handoffs/6f2546b-free-assets/START-HERE.md`, with both exact player trees, source archive, notices, original and repeat reports, raw traces, controls/privacy notes and checksums. Historical ecba4ba packaging remains intact.
+
+Archive verification: `clustr-galaxy-6f2546b-free-assets-local-candidate.tar.zst` is 244,678,632 bytes; SHA-256 `45f741526006fa75961907c3c88cc5c0b8f80bc69b897689bb5409abd42b597c`. All 1,108 packaged file checksums and the compressed archive integrity check passed. `Builds/handoffs/latest-local-candidate.json` points to this handoff. No qualification process remains running, and the main source/asset mirror matches the tested revision (post-build documentation is intentionally newer).

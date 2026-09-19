@@ -219,3 +219,6 @@ Use `--live --jump` for bounded public hierarchy and jump reads; this is separat
 
 
 Editor tooling observation (2026-09-08): `20260908T213654Z/BuildLinuxBeta.log` records a native named-pipe `ToFileDescriptor` assertion and exit -6 before any artifact completion. Unity documents the same call path in its [Linux editor issue](https://issuetracker-mig.prd.it.unity3d.com/issues/crash-on-systemnative-fcntlsetcloseonexec-when-creating-a-new-3d-project), but that historical issue does not establish the cause on this host. During the unchanged retry, `20260908T213834Z/fd-observation.json` samples 99 process states, with highest observed descriptor 81 against the inherited 524288 limit. Ordinary descriptor exhaustion is not demonstrated. No Unity/package version or system limits were changed. Failed build records remain preserved; a later success does not erase the tooling failure.
+
+
+Final local result (2026-09-09): all 24 automated stages passed at `ecba4baffca5fb5e21d637150bdf4232b31faeea`. See the final automated-pass entry in beta-completion.md and Builds/handoffs/ecba4ba/qualification-manifest.json. Human, licensed Ubuntu and licensed CI requirements remain open; the beta is not release qualified.

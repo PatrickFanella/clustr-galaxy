@@ -277,6 +277,9 @@ functional and 600-second performance matrix. Neither a passing performance
 report nor a passing startup check establishes deferred human, Ubuntu licensing,
 or hosted CI acceptance.
 
+
+Latest local automated pass (2026-09-09): `ecba4baffca5fb5e21d637150bdf4232b31faeea` passed all 24 stages of `scripts/full_pass.py` from a clean checkout, including both 600-second performance scenarios. The [completion ledger](docs/beta-completion.md) records exact results. Local candidate artifacts and notices are under `Builds/handoffs/ecba4ba`; human acceptance, licensed Ubuntu verification and licensed CI remain open. This is not release qualification.
+
 ### Free presentation assets
 
-The September 19 free-only presentation pass has passed Unity import tests and Linux builds; player and qualification evidence is tracked in the completion ledger. It adds textured celestial surfaces, curated cockpit/ship models, bounded audio feedback and controller glyphs. See [asset notices](docs/free-asset-notices.md) and the [implementation/verification record](docs/superpowers/plans/2026-09-19-free-presentation-assets.md). No new qualified player is claimed.
+The September 19 free-only presentation pass at `6f2546b` has passed clean-source Unity tests, both Linux builds and the complete automated gameplay/screen matrix. The original full run passed 23/24 stages; live performance passed, and an unchanged-artifact monitored repeat passed the full stress requirements. The original stress failure remains preserved. Exact evidence and remaining human/Ubuntu/CI gates are tracked in the completion ledger. The local candidate is under `Builds/handoffs/6f2546b-free-assets`. It adds textured celestial surfaces, curated cockpit/ship models, bounded audio feedback and controller glyphs. See [asset notices](docs/free-asset-notices.md) and the [implementation/verification record](docs/superpowers/plans/2026-09-19-free-presentation-assets.md). No new qualified player is claimed.
