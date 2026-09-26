@@ -160,7 +160,8 @@ namespace ClustrGalaxy.Core.Activities
             var copy = new ReplayPose[count]; var beginning = poses[start].Seconds;
             for (var i = 0; i < count; i++) { var p = poses[(start+i)%poses.Length]; copy[i] = new ReplayPose(p.Seconds-beginning,p.Position,p.Rotation); }
             var annotations=new List<ReplayEvent>();var end=copy[copy.Length-1].Seconds+beginning;
-            for(var i=0;i<eventCount;i++){var e=events[(eventStart+i)%events.Length];if(e.Seconds>=beginning&&e.Seconds<=end)annotations.Add(new ReplayEvent(e.Seconds-beginning,e.Kind,e.Label));}
+            // Menus pause pose recording; events saved there belong at the last recorded pose.
+            for(var i=0;i<eventCount;i++){var e=events[(eventStart+i)%events.Length];if(e.Seconds>=beginning)annotations.Add(new ReplayEvent(Math.Min(e.Seconds,end)-beginning,e.Kind,e.Label));}
             return new JourneyReplay(identity,copy,events:annotations);
         }
     }

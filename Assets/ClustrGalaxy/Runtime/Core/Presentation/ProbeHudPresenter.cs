@@ -148,7 +148,9 @@ namespace ClustrGalaxy.Core.Presentation
             if (!string.IsNullOrWhiteSpace(model.QueueStatus)) lines.Add(model.QueueStatus);
             if (!string.IsNullOrWhiteSpace(model.Notification)) lines.Add(model.Notification);
             if (!string.IsNullOrWhiteSpace(model.NavigationStatus)) lines.Add("TRAVEL  " + model.NavigationStatus);
-            return new ProbeHudPresentation(lines, actions, model.ThreadRows);
+            // Reply authors and excerpts are identifying source data.
+            var threadRows = !model.Survey || model.TargetIdentified ? model.ThreadRows : Array.Empty<ProbeHudThreadRow>();
+            return new ProbeHudPresentation(lines, actions, threadRows);
         }
     }
 }

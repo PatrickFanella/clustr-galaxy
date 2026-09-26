@@ -197,6 +197,27 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void SystemCompletionRewardsOnlyTheFirstCompletingScan()
+        {
+            var snapshot = new SurveySnapshotId(9, 3, "demo");
+            var system = (GalaxyEntityId)"subreddit:technology"; var post = (GalaxyEntityId)"post:a";
+            var repository = new MemorySurveyRepository(snapshot, "pilot", system);
+            var session = new SurveySession(repository, "pilot", snapshot, system);
+            var weakRoute = new[] { new SurveyRoute((GalaxyRouteId)"route:weak", system, (GalaxyEntityId)"subreddit:next", 1f) };
+
+            var first = session.Apply(new CompleteScanIntent("scan:system", snapshot, DateTime.UtcNow, system,
+                GalaxyEntityKind.Subreddit, Array.Empty<SurveyRoute>(), new[] { post }, system, systemCompletedNow: true));
+            var later = session.Apply(new CompleteScanIntent("scan:post", snapshot, DateTime.UtcNow, post,
+                GalaxyEntityKind.Post, weakRoute, new[] { post }, system, systemCompletedNow: true));
+
+            Assert.That(first.Celebrations.Count(cue => cue.Kind == CelebrationKind.SystemRoutes), Is.EqualTo(1));
+            Assert.That(later.Succeeded, Is.True, later.Rejection);
+            Assert.That(later.Celebrations.Any(cue => cue.Kind == CelebrationKind.SystemRoutes), Is.False);
+            Assert.That(later.RevealedRoutes, Is.Empty);
+            Assert.That(session.State.CompletedSystemCount, Is.EqualTo(1));
+        }
+
+        [Test]
         public void SurveyIntent_CommitsOneStateAndReplayDoesNotWrite()
         {
             var snapshot = new SurveySnapshotId(9, 3, "demo");
@@ -330,6 +351,67 @@ namespace ClustrGalaxy.Tests
             Assert.That(travel.Effect.Teleport, Is.True);
             Assert.That(travel.Effect.Velocity, Is.EqualTo(Vector3.Zero));
             Assert.That(travel.Effect.Rebase, Is.True);
+        }
+
+        [Test]
+        public void Navigation_StatusNeverNamesAnUnidentifiedTarget()
+        {
+            var navigation = new GalaxyNavigation();
+            var target = new NavigationTarget((GalaxyEntityId)"subreddit:secret", GalaxyEntityKind.Subreddit,
+                "Secret Name", new Vector3(10, 0, 0), true, true, 2, 3, identified: false);
+            navigation.Apply(new PlotApproachIntent(target, false));
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+            Assert.That(navigation.State.Status, Does.Contain(NavigationTarget.UnidentifiedLabel));
+
+            var arrival = navigation.AdvancePhysics(new NavigationPose(new Vector3(10, 0, 0), Quaternion.Identity),
+                Vector3.Zero, NavigationFlightMode.Autopilot, _ => target, 8, 100f);
+            Assert.That(arrival.Succeeded, Is.True);
+            Assert.That(navigation.State.AutopilotArrived, Is.True);
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+
+            navigation.Apply(new FastTravelIntent(target));
+            navigation.AdvancePhysics(new NavigationPose(Vector3.Zero, Quaternion.Identity), Vector3.Zero,
+                NavigationFlightMode.PilotAssist, _ => target, 8);
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+        }
+
+        [Test]
+        public void HudPresentation_HidesThreadRowsForUnidentifiedSurveyTargets()
+        {
+            var rows = new[] { new ProbeHudThreadRow(1, "author", 3, 0, "excerpt", false) };
+            var hidden = new ProbeHudPresenter().Present(new ProbeHudReadModel
+            { Survey = true, TargetId = "comment:a", TargetIdentified = false, ThreadRows = rows });
+            var shown = new ProbeHudPresenter().Present(new ProbeHudReadModel
+            { Survey = true, TargetId = "comment:a", TargetIdentified = true, ThreadRows = rows });
+            Assert.That(hidden.ThreadRows, Is.Empty);
+            Assert.That(shown.ThreadRows.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Navigation_AutopilotGuidanceDoesNotAllocatePerTick()
+        {
+            var navigation = new GalaxyNavigation();
+            var target = new NavigationTarget((GalaxyEntityId)"subreddit:next", GalaxyEntityKind.Subreddit,
+                "Next", new Vector3(500, 0, 0), true, true, 2, 3);
+            Func<GalaxyEntityId, NavigationTarget> resolve = _ => target;
+            navigation.Apply(new PlotApproachIntent(target, false));
+            var enRoute = new NavigationPose(Vector3.Zero, Quaternion.Identity);
+            var anchor = new NavigationPose(new Vector3(500 - 3 - GalaxyNavigation.DefaultClearance, 0, 0), Quaternion.Identity);
+
+            foreach (var pose in new[] { enRoute, anchor })
+            {
+                for (var tick = 0; tick < 3; tick++)
+                    navigation.AdvancePhysics(pose, Vector3.Zero, NavigationFlightMode.Autopilot, resolve, 8);
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                NavigationOutcome outcome = null;
+                for (var tick = 0; tick < 200; tick++)
+                    outcome = navigation.AdvancePhysics(pose, Vector3.Zero, NavigationFlightMode.Autopilot, resolve, 8);
+                Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+                if (pose.Position == Vector3.Zero) Assert.That(outcome.Effect.Velocity.Length(), Is.GreaterThan(0f));
+                else Assert.That(outcome.Effect.Velocity, Is.EqualTo(Vector3.Zero));
+            }
+            Assert.That(navigation.State.AutopilotArrived, Is.True);
+            Assert.That(navigation.State.Status, Does.StartWith("AUTOPILOT ARRIVED"));
         }
 
         [Test]

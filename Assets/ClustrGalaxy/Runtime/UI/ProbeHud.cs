@@ -143,7 +143,7 @@ namespace ClustrGalaxy.UI
             var editingText = InputCaptured && (nameField.isFocused || reasonField.isFocused || searchField.isFocused);
             if (!editingText && (Keyboard.current?.tabKey.wasPressedThisFrame == true || Gamepad.current?.startButton.wasPressedThisFrame == true))
                 SetMenuOpen(!InputCaptured);
-            if (InputCaptured && (Keyboard.current?.escapeKey.wasPressedThisFrame == true ||
+            if (InputCaptured && !editingText && (Keyboard.current?.escapeKey.wasPressedThisFrame == true ||
                 Gamepad.current?.buttonEast.wasPressedThisFrame == true)) SetMenuOpen(false);
             var state = visibility?.SurveySession?.State;
             var thread = threadInspection?.DisplayedModel;
@@ -281,7 +281,8 @@ namespace ClustrGalaxy.UI
         }
         private static void Stretch(RectTransform rect)
         { rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one; rect.offsetMin = new Vector2(8,2); rect.offsetMax = new Vector2(-8,-2); }
-        private bool quitRequested;
+        private bool quitRequested, focusQuitCancel;
+        private Button quitCancelButton;
         private ProbeHudSection selectedSection=ProbeHudSection.Selection,currentSection;
         private readonly List<ProbeHudSection> buttonSections=new();
         private void AddButton(string label, UnityEngine.Events.UnityAction action)
@@ -319,8 +320,9 @@ namespace ClustrGalaxy.UI
             {
                 AddButton("CONFIRM QUIT — UNSAVED DRAFTS WILL BE DISCARDED",()=>Application.Quit());
                 AddButton("CANCEL QUIT",()=>quitRequested=false);
+                quitCancelButton=buttons[usedButtons-1];
             }
-            else AddButton("QUIT GAME",()=>quitRequested=true);
+            else AddButton("QUIT GAME",()=>{quitRequested=true;focusQuitCancel=true;});
             if (dataLoader?.DataMode == GalaxyDataMode.Failed && !dataLoader.OfflineOnly)
                 AddButton("OPEN AUTHORED LOCAL DEMO", ClustrGalaxy.Bootstrap.GalaxyPrototypeBootstrap.StartDemo);
             foreach(var section in ProbeHudSections.Selectable)
@@ -478,13 +480,20 @@ namespace ClustrGalaxy.UI
             for (var i = usedButtons; i < buttons.Count; i++) buttons[i].gameObject.SetActive(false);
             ConfigureConsoleNavigation();
             var focused=EventSystem.current?.currentSelectedGameObject;if(focused!=null&&!focused.activeInHierarchy)EventSystem.current.SetSelectedGameObject(buttons[0].gameObject);
+            // The confirm button reuses the pooled QUIT slot; move focus so a repeated press cannot confirm.
+            if(focusQuitCancel&&quitRequested&&quitCancelButton!=null&&EventSystem.current!=null)EventSystem.current.SetSelectedGameObject(quitCancelButton.gameObject);
+            focusQuitCancel=false;
         }
 
-        private readonly List<Button> visibleNavigation=new();
+        private readonly List<Selectable> visibleNavigation=new();
         private void ConfigureConsoleNavigation()
         {
-            visibleNavigation.Clear();Button firstAction=null,station=null;
-            for(var i=0;i<usedButtons;i++)if(buttons[i].gameObject.activeSelf){visibleNavigation.Add(buttons[i]);if(buttons[i].transform.parent==content&&firstAction==null)firstAction=buttons[i];if(buttons[i].gameObject.name=="SECTION: "+ProbeHudSections.Title(selectedSection))station=buttons[i];}
+            visibleNavigation.Clear();Button firstAction=null,station=null;var firstActionIndex=-1;
+            for(var i=0;i<usedButtons;i++)if(buttons[i].gameObject.activeSelf){if(buttons[i].transform.parent==content&&firstAction==null){firstAction=buttons[i];firstActionIndex=visibleNavigation.Count;}visibleNavigation.Add(buttons[i]);if(buttons[i].gameObject.name=="SECTION: "+ProbeHudSections.Title(selectedSection))station=buttons[i];}
+            // Text fields sit above the actions in the console; keep them reachable by controller.
+            var fieldIndex=firstActionIndex<0?visibleNavigation.Count:firstActionIndex;
+            foreach(var field in new Selectable[]{searchField,nameField,reasonField})
+                if(field!=null&&field.gameObject.activeSelf)visibleNavigation.Insert(fieldIndex++,field);
             for(var i=0;i<visibleNavigation.Count;i++)
             {
                 var b=visibleNavigation[i];var nav=b.navigation;nav.mode=Navigation.Mode.Explicit;

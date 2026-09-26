@@ -21,18 +21,36 @@ namespace ClustrGalaxy.Core.Navigation
     {
         public NavigationTarget(GalaxyEntityId id, GalaxyEntityKind kind, string displayName, Vector3 position,
             bool active, bool known, float collisionRadius = 0, float gravitySoftening = 0,
-            Vector3 velocity = default, CelestialBodyDefinition body = null)
-        { Id = id; Kind = kind; DisplayName = displayName ?? string.Empty; Position = position; Active = active;
-            Known = known; CollisionRadius = collisionRadius; GravitySoftening = gravitySoftening; Velocity = velocity; Body = body; }
-        public GalaxyEntityId Id { get; }
-        public GalaxyEntityKind Kind { get; }
-        public string DisplayName { get; }
-        public Vector3 Position { get; }
-        public bool Active { get; }
-        public bool Known { get; }
-        public float CollisionRadius { get; }
-        public float GravitySoftening { get; }
-        public Vector3 Velocity { get; } public CelestialBodyDefinition Body { get; }
+            Vector3 velocity = default, CelestialBodyDefinition body = null, bool identified = true) =>
+            Refresh(id, kind, displayName, position, active, known, collisionRadius, gravitySoftening, velocity, body, identified);
+
+        /// <summary>
+        /// Overwrites this target so a per-physics-tick resolver can reuse one instance.
+        /// Never refresh a target that an intent or other caller still holds.
+        /// </summary>
+        public NavigationTarget Refresh(GalaxyEntityId id, GalaxyEntityKind kind, string displayName, Vector3 position,
+            bool active, bool known, float collisionRadius, float gravitySoftening, Vector3 velocity,
+            CelestialBodyDefinition body, bool identified)
+        {
+            Id = id; Kind = kind; DisplayName = displayName ?? string.Empty; Position = position; Active = active;
+            Known = known; CollisionRadius = collisionRadius; GravitySoftening = gravitySoftening; Velocity = velocity; Body = body;
+            Identified = identified;
+            return this;
+        }
+        public const string UnidentifiedLabel = "UNIDENTIFIED SIGNAL";
+        public GalaxyEntityId Id { get; private set; }
+        public GalaxyEntityKind Kind { get; private set; }
+        public string DisplayName { get; private set; }
+        public Vector3 Position { get; private set; }
+        public bool Active { get; private set; }
+        public bool Known { get; private set; }
+        public float CollisionRadius { get; private set; }
+        public float GravitySoftening { get; private set; }
+        public Vector3 Velocity { get; private set; } public CelestialBodyDefinition Body { get; private set; }
+        /// <summary>False for a known Survey signal whose factual name has not been identified.</summary>
+        public bool Identified { get; private set; }
+        /// <summary>The only name navigation status text may show.</summary>
+        public string Label => Identified ? DisplayName : UnidentifiedLabel;
     }
 
     public sealed class GalaxyNavigationState
@@ -110,12 +128,14 @@ namespace ClustrGalaxy.Core.Navigation
         public bool ResumePhysics { get; }
         public bool Teleport { get; }
         public Vector3 Position { get; }
-        public Vector3 Velocity { get; }
+        public Vector3 Velocity { get; private set; }
         public Vector3 AngularVelocity { get; }
         public bool Rebase { get; }
         public SpatialScopeRequest? ScopeToLoad { get; }
         public GalaxyEntityId MasteryArrival { get; }
         public static NavigationEffect None { get; } = new(false, false, false, default, default, default, false, null, default);
+        internal static NavigationEffect Guidance() => new(false, false, false, default, default, default, false, null, default);
+        internal void SetGuidanceVelocity(Vector3 velocity) => Velocity = velocity;
     }
 
     public sealed class NavigationOutcome
@@ -179,7 +199,7 @@ namespace ClustrGalaxy.Core.Navigation
                 var target = resolve(state.PendingTravelId);
                 if (!CanTravel(target)) { state = Copy(pending: default(GalaxyEntityId), status: "FAST TRAVEL CANCELLED — DESTINATION NO LONGER AVAILABLE"); return Success(); }
                 var arrival = ArrivalAnchor(target, pose.Position);
-                state = Copy(pending: default(GalaxyEntityId), status: "ARRIVED — " + target.DisplayName);
+                state = Copy(pending: default(GalaxyEntityId), status: "ARRIVED — " + target.Label);
                 return Success(new NavigationEffect(false, false, true, arrival, Vector3.Zero, Vector3.Zero, true, null, default));
             }
 
@@ -193,12 +213,18 @@ namespace ClustrGalaxy.Core.Navigation
             if (mode == NavigationFlightMode.Autopilot)
             {
                 var desired = destination.Velocity + DesiredVelocity(pose.Position, anchor, brakeAcceleration, arrivalTolerance);
-                state = Copy(autopilotArrived: arrived, status: arrived ? "AUTOPILOT ARRIVED — " + destination.DisplayName : state.Status);
-                return Success(new NavigationEffect(false, false, false, default, desired, default, false, null, default));
+                // Skip the per-tick state copy while nothing observable changes.
+                if (arrived != state.AutopilotArrived || arrived && !IsStatus(AutopilotArrivedPrefix, destination.Label))
+                    state = Copy(autopilotArrived: arrived, status: arrived ? AutopilotArrivedPrefix + destination.Label : state.Status);
+                // Guidance runs every physics tick: reuse one effect and outcome. Callers read them before the next tick.
+                guidanceEffect.SetGuidanceVelocity(desired);
+                if (guidanceOutcome == null || !ReferenceEquals(guidanceOutcome.State, state))
+                    guidanceOutcome = new NavigationOutcome(true, "", state, guidanceEffect);
+                return guidanceOutcome;
             }
             if (mode == NavigationFlightMode.PilotMastery && arrived && !state.AutopilotArrived && !state.MasteryArrivalReported)
             {
-                state = Copy(masteryReported: true, status: "MASTERY ARRIVAL — " + destination.DisplayName);
+                state = Copy(masteryReported: true, status: "MASTERY ARRIVAL — " + destination.Label);
                 return Success(new NavigationEffect(false, false, false, default, default, default, false, null, destination.Kind == GalaxyEntityKind.Subreddit ? destination.Id : default));
             }
             return Success();
@@ -242,11 +268,16 @@ namespace ClustrGalaxy.Core.Navigation
             return Success();
         }
 
+        private const string AutopilotArrivedPrefix = "AUTOPILOT ARRIVED — ";
+        private bool IsStatus(string prefix, string label) =>
+            state.Status.Length == prefix.Length + label.Length &&
+            state.Status.StartsWith(prefix, StringComparison.Ordinal) && state.Status.EndsWith(label, StringComparison.Ordinal);
+
         private NavigationOutcome Plot(NavigationTarget target, bool mastery)
         {
             if (!CanApproach(target)) return Reject("APPROACH UNAVAILABLE — SELECT A KNOWN BODY");
             state = Copy(plotted: target.Id, autopilotArrived: false, masteryReported: false,
-                status: mastery ? "MASTERY APPROACH SET — " + target.DisplayName : "AUTOPILOT PLOTTED — " + target.DisplayName);
+                status: mastery ? "MASTERY APPROACH SET — " + target.Label : "AUTOPILOT PLOTTED — " + target.Label);
             return Success();
         }
 
@@ -280,7 +311,8 @@ namespace ClustrGalaxy.Core.Navigation
             return offset / distance * speed;
         }
 
-        private NavigationOutcome unchangedOutcome;
+        private NavigationOutcome unchangedOutcome, guidanceOutcome;
+        private readonly NavigationEffect guidanceEffect = NavigationEffect.Guidance();
         private NavigationOutcome Success(NavigationEffect effect = null)
         {
             if (effect != null) return new NavigationOutcome(true, "", state, effect);

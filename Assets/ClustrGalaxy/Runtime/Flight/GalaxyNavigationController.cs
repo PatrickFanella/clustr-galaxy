@@ -112,7 +112,7 @@ namespace ClustrGalaxy.Flight
             if (entity == null || flight.ModeState.FlightMode != FlightControlMode.Autopilot || !flight.GravityModeEnabled ||
                 (discoveryVisibility != null && discoveryVisibility.WorldMode == GalaxyWorldMode.Survey && !discoveryVisibility.IsKnown(entity)))
             { navigation.Orbit.Cancel(); RefreshResidency(); flight.ClearAutopilotDesiredVelocity(); return false; }
-            var centerVelocity = entity.GetComponent<KeplerOrbit>()?.WorldVelocity ?? Vector3.zero;
+            var centerVelocity = entity.TryGetComponent<KeplerOrbit>(out var orbit) ? orbit.WorldVelocity : Vector3.zero;
             var velocity = navigation.Orbit.DesiredRelativeVelocity(ToNumerics(body.position - entity.transform.position),
                 ToNumerics(body.linearVelocity - centerVelocity));
             if (!navigation.Orbit.Active) { RefreshResidency(); flight.ClearAutopilotDesiredVelocity(); return false; }
@@ -167,7 +167,7 @@ namespace ClustrGalaxy.Flight
 
         private void Awake()
         {
-            resolveTarget = id => ToTarget(registry?.FindActiveEntity(id.Value));
+            resolveTarget = id => ToTarget(registry?.FindActiveEntity(id.Value), physicsTarget);
             flight = GetComponent<ObserverProbeController>();
             body = GetComponent<Rigidbody>();
             floatingOrigin = GetComponent<FloatingOrigin>();
@@ -358,6 +358,12 @@ namespace ClustrGalaxy.Flight
                 : "UNIDENTIFIED SIGNAL";
         }
 
+        public delegate bool ChartPositionResolver(string stableId, out Vector3 position);
+        /// <summary>Region-chart position for entities the current physical system has borrowed.</summary>
+        public ChartPositionResolver ChartPositions { get; set; }
+        private Vector3 MapPosition(GalaxyEntity entity) =>
+            ChartPositions != null && ChartPositions(entity.StableId, out var chart) ? chart : entity.transform.position;
+
         private readonly List<GalaxyMapCandidate> mapCandidates = new();
         private GalaxyEntity hoverEntity;
         private string hoverName;
@@ -371,7 +377,7 @@ namespace ClustrGalaxy.Flight
             for (var index = 0; index < entities.Count; index++)
             {
                 var entity = entities[index];
-                var viewport = viewCamera.WorldToViewportPoint(entity.transform.position);
+                var viewport = viewCamera.WorldToViewportPoint(MapPosition(entity));
                 candidates.Add(new GalaxyMapCandidate(entity.StableId, entity.Kind,
                     new Vector2(viewport.x, viewport.y), viewport.z > 0f,
                     discoveryVisibility == null || discoveryVisibility.IsKnown(entity)));
@@ -401,7 +407,7 @@ namespace ClustrGalaxy.Flight
             var candidates = new List<GalaxyMapCandidate>();
             foreach (var system in discoveryVisibility.LoadedStartingSystems())
             {
-                var viewport = viewCamera.WorldToViewportPoint(system.transform.position);
+                var viewport = viewCamera.WorldToViewportPoint(MapPosition(system));
                 candidates.Add(new GalaxyMapCandidate(system.StableId, system.Kind, new Vector2(viewport.x, viewport.y),
                     viewport.z > 0f));
             }
@@ -543,18 +549,22 @@ namespace ClustrGalaxy.Flight
 
         private CoreNavigationPose CorePose() => new(ToNumerics(body.position), new NumericsQuaternion(
             body.rotation.x, body.rotation.y, body.rotation.z, body.rotation.w));
-        private CoreNavigationTarget ToTarget(GalaxyEntity entity)
+        // One reusable target for the per-tick resolver; intents always receive a fresh target.
+        private readonly CoreNavigationTarget physicsTarget = new(default, default, string.Empty, default, false, false);
+        private CoreNavigationTarget ToTarget(GalaxyEntity entity, CoreNavigationTarget reuse = null)
         {
             if (entity == null) return null;
             var collider = entity.GetComponent<Collider>();
             var collisionRadius = entity.SurfaceRadius > 0 ? entity.SurfaceRadius : collider != null ? collider.bounds.extents.magnitude : 0f;
             if (entity.VisualKind == GalaxyVisualKind.Star) collisionRadius += (float)ClustrGalaxy.Generation.CelestialLayout.StellarClearance;
             var gravity = entity.GetComponent<GravitySource>();
-            return new CoreNavigationTarget((GalaxyEntityId)entity.StableId, entity.Kind, entity.DisplayName,
+            return (reuse ?? new CoreNavigationTarget(default, default, string.Empty, default, false, false)).Refresh(
+                (GalaxyEntityId)entity.StableId, entity.Kind, entity.DisplayName,
                 ToNumerics(entity.transform.position), entity.gameObject.activeInHierarchy,
                 discoveryVisibility == null || discoveryVisibility.IsKnown(entity), collisionRadius,
                 gravity == null ? 0f : (float)gravity.SofteningRadius,
-                ToNumerics(gravity != null ? gravity.CenterVelocity : entity.GetComponent<KeplerOrbit>()?.WorldVelocity ?? Vector3.zero), gravity?.Definition);
+                ToNumerics(gravity != null ? gravity.CenterVelocity : entity.TryGetComponent<KeplerOrbit>(out var orbit) ? orbit.WorldVelocity : Vector3.zero), gravity?.Definition,
+                discoveryVisibility == null || discoveryVisibility.CanLabel(entity));
         }
         private static NumericsVector3 ToNumerics(Vector3 value) => new(value.x, value.y, value.z);
         private static Vector3 ToUnity(NumericsVector3 value) => new(value.X, value.Y, value.Z);
@@ -573,8 +583,8 @@ namespace ClustrGalaxy.Flight
                 TryGetActive(navigation.State.FocusedId.Value, out focused);
             var hasTarget = targeting != null && targeting.Target != null;
             var focus = ResolveMapFocus((GalaxyNavigationLevel)navigation.State.Level,
-                hasFocusedEntity, hasFocusedEntity ? focused.transform.position : Vector3.zero,
-                hasTarget, hasTarget ? targeting.Target.transform.position : Vector3.zero,
+                hasFocusedEntity, hasFocusedEntity ? MapPosition(focused) : Vector3.zero,
+                hasTarget, hasTarget ? MapPosition(targeting.Target) : Vector3.zero,
                 transform.position, transform.forward);
             var distance = (GalaxyNavigationLevel)navigation.State.Level switch
             {

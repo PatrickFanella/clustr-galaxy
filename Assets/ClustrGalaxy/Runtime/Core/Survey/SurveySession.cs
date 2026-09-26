@@ -99,7 +99,7 @@ namespace ClustrGalaxy.Core.Survey
             if (intent is CompleteScanIntent completedScan)
             {
                 celebrations.Add(new CelebrationCue("discovery:" + intent.IntentId, CelebrationKind.Discovery, new[] { completedScan.TargetId }));
-                if (completedScan.SystemCompletedNow && !completedScan.SystemId.IsEmpty)
+                if (mutable.CompletedSystemCount > state.CompletedSystemCount)
                     celebrations.Add(new CelebrationCue("system:" + intent.IntentId, CelebrationKind.SystemRoutes, new[] { completedScan.SystemId }));
                 if (mutable.CompletedAuthoredConstellationCount > state.CompletedAuthoredConstellationCount)
                     celebrations.Add(new CelebrationCue("constellation:" + intent.IntentId, CelebrationKind.Constellation, AuthoredMembers));
@@ -157,7 +157,10 @@ namespace ClustrGalaxy.Core.Survey
                 .OrderByDescending(route => route.Weight).ThenBy(route => route.Id).ToArray();
             var revealLimit = mutable.ScannerLevel >= 3 ? 4 : mutable.ScannerLevel >= 2 ? 2 : 1;
             foreach (var route in candidates.Take(revealLimit)) AddRoute(mutable, route, entities, routes);
-            if (intent.SystemCompletedNow)
+            // The scanner reports "complete after this scan"; only the first completion rewards the system.
+            var firstSystemCompletion = intent.SystemCompletedNow && !intent.SystemId.IsEmpty &&
+                !mutable.ProgressKeys.Contains("system:" + intent.SystemId.Value);
+            if (firstSystemCompletion)
                 foreach (var route in intent.Routes.Where(route => route.SourceId == intent.SystemId &&
                     route.Weight <= 2f && !mutable.KnownRoutes.Contains(route.Id))
                     .GroupBy(route => route.Id).Select(group => group.First()).OrderBy(route => route.Id))
@@ -169,8 +172,7 @@ namespace ClustrGalaxy.Core.Survey
             if (entities.Any(entity => entity.Value.StartsWith("subreddit:", StringComparison.Ordinal)))
                 Unlock(mutable, FirstSystem, achievements);
 
-            if (intent.SystemCompletedNow && !intent.SystemId.IsEmpty &&
-                mutable.ProgressKeys.Add("system:" + intent.SystemId.Value))
+            if (firstSystemCompletion && mutable.ProgressKeys.Add("system:" + intent.SystemId.Value))
                 mutable.CompletedSystemCount++;
 
             if (state.Snapshot.StorageNamespace == "demo" && AuthoredMembers.Contains(intent.TargetId))

@@ -92,6 +92,15 @@ namespace ClustrGalaxy.Tests
             var saved=buffer.Capture(Identity());Assert.That(saved.Events.Count,Is.EqualTo(256));Assert.That(saved.Events[0].Seconds,Is.EqualTo(4.4).Within(.001));
             buffer.Record(1000,default,Quaternion.Identity);Assert.That(buffer.Capture(Identity()).Events,Is.Empty);
         }
+        [Test] public void BookmarkSavedWhileRecordingIsPausedIsKeptAtTheLastPose()
+        {
+            var buffer=new JourneyReplayBuffer();
+            for(var i=0;i<=10;i++)buffer.Record(i*.1,default,Quaternion.Identity);
+            buffer.RecordEvent(new ReplayEvent(3,ReplayEventKind.PersonalBookmark,"Saved from menu"));
+            var saved=buffer.Capture(Identity());
+            Assert.That(saved.Events.Count,Is.EqualTo(1));
+            Assert.That(saved.Events[0].Seconds,Is.EqualTo(saved.Poses[saved.Poses.Count-1].Seconds).Within(1e-9));
+        }
         [Test] public void ExplicitCourseFrameRoundTripsAndLegacyPackagesStayStandalone()
         {
             var original=Replay();using var stream=new MemoryStream();ReplayPackage.Write(stream,original.WithCourseAnchor(new ReplayPosition(1e12,4,9)));

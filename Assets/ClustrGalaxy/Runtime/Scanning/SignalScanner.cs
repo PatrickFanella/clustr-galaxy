@@ -14,8 +14,8 @@ using ClustrGalaxy.Core.Survey;
 namespace ClustrGalaxy.Scanning
 {
     /// <summary>
-    /// Input and range adapter around <see cref="ScanRules"/>. The only mutation
-    /// point is a completed, uninterrupted Survey-mode charge.
+    /// Input and range adapter for Survey scans; reveal rules live in the Survey
+    /// session. The only mutation point is a completed, uninterrupted Survey-mode charge.
     /// </summary>
     public sealed class SignalScanner : MonoBehaviour
     {
