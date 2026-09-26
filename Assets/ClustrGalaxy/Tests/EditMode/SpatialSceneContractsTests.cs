@@ -342,6 +342,29 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void Store_KeepsRoutesWhoseEndpointArrivesInALaterResidentScene()
+        {
+            var manifest = CompatibleManifest(revision: 9, catalog: 3);
+            var system = new SpatialScene
+            {
+                revision_id = 9, spatial_catalog_id = 3, scope = "system", root_id = "subreddit-y",
+                nodes = new[] { new SpatialNode { id = "subreddit-y", type = "subreddit" } },
+                links = new[] { new SpatialLink { source = "subreddit-y", target = "subreddit-b", type = "route" } }
+            };
+            var community = new SpatialScene
+            {
+                revision_id = 9, spatial_catalog_id = 3, scope = "community", root_id = "region-b",
+                nodes = new[] { new SpatialNode { id = "subreddit-b", type = "subreddit" } }
+            };
+            var store = new SpatialSceneStore(manifest);
+
+            store.MergeAll(new[] { system, community });
+
+            Assert.That(store.LinkCount, Is.EqualTo(1));
+            Assert.That(store.IsScopeLoaded("system", "subreddit-y"), Is.True);
+        }
+
+        [Test]
         public void ScopePaging_RejectsAContradictoryPageBeforeAggregation()
         {
             var manifest = CompatibleManifest(revision: 9, catalog: 3);

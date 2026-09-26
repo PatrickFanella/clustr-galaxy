@@ -180,7 +180,7 @@ namespace ClustrGalaxy.UI
                 // Initialization failures still need a report, before capture storage exists.
                 if (monitor.CaptureFinished)
                 {
-                    var frameTrace = "frames-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ") + "-" + Guid.NewGuid().ToString("N") + ".csv";
+                    var frameTrace = "frames-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffffffZ", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N") + ".csv";
                     monitor.WriteFrameEvidence(Path.Combine(directory, frameTrace));
                     report.frame_trace_file = frameTrace;
                     report.execution_counter_available = monitor.ExecutionCountersAvailable;

@@ -26,6 +26,86 @@ namespace ClustrGalaxy.Tests
             JsonUtility.ToJson(new SpatialScene { revision_id = 9, spatial_catalog_id = 3, scope = scope, root_id = root,
                 truncated = cursor != "", next_cursor = cursor,
                 nodes = new[] { new SpatialNode { id = id, type = "community", name = id } }, links = Array.Empty<SpatialLink>() });
+        private sealed class FailingWriteStore : IDurableDocumentStore
+        {
+            public bool TryRead(string relativePath, out string document) { document = null; return false; }
+            public void Write(string relativePath, string document, Func<string, bool> validate) =>
+                throw new System.IO.IOException("disk full");
+            public void Quarantine(string relativePath) { }
+        }
+        private static string SystemPage(int first, int count, string cursor)
+        {
+            var nodes = new SpatialNode[count];
+            for (var index = 0; index < count; index++)
+                nodes[index] = new SpatialNode { id = "post:" + (first + index), type = "post", name = "p" };
+            return JsonUtility.ToJson(new SpatialScene { revision_id = 9, spatial_catalog_id = 3, scope = "system",
+                root_id = "subreddit:a", truncated = cursor != "", next_cursor = cursor, nodes = nodes,
+                links = Array.Empty<SpatialLink>() });
+        }
+
+        [Test]
+        public async Task PageThatWouldCrossTheCeilingKeepsTheAcceptedPrefix()
+        {
+            var cache = new MemoryDurableDocumentStore(); var transport = new Transport();
+            for (var page = 0; page < 10; page++) transport.Replies.Enqueue(SystemPage(page * 512, 512, "page-" + (page + 1)));
+            var source = new SpatialSceneSnapshotSource("https://fixture.invalid/api", false, cache, transport);
+            var result = await source.LoadAsync(new GalaxySnapshotManifest(9, 3, "spatial-scene-v1"),
+                new SpatialScopeRequest(SpatialScope.System, (GalaxyEntityId)"subreddit:a"), default);
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(result.Scene.Nodes.Count, Is.EqualTo(9 * 512));
+            Assert.That(transport.Requests.Count, Is.EqualTo(10));
+            var aggregate = SpatialSceneJson.ParseScene(result.Scene.SourceJson);
+            Assert.That(SpatialScopePaging.AggregateCompletion(aggregate), Is.EqualTo(SpatialScopeCompletion.ClientLimitReached));
+            Assert.That(aggregate.truncated, Is.True);
+        }
+
+        [Test]
+        public async Task CompleteMultiPageScopeIsNotLabelledAsMissingContinuation()
+        {
+            var cache = new MemoryDurableDocumentStore(); var transport = new Transport();
+            transport.Replies.Enqueue(SystemPage(0, 512, "page-2"));
+            transport.Replies.Enqueue(SystemPage(512, 100, ""));
+            var source = new SpatialSceneSnapshotSource("https://fixture.invalid/api", false, cache, transport);
+            var result = await source.LoadAsync(new GalaxySnapshotManifest(9, 3, "spatial-scene-v1"),
+                new SpatialScopeRequest(SpatialScope.System, (GalaxyEntityId)"subreddit:a"), default);
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(SpatialScopePaging.AggregateCompletion(SpatialSceneJson.ParseScene(result.Scene.SourceJson)),
+                Is.EqualTo(SpatialScopeCompletion.Complete));
+        }
+
+        [Test]
+        public async Task AutomatedUsersNeverBecomeResidentEntities()
+        {
+            var cache = new MemoryDurableDocumentStore(); var transport = new Transport();
+            var page = SpatialSceneJson.ParseScene(SystemPage(0, 1, ""));
+            page.nodes = new[] { page.nodes[0],
+                new SpatialNode { id = "user:bot", type = "user", name = "helper", automated = true },
+                new SpatialNode { id = "user:mod", type = "user", name = "AutoModerator" } };
+            page.links = new[] { new SpatialLink { source = "user:bot", target = "post:0", type = "activity" } };
+            transport.Replies.Enqueue(JsonUtility.ToJson(page));
+            var source = new SpatialSceneSnapshotSource("https://fixture.invalid/api", false, cache, transport);
+            var result = await source.LoadAsync(new GalaxySnapshotManifest(9, 3, "spatial-scene-v1"),
+                new SpatialScopeRequest(SpatialScope.System, (GalaxyEntityId)"subreddit:a"), default);
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(result.Scene.Nodes.Count, Is.EqualTo(1));
+            Assert.That(result.Scene.Routes, Is.Empty);
+        }
+
+        [Test]
+        public async Task CacheWriteFailureDoesNotDiscardValidatedLiveScenes()
+        {
+            var transport = new Transport();
+            transport.Replies.Enqueue(Manifest); transport.Replies.Enqueue(Scene());
+            transport.Replies.Enqueue(Scene("community", "region", "a"));
+            var source = new SpatialSceneSnapshotSource("https://fixture.invalid/api", false, new FailingWriteStore(), transport);
+            var opened = await source.OpenAsync(default);
+            Assert.That(opened.Succeeded, Is.True, opened.Error);
+            Assert.That(opened.Offline, Is.False);
+            var loaded = await source.LoadAsync(opened.Manifest,
+                new SpatialScopeRequest(SpatialScope.Community, (GalaxyEntityId)"region"), default);
+            Assert.That(loaded.Succeeded, Is.True, loaded.Error);
+        }
+
         [TestCase("missing-catalog")]
         [TestCase("missing-nodes")]
         [TestCase("duplicate-property")]

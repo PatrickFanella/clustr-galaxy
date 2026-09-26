@@ -50,7 +50,7 @@ namespace ClustrGalaxy.UI
                 var replay=run.Recording.Capture(new ReplayIdentity(snapshot.Snapshot,snapshot.Mode,1,run.TuningId,run.Mode,run.Course.Id,run.Course.Version));
                 if(run.Elapsed<=JourneyReplay.MaximumSeconds)replay=replay.WithCourseAnchor(run.Course.Points[0]);
                 var folder=Path.Combine(Application.persistentDataPath,"ClustrGalaxy","ghosts");Directory.CreateDirectory(folder);
-                LastGhostPath=Path.Combine(folder,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ")+"-"+Guid.NewGuid().ToString("N")+".clustr-replay");
+                LastGhostPath=Path.Combine(folder,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ", System.Globalization.CultureInfo.InvariantCulture)+"-"+Guid.NewGuid().ToString("N")+".clustr-replay");
                 ReplayPackage.Save(LastGhostPath,replay);Status="Flight recording saved locally";
             }
             catch(Exception e){Status="Could not save flight recording. Retry: "+e.Message;}

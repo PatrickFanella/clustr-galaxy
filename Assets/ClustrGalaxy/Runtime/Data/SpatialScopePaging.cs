@@ -88,7 +88,7 @@ namespace ClustrGalaxy.Data
         }
 
         public static SpatialScene Aggregate(SpatialManifest manifest, string expectedScope, string expectedRootId,
-            IReadOnlyList<SpatialScene> pages)
+            IReadOnlyList<SpatialScene> pages, SpatialScopeCompletion completion = SpatialScopeCompletion.Complete)
         {
             if (manifest == null) throw new ArgumentNullException(nameof(manifest));
             if (pages == null || pages.Count == 0)
@@ -136,9 +136,18 @@ namespace ClustrGalaxy.Data
                 root_id = expectedRootId,
                 nodes = nodes.Values.OrderBy(node => node.id, StringComparer.Ordinal).ToArray(),
                 links = links.Values.OrderBy(LinkKey, StringComparer.Ordinal).ToArray(),
-                truncated = finalPage.truncated,
-                next_cursor = finalPage.next_cursor ?? string.Empty
+                // An aggregate that stopped early is incomplete; a retained cursor marks the client limit.
+                truncated = finalPage.truncated || completion != SpatialScopeCompletion.Complete,
+                next_cursor = completion == SpatialScopeCompletion.ClientLimitReached ? finalPage.next_cursor ?? string.Empty : string.Empty
             };
+        }
+
+        /// <summary>Completion of a stored aggregate, independent of its total size.</summary>
+        public static SpatialScopeCompletion AggregateCompletion(SpatialScene aggregate)
+        {
+            if (aggregate == null) return SpatialScopeCompletion.Complete;
+            if (!string.IsNullOrWhiteSpace(aggregate.next_cursor)) return SpatialScopeCompletion.ClientLimitReached;
+            return aggregate.truncated ? SpatialScopeCompletion.ContinuationUnavailable : SpatialScopeCompletion.Complete;
         }
 
         public static string StatusSuffix(SpatialScopeCompletion completion) => completion switch

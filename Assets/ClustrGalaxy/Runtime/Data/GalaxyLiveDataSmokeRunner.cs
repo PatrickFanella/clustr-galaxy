@@ -25,11 +25,7 @@ namespace ClustrGalaxy.Data
         private void Update()
         {
             if (!Completed && !Failed && Time.realtimeSinceStartup > deadline)
-            {
-                stage = SmokeStage.Failed;
-                Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED hierarchy timeout: " + loader.StatusText);
-                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
-            }
+                Fail("hierarchy timeout: " + loader.StatusText);
         }
         public bool Completed => stage == SmokeStage.Complete;
         public bool Failed => stage == SmokeStage.Failed;
@@ -67,10 +63,9 @@ namespace ClustrGalaxy.Data
                         break;
                     case SmokeStage.Community:
                         var home = SelectHighestActivity(loader.Scene, "subreddit");
-                        var link = loader.Scene.links.FirstOrDefault(route => route.source == home.id || !route.directed && route.target == home.id);
+                        var link = home == null ? null : loader.Scene.links.FirstOrDefault(route => route.source == home.id || !route.directed && route.target == home.id);
                         connectedSystem = link == null ? null : link.source == home.id ? link.target : link.source;
-                        LoadNext("community", SelectHighestActivity(loader.Scene, "subreddit"),
-                            SmokeStage.System, SelectPlayerTarget);
+                        LoadNext("community", home, SmokeStage.System, SelectPlayerTarget);
                         break;
                     case SmokeStage.System:
                         var star = registry.FindEntity(loader.Scene.root_id);
@@ -103,10 +98,17 @@ namespace ClustrGalaxy.Data
             }
             catch (Exception exception)
             {
-                stage = SmokeStage.Failed;
-                Debug.LogError($"[ClustrGalaxy.LiveSmoke] FAILED stage={stage}: {exception.Message}");
-                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
+                Fail($"stage={stage}: {exception.Message}");
             }
+        }
+
+        /// <summary>Record the failed stage and end a non-profile run with exit code 2.</summary>
+        private void Fail(string reason)
+        {
+            if (Failed) return;
+            stage = SmokeStage.Failed;
+            Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED " + reason);
+            if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
         }
 
         private IEnumerator JumpJourney()
@@ -116,6 +118,7 @@ namespace ClustrGalaxy.Data
             var jump = targeting.GetComponent<ClustrGalaxy.Flight.GalaxyJumpController>();
             var beforeScene = loader.Scene; var beforeSystem = loader.Session.CurrentSystemId;
             var beforeProgress = loader.Session.Activities.State;
+            if (string.IsNullOrWhiteSpace(connectedSystem)) { JumpFailure("Home system has no published connected system"); yield break; }
             var target = (ClustrGalaxy.Core.Domain.GalaxyEntityId)connectedSystem;
             navigation.SetMapOpen(false);
             if (!jump.Begin(target)) { JumpFailure("No eligible connected system"); yield break; }
@@ -150,8 +153,7 @@ namespace ClustrGalaxy.Data
         {
             if (selected == null)
             {
-                stage = SmokeStage.Failed;
-                Debug.LogError($"[ClustrGalaxy.LiveSmoke] FAILED: no eligible node after {completedScope}.");
+                Fail($"no eligible node after {completedScope}.");
                 return;
             }
 
@@ -168,9 +170,7 @@ namespace ClustrGalaxy.Data
             try { request(selected); }
             catch (Exception exception)
             {
-                stage = SmokeStage.Failed;
-                Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED player selection: " + exception.Message);
-                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
+                Fail("player selection: " + exception.Message);
             }
         }
 

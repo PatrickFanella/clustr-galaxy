@@ -48,7 +48,7 @@ namespace ClustrGalaxy.UI
 
         public static InteractionPerformanceReport Capture(string scenario, GalaxyPerformanceMonitor monitor, bool succeeded) => new()
         {
-            source_sha = Application.version.Contains("+") ? Application.version.Split('+')[1] : Application.version, build_id = Application.buildGUID, scenario = scenario,
+            source_sha = Application.version.Contains("+") ? Application.version.Split('+')[1] : string.Empty, build_id = Application.buildGUID, scenario = scenario,
             graphics_api = SystemInfo.graphicsDeviceType.ToString(), data_mode = "Deterministic demo; seeded acceptance profile",
             width = Screen.width, height = Screen.height, sample_count = monitor.CollectedSampleCount,
             valid_gpu_samples = monitor.ValidGpuSamples, measured_seconds = monitor.CapturedSeconds,

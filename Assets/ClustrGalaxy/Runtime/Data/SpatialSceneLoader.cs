@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ClustrGalaxy.Core.Data;
 using ClustrGalaxy.Core.Domain;
@@ -25,6 +26,7 @@ namespace ClustrGalaxy.Data
         public SurveySnapshotKey? PinnedSurveySnapshotKey { get; private set; }
         public static SurveySnapshotKey DemoSurveySnapshotKey => SurveySnapshotKey.Demo;
         public event Action<SpatialScene> SceneCommitted = delegate { };
+        private int loadSequence;
         public void Initialize(string apiBase, bool offlineOnly = false)
         { ApiBase = apiBase; OfflineOnly = offlineOnly; }
         public async Task<bool> BindAndOpenAsync(GalaxySession session)
@@ -53,11 +55,19 @@ namespace ClustrGalaxy.Data
         {
             if (Session == null || !IsPinned) return;
             var owner = Session;
+            var load = ++loadSequence;
             StatusText = "LOADING " + scope.ToString().ToUpperInvariant();
             IsLoading = true;
             var outcome = await owner.LoadAsync(new SpatialScopeRequest(scope, (GalaxyEntityId)id));
-            if (!outcome.IsStale) IsLoading = false;
-            if (this == null || Session != owner || outcome.IsStale) return;
+            if (this == null) return;
+            // Jumps and travel aborts can supersede this load without calling back into the loader.
+            if (load == loadSequence) IsLoading = false;
+            if (Session != owner || outcome.IsStale)
+            {
+                if (load == loadSequence && StatusText.StartsWith("LOADING ", StringComparison.Ordinal))
+                    StatusText = "LOAD SUPERSEDED / CURRENT VIEW RETAINED";
+                return;
+            }
             if (!outcome.Succeeded) { StatusText = outcome.Error + " / CURRENT VIEW RETAINED"; return; }
             Commit(outcome);
         }
@@ -70,20 +80,21 @@ namespace ClustrGalaxy.Data
         }
         private void Commit(SnapshotLoadOutcome outcome)
         {
-            Scene = SpatialSceneJson.ParseScene(outcome.Scene.SourceJson);
+            loadSequence++;
+            IsLoading = false;
+            Scene = BotActivityPolicy.WithoutSuppressedActivity(SpatialSceneJson.ParseScene(outcome.Scene.SourceJson));
             // Derived read adapter only; the session owns which scopes remain resident.
             Store = new SpatialSceneStore(Manifest);
+            var resident = new List<SpatialScene>();
             foreach (var projection in Session.Snapshots.Scenes.Values)
-                if (!string.IsNullOrEmpty(projection.SourceJson)) Store.Merge(SpatialSceneJson.ParseScene(projection.SourceJson));
+                if (!string.IsNullOrEmpty(projection.SourceJson)) resident.Add(SpatialSceneJson.ParseScene(projection.SourceJson));
+            Store.MergeAll(resident);
             IsOffline = outcome.Mode == SnapshotDataMode.OfflinePinned;
             DataMode = outcome.Manifest.StorageNamespace == "fixture" ? GalaxyDataMode.DeterministicFixture : IsOffline ? GalaxyDataMode.OfflinePinned : GalaxyDataMode.LivePinned;
             var suffix = string.IsNullOrEmpty(Scene.scope) ? "OVERVIEW" : Scene.scope.ToUpperInvariant();
             StatusText = (DataMode == GalaxyDataMode.DeterministicFixture ? (IsOffline ? "OFFLINE DETERMINISTIC FIXTURE " : "DETERMINISTIC FIXTURE ") : IsOffline ? "OFFLINE " : "LIVE ") + suffix + "  " + Scene.nodes.Length + " OBJECTS";
             if (!string.IsNullOrEmpty(Scene.scope))
-            {
-                var limits = SpatialScopePaging.For(Scene.scope);
-                StatusText += SpatialScopePaging.StatusSuffix(SpatialScopePaging.CompletionFor(Scene, limits, Scene.nodes.Length, Scene.links.Length));
-            }
+                StatusText += SpatialScopePaging.StatusSuffix(SpatialScopePaging.AggregateCompletion(Scene));
             if (Scene.scope == "system" && Session.CurrentSystemId.Value != Scene.root_id)
                 StatusText += " · DATA INSPECTION ONLY · JUMP TO ENTER";
             SceneCommitted(Scene);

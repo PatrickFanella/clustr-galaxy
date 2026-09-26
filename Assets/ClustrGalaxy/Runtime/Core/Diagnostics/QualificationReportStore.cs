@@ -10,7 +10,7 @@ namespace ClustrGalaxy.Core.Diagnostics
         public static string Write(string directory, string json)
         {
             Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + "-" + Guid.NewGuid().ToString("N") + ".json");
+            var path = Path.Combine(directory, DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N") + ".json");
             var bytes = new UTF8Encoding(false).GetBytes(json);
             using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
             {

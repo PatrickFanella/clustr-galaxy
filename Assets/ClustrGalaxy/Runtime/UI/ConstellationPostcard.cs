@@ -36,7 +36,7 @@ namespace ClustrGalaxy.UI
                 Canvas.ForceUpdateCanvases(); camera.Render(); RenderTexture.active = texture;
                 pixels = new Texture2D(width,height,TextureFormat.RGB24,false); pixels.ReadPixels(new Rect(0,0,width,height),0,0); pixels.Apply();
                 var directory = Path.Combine(Application.persistentDataPath,"ClustrGalaxy","exports"); Directory.CreateDirectory(directory);
-                var path = Path.Combine(directory,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + "-" + Guid.NewGuid().ToString("N") + "-postcard.png");
+                var path = Path.Combine(directory,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N") + "-postcard.png");
                 var temporary = path + ".tmp";
                 try
                 {

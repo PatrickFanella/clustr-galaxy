@@ -23,38 +23,54 @@ namespace ClustrGalaxy.Data
         public int NodeCount => nodes.Count;
         public int LinkCount => links.Count;
 
-        public void Merge(SpatialScene scene)
+        public void Merge(SpatialScene scene) => MergeAll(new[] { scene });
+
+        /// <summary>
+        /// Merges every scene's nodes before any links, so a route whose endpoint
+        /// arrives in another resident scope is kept regardless of merge order.
+        /// </summary>
+        public void MergeAll(IReadOnlyList<SpatialScene> scenes)
         {
-            if (scene == null)
+            if (scenes == null) throw new ArgumentNullException(nameof(scenes));
+            foreach (var scene in scenes)
             {
-                throw new ArgumentNullException(nameof(scene));
-            }
-            if (!scene.BelongsTo(manifest))
-            {
-                throw new InvalidOperationException("Cannot merge a scene from a different revision or spatial catalog.");
-            }
-
-            foreach (var node in scene.nodes ?? Array.Empty<SpatialNode>())
-            {
-                if (node == null || string.IsNullOrWhiteSpace(node.id) || node.IsSuppressedAutomatedActivity)
+                if (scene == null)
                 {
-                    continue;
+                    throw new ArgumentNullException(nameof(scenes));
                 }
-                nodes[node.id] = node;
-            }
-
-            foreach (var link in scene.links ?? Array.Empty<SpatialLink>())
-            {
-                if (link == null || !nodes.ContainsKey(link.source) || !nodes.ContainsKey(link.target))
+                if (!scene.BelongsTo(manifest))
                 {
-                    continue;
+                    throw new InvalidOperationException("Cannot merge a scene from a different revision or spatial catalog.");
                 }
-                links[LinkKey(link)] = link;
             }
 
-            if (!string.IsNullOrWhiteSpace(scene.scope) && !string.IsNullOrWhiteSpace(scene.root_id))
+            foreach (var scene in scenes)
             {
-                loadedScopes.Add(ScopeKey(scene.scope, scene.root_id));
+                foreach (var node in scene.nodes ?? Array.Empty<SpatialNode>())
+                {
+                    if (node == null || string.IsNullOrWhiteSpace(node.id) || node.IsSuppressedAutomatedActivity)
+                    {
+                        continue;
+                    }
+                    nodes[node.id] = node;
+                }
+            }
+
+            foreach (var scene in scenes)
+            {
+                foreach (var link in scene.links ?? Array.Empty<SpatialLink>())
+                {
+                    if (link == null || !nodes.ContainsKey(link.source) || !nodes.ContainsKey(link.target))
+                    {
+                        continue;
+                    }
+                    links[LinkKey(link)] = link;
+                }
+
+                if (!string.IsNullOrWhiteSpace(scene.scope) && !string.IsNullOrWhiteSpace(scene.root_id))
+                {
+                    loadedScopes.Add(ScopeKey(scene.scope, scene.root_id));
+                }
             }
         }
 

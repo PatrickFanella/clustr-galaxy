@@ -59,7 +59,7 @@ namespace ClustrGalaxy.UI
                 var identity = new ReplayIdentity(observed.Value.Snapshot,observed.Value.Mode,1,tuningId,flightMode);
                 var replay = owner.Session.ReplayBuffer.Capture(identity);
                 var folder = Path.Combine(Application.persistentDataPath,"ClustrGalaxy","replays"); Directory.CreateDirectory(folder);
-                var path = Path.Combine(folder,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ")+"-"+Guid.NewGuid().ToString("N")+".clustr-replay");
+                var path = Path.Combine(folder,DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ", System.Globalization.CultureInfo.InvariantCulture)+"-"+Guid.NewGuid().ToString("N")+".clustr-replay");
                 ReplayPackage.Save(path,replay); LastSavedPath = path;
                 Status = "Saved locally · " + replay.Duration.ToString("F1") + " seconds · " + new FileInfo(path).Length + " bytes";
             }

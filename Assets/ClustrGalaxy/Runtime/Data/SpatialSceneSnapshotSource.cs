@@ -43,7 +43,13 @@ namespace ClustrGalaxy.Data
 
         public async Task<SnapshotSourceResult> OpenAsync(CancellationToken cancellationToken)
         {
-            var result = await OpenInternalAsync(cancellationToken);
+            SnapshotSourceResult result;
+            try { result = await OpenInternalAsync(cancellationToken); }
+            catch (Exception error) when (error is not OperationCanceledException && !offlineOnly)
+            {
+                Debug.LogWarning("[ClustrGalaxy] Live snapshot open failed; trying verified cache: " + error.Message);
+                result = SnapshotSourceResult.Failure("SOURCE UNAVAILABLE");
+            }
             if (result.Succeeded || offlineOnly) return result;
             cancellationToken.ThrowIfCancellationRequested();
             return await new SpatialSceneSnapshotSource(apiBase, true, cache, transport, storageNamespace).OpenInternalAsync(cancellationToken);
@@ -89,11 +95,15 @@ namespace ClustrGalaxy.Data
             if (!offline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                (cache as SnapshotCacheDocuments)?.PrepareBase(overviewPath);
-                cache.Write(overviewPath, overviewJson,
-                    value => TryScene(value, new SpatialScopeRequest(SpatialScope.Overview), manifest, out _));
-                cache.Write(ManifestCache, manifestJson, value => TryManifest(value, out _, out _));
-                (cache as SnapshotCacheDocuments)?.CommitBase(overviewPath);
+                // Overview before manifest: a failed write never points the manifest at a missing overview.
+                PersistBestEffort(() =>
+                {
+                    (cache as SnapshotCacheDocuments)?.PrepareBase(overviewPath);
+                    cache.Write(overviewPath, overviewJson,
+                        value => TryScene(value, new SpatialScopeRequest(SpatialScope.Overview), manifest, out _));
+                    cache.Write(ManifestCache, manifestJson, value => TryManifest(value, out _, out _));
+                    (cache as SnapshotCacheDocuments)?.CommitBase(overviewPath);
+                });
             }
             return SnapshotSourceResult.Success(manifest, scene, offline);
         }
@@ -113,7 +123,7 @@ namespace ClustrGalaxy.Data
             if (!offlineOnly) json = await GetJson(UriFor(rawManifest, request), cancellationToken);
             if (string.IsNullOrWhiteSpace(json))
             {
-                if (!cache.TryRead(path, out json)) return SnapshotSourceResult.Failure("BOUNDED SCOPE UNAVAILABLE");
+                if (!TryReadCache(path, out json)) return SnapshotSourceResult.Failure("BOUNDED SCOPE UNAVAILABLE");
                 offline = true;
             }
             if (offline)
@@ -128,13 +138,19 @@ namespace ClustrGalaxy.Data
             var identities = new Dictionary<string, string>(StringComparer.Ordinal);
             var routeIdentities = new Dictionary<(string, string, string), string>();
             var nodes = 0; var links = 0;
+            var completion = SpatialScopeCompletion.Complete;
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!TryScene(json, request, manifest, out _)) return SnapshotSourceResult.Failure("BOUNDED SCOPE REJECTED");
                 var page = SpatialSceneJson.ParseScene(json);
                 if (!SpatialScopePaging.CanAccept(limits, nodes, links, page))
-                    return SnapshotSourceResult.Failure("CLIENT CEILING EXCEEDED");
+                {
+                    // Page sizes need not divide the ceiling; keep the accepted prefix.
+                    if (pages.Count == 0) return SnapshotSourceResult.Failure("CLIENT CEILING EXCEEDED");
+                    completion = SpatialScopeCompletion.ClientLimitReached;
+                    break;
+                }
                 foreach (var node in page.nodes)
                 {
                     var value = JsonUtility.ToJson(node);
@@ -151,18 +167,39 @@ namespace ClustrGalaxy.Data
                     routeIdentities[key] = value;
                 }
                 pages.Add(page); nodes += page.nodes.Length; links += page.links.Length;
-                if (string.IsNullOrWhiteSpace(page.next_cursor) ||
-                    SpatialScopePaging.CompletionFor(page, limits, nodes, links) != SpatialScopeCompletion.Complete) break;
+                completion = SpatialScopePaging.CompletionFor(page, limits, nodes, links);
+                if (string.IsNullOrWhiteSpace(page.next_cursor) || completion != SpatialScopeCompletion.Complete) break;
                 if (!cursors.Add(page.next_cursor)) return SnapshotSourceResult.Failure("REPEATED CONTINUATION CURSOR");
                 json = await GetJson(SpatialScopePaging.WithCursor(UriFor(rawManifest, request), page.next_cursor), cancellationToken);
                 if (string.IsNullOrWhiteSpace(json)) return SnapshotSourceResult.Failure("CONTINUATION UNAVAILABLE / CURRENT VIEW RETAINED");
             }
-            var aggregate = SpatialScopePaging.Aggregate(rawManifest, scope, request.RootId.Value, pages);
+            var aggregate = SpatialScopePaging.Aggregate(rawManifest, scope, request.RootId.Value, pages, completion);
             json = JsonUtility.ToJson(aggregate);
             if (!TryScene(json, request, manifest, out var scene)) return SnapshotSourceResult.Failure("AGGREGATE REJECTED");
             cancellationToken.ThrowIfCancellationRequested();
-            cache.Write(path, json, value => TryScene(value, request, manifest, out _));
+            PersistBestEffort(() => cache.Write(path, json, value => TryScene(value, request, manifest, out _)));
             return SnapshotSourceResult.Success(manifest, scene, false);
+        }
+
+        /// <summary>A validated live scene stays usable when the local cache cannot be updated.</summary>
+        private static void PersistBestEffort(Action write)
+        {
+            try { write(); }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                Debug.LogWarning("[ClustrGalaxy] Snapshot cache not updated: " + error.Message);
+            }
+        }
+
+        private bool TryReadCache(string path, out string json)
+        {
+            try { return cache.TryRead(path, out json); }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                Debug.LogWarning("[ClustrGalaxy] Snapshot cache unreadable: " + error.Message);
+                json = string.Empty;
+                return false;
+            }
         }
 
         private string UriFor(SpatialManifest manifest, SpatialScopeRequest request) => request.Scope switch
@@ -249,6 +286,7 @@ namespace ClustrGalaxy.Data
                     (string.IsNullOrWhiteSpace(scene.scope) || string.IsNullOrWhiteSpace(scene.root_id))) return false;
                 if (request.Scope != SpatialScope.Overview)
                     SpatialSceneScopeContract.ApplyOrValidate(scene, request.Scope.ToString().ToLowerInvariant(), request.RootId.Value);
+                BotActivityPolicy.WithoutSuppressedActivity(scene);
                 var nodes = (scene.nodes ?? Array.Empty<SpatialNode>()).GroupBy(node => node.id).Select(group => group.First()).Select(node => new SnapshotNode(
                     (GalaxyEntityId)node.id, GalaxyKinds.ParseEntityKind(node.type), node.name, node.val,
                     node.x, node.y, node.z, string.IsNullOrWhiteSpace(node.parent_id) ? default : (GalaxyEntityId)node.parent_id));
