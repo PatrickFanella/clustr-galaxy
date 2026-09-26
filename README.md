@@ -48,10 +48,12 @@ that namespace directly. `--clustr-offline` sends no Clustr requests and require
 verified v2 cache; absent cache displays unavailable. v1 storage is untouched.
 
 A session pins its revision and spatial catalog until a new session is created.
-Bounded responses require matching revision, catalog, scope, and root. On
-2026-09-06 the public overview loaded, but the community response omitted required
-scope/root and continuation metadata. The client rejected it and retained the
-last usable view. Full public hierarchy compatibility is therefore unresolved.
+Bounded responses require matching revision, catalog, scope, and root. The
+public community response omits optional scope/root metadata; since 2026-09-09
+the client binds those omitted values to its pinned request and still rejects
+contradictory values. A public hierarchy and route jump passed on revision
+243/catalog 14 that day (see the [completion ledger](docs/beta-completion.md)).
+Other qualification gates remain open.
 
 Validate with `python3 scripts/validate.py`; build configurations separately with
 `python3 scripts/build.py --configuration development` and
@@ -105,9 +107,9 @@ World mode and flight controls are independent and can be changed at any time:
 - **Pilot Assist** is the default damped flight mode.
 - **Pilot Mastery** preserves manual control and can earn arrival progression.
 
-The normal HUD keeps p95 frame time and memory compact. Press **F10** to show
-the developer performance counters: active/pooled/visible/known entities, scan
-events, per-frame GC allocation, and main-thread time.
+The retained HUD has no in-game performance overlay. Frame time, GC
+allocation, memory, and entity counts are recorded only by the opt-in
+qualification runs described below.
 
 While the map is open, the HUD's `MAP CURSOR` row previews the nearest valid
 next-level entity before selection. Explore displays the source label; Survey
@@ -158,7 +160,6 @@ Press **Play** in any scene. The current prototype is created at runtime.
 | Galaxy map / Survey map | M / V | Select / D-pad up |
 | Confirm Survey starting system | Enter | South button (A/Cross) |
 | Charge route jump / plot autopilot | T / P | D-pad down / Right-stick press |
-| Developer performance HUD | F10 | Keyboard only |
 
 Gravity is active in every pilot mode. Assist uses bounded counterthrust to control velocity; Mastery retains momentum and responds to gravity. Brake counters translation and rotation. Severe impacts and stellar exclusion entry recover to a safe hold without removing progress; choose **Resume Flight** to coast from that hold. These changes are under simulation qualification; see [the execution ledger](docs/superpowers/plans/2026-09-08-flight-first-simulation.md).
 

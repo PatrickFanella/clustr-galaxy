@@ -1,5 +1,10 @@
 # Linux beta completion ledger
 
+Latest remaining-gate check: [2026-09-19 continuation](qualification-continuation-2026-09-19.md).
+The exact-source Ubuntu retry still fails before discovery with Unity exit 198;
+Gitea run 8602 is queued without an assigned runner. Human acceptance remains open.
+The dated entries below preserve historical outcomes.
+
 Baseline: `775f826f51ee70d8f25e3e421887eaa5a6f10801` on main.
 Status: **NOT QUALIFIED — implementation remains incomplete** (2026-09-06).
 All work is local and uncommitted. There is no final qualified source SHA.
@@ -898,3 +903,75 @@ No code, thresholds, populations or graphics settings changed between attempts. 
 The local handoff is `Builds/handoffs/6f2546b-free-assets/START-HERE.md`, with both exact player trees, source archive, notices, original and repeat reports, raw traces, controls/privacy notes and checksums. Historical ecba4ba packaging remains intact.
 
 Archive verification: `clustr-galaxy-6f2546b-free-assets-local-candidate.tar.zst` is 244,678,632 bytes; SHA-256 `45f741526006fa75961907c3c88cc5c0b8f80bc69b897689bb5409abd42b597c`. All 1,108 packaged file checksums and the compressed archive integrity check passed. `Builds/handoffs/latest-local-candidate.json` points to this handoff. No qualification process remains running, and the main source/asset mirror matches the tested revision (post-build documentation is intentionally newer).
+
+## Code review pass — 2026-09-25
+
+Starting from `aec467716c36bc3d5adc3744ffd7aea3938efe3d` with a fresh Library,
+validation `20260926T013458635196Z` passed 299 EditMode and 434 PlayMode tests.
+A stale Library carried over from `775f826` had instead reverted the embedded
+serialization GUID patch during import. Clear `Library/` when a worktree changes
+between those revisions.
+
+Fixes from a four-area code review, each with a regression test where one applies:
+
+- Paging: a page that would cross a scope ceiling now keeps the accepted pages
+  and reports `CLIENT LIMIT REACHED`. Previously a system with more than 4,608
+  nodes failed with `CLIENT CEILING EXCEEDED`, because 512-node pages do not
+  divide the 5,000-node ceiling. Completion is stored with the aggregate, so a
+  complete multi-page scope is no longer labelled
+  `SERVER DID NOT PUBLISH CONTINUATION`.
+- Cache: a cache write or read failure no longer discards a validated live scene
+  or skips the offline fallback.
+- Loader: `IsLoading` is cleared when a jump or travel abort supersedes a load.
+  It previously stayed set, and the performance monitor then counted later
+  frames as loading frames.
+- Store: every resident scene's nodes are merged before its links, so a route
+  whose endpoint arrives in another scope is kept regardless of dictionary order.
+- Suppressed automated users (and their routes) are removed from core resident
+  scenes and materialized scenes, as the Store and overview already did.
+- The live smoke runner exits with code 2 on every failure path. Before, it could
+  keep running when a stage had no eligible node or the home system had no connection.
+- Survey: system-completion weak-route reveals and the celebration cue fire once
+  per system instead of on every later scan inside a completed system.
+- Replay: bookmarks saved while the console pauses pose recording are kept at
+  the last recorded pose instead of being dropped.
+- Unidentified Survey targets: navigation status (plotted, arrival, mastery) and
+  thread rows no longer show factual names or reply content.
+- Console: after QUIT GAME, focus moves to CANCEL QUIT, so a double press cannot
+  confirm the quit. The search/name/reason fields are in the controller navigation
+  chain. Escape or B while editing a field no longer closes the console.
+- Pooling: a ship or satellite released and reacquired in the same frame keeps
+  its catalog visual. Re-activating registered entities no longer rebuilds the
+  sorted registry view once per entity.
+- Timestamped file names use the invariant culture; quarantine names add a GUID.
+  The interaction report no longer substitutes the version string for a missing
+  source SHA. The unused `ScanRules` class is removed.
+- README: the nonexistent F10 performance overlay is no longer documented, and
+  the public community paragraph reflects the 2026-09-09 repair.
+
+Validation `20260926T015845776795Z` passes 308 EditMode and 436 PlayMode tests,
+both with process exit 0 and no project compiler diagnostics. This is a
+dirty working tree result. No player build, live traversal, or performance run
+was repeated, and the qualification status above is unchanged.
+
+Two further review findings were then fixed:
+
+- Region chart: entering a system borrows the chart's star and ships (same stable
+  IDs) as physical bodies. The chart now keeps a renderer-only marker in their
+  place, shown only while the borrowed entity is active, so Survey visibility still
+  applies. Map hover, selection and chart framing use the marker position. Loading
+  the next system returns the borrowed bodies to the chart before the previous
+  system is retired. Previously every visited star disappeared from the chart.
+- Autopilot guidance no longer allocates per physics tick: the controller's
+  per-tick target resolver reuses one `NavigationTarget`, and guidance reuses
+  one effect and outcome until navigation state changes. A new EditMode test
+  measures zero managed bytes over 200 guidance ticks, both en route and after
+  arrival.
+
+Validation `20260926T021044950920Z` passes 309 EditMode and 437 PlayMode tests with
+process exit 0 and no project compiler diagnostics, including a PlayMode test
+that drives community → system → committed jump through the real loader and
+materializer. The previous run `20260926T020842258292Z` is preserved as failed:
+its first chart test loaded a second system without a jump (correctly
+inspection-only), and Unity exited -11 after the run from the known SIGSEGV in
+the HID input thread (`PLATFORM_hid_enumerate`).
