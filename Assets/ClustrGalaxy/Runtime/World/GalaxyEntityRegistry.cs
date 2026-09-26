@@ -35,10 +35,15 @@ namespace ClustrGalaxy.World
         public void Register(GalaxyEntity entity)
         {
             if (entity == null || string.IsNullOrWhiteSpace(entity.StableId)) return;
-            entities[entity.StableId] = entity;
-            entitiesDirty = activeDirty = true;
-            if (entity.isActiveAndEnabled) activeEntityIds.Add(entity.StableId);
-            else activeEntityIds.Remove(entity.StableId);
+            // Activation re-registers existing entities; only invalidate views that actually changed,
+            // otherwise a bulk SetActive loop over Entities rebuilds the sorted view per entity.
+            if (!entities.TryGetValue(entity.StableId, out var current) || current != entity)
+            {
+                entities[entity.StableId] = entity;
+                entitiesDirty = activeDirty = true;
+            }
+            var changed = entity.isActiveAndEnabled ? activeEntityIds.Add(entity.StableId) : activeEntityIds.Remove(entity.StableId);
+            if (changed) activeDirty = true;
         }
 
         public void MarkActive(GalaxyEntity entity) { Register(entity); }

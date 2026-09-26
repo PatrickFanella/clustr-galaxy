@@ -67,7 +67,8 @@ namespace ClustrGalaxy.World
             foreach (var trail in body.GetComponentsInChildren<TrailRenderer>(true)) trail.Clear();
             foreach (var particles in body.GetComponentsInChildren<ParticleSystem>(true)) particles.Stop(true,ParticleSystemStopBehavior.StopEmittingAndClear);
             var visual = body.transform.Find("Catalog Visual");
-            if (visual != null) { visual.gameObject.SetActive(false); UnityEngine.Object.Destroy(visual.gameObject); }
+            // Destroy is deferred; detach so a same-frame reacquire cannot find the dying visual.
+            if (visual != null) { visual.gameObject.SetActive(false); visual.SetParent(null, false); UnityEngine.Object.Destroy(visual.gameObject); }
             body.transform.SetParent(poolRoot, false);
             if (!available.TryGetValue(marker.Shape, out var objects))
             {

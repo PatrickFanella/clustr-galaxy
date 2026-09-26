@@ -33,7 +33,93 @@ namespace ClustrGalaxy.World
         private Transform systemRoot = null!;
         private Transform discussionRoot = null!;
         private Transform illuminatingStar;
-        private void LateUpdate() { if (illuminatingStar != null) Shader.SetGlobalVector("_GalaxySunPosition", illuminatingStar.position); }
+        private void LateUpdate()
+        {
+            if (illuminatingStar != null) Shader.SetGlobalVector("_GalaxySunPosition", illuminatingStar.position);
+            SyncChartMarkers();
+        }
+
+        // Region chart bodies are placed once per region. A physical system takes the same stable-ID
+        // entity, so the chart keeps a renderer-only marker until the body is returned.
+        private readonly struct ChartPlacement
+        {
+            public ChartPlacement(SpatialNode node, float radius, bool ship) { Node = node; Radius = radius; Ship = ship; }
+            public SpatialNode Node { get; }
+            public float Radius { get; }
+            public bool Ship { get; }
+        }
+        private readonly Dictionary<string, ChartPlacement> chartPlacements = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Transform> chartMarkers = new(StringComparer.Ordinal);
+        private readonly List<string> chartRestores = new();
+
+        /// <summary>Chart position for an entity currently lent to the physical system, while the region chart is shown.</summary>
+        public bool TryGetChartPosition(string stableId, out Vector3 position)
+        {
+            position = default;
+            if (systemRoot == null || regionRoot == null || !regionRoot.gameObject.activeInHierarchy ||
+                string.IsNullOrEmpty(stableId) || !chartMarkers.TryGetValue(stableId, out var marker) ||
+                marker == null || !marker.gameObject.activeInHierarchy) return false;
+            position = marker.position;
+            return true;
+        }
+
+        public bool TryGetChartMarker(string stableId, out Transform marker) =>
+            chartMarkers.TryGetValue(stableId ?? string.Empty, out marker) && marker != null;
+
+        private void SyncChartMarkers()
+        {
+            if (chartMarkers.Count == 0 || regionRoot == null || !regionRoot.gameObject.activeInHierarchy) return;
+            // Markers follow the lent entity, so Survey visibility still decides what the chart reveals.
+            foreach (var pair in chartMarkers)
+            {
+                if (pair.Value == null) continue;
+                var visible = registry?.FindActiveEntity(pair.Key) != null;
+                if (pair.Value.gameObject.activeSelf != visible) pair.Value.gameObject.SetActive(visible);
+            }
+        }
+
+        private void LeaveChartMarker(GameObject body)
+        {
+            var id = body.GetComponent<GalaxyEntity>().StableId;
+            if (chartMarkers.ContainsKey(id) || !chartPlacements.ContainsKey(id)) return;
+            var marker = new GameObject("Chart marker " + id).transform;
+            marker.SetParent(regionRoot, false);
+            marker.SetLocalPositionAndRotation(body.transform.localPosition, body.transform.localRotation);
+            marker.localScale = body.transform.localScale;
+            marker.gameObject.AddComponent<MeshFilter>().sharedMesh = body.GetComponent<MeshFilter>().sharedMesh;
+            var renderer = marker.gameObject.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = body.GetComponent<MeshRenderer>().sharedMaterial;
+            var visual = body.transform.Find("Catalog Visual");
+            if (visual != null)
+            {
+                var copy = Instantiate(visual.gameObject, marker, false);
+                copy.name = "Catalog Visual";
+                foreach (var collider in copy.GetComponentsInChildren<Collider>(true)) Destroy(collider);
+            }
+            marker.gameObject.SetActive(body.activeSelf);
+            chartMarkers[id] = marker;
+        }
+
+        private void RestoreChartBodies()
+        {
+            if (regionRoot == null || chartMarkers.Count == 0) return;
+            chartRestores.Clear();
+            chartRestores.AddRange(chartMarkers.Keys);
+            foreach (var id in chartRestores)
+            {
+                var marker = chartMarkers[id];
+                chartMarkers.Remove(id);
+                if (marker == null) continue;
+                if (chartPlacements.TryGetValue(id, out var placement))
+                {
+                    var body = placement.Ship
+                        ? CreateCapsule(regionRoot, placement.Node, "user ship", marker.localPosition, placement.Radius, userMaterial)
+                        : CreateSphere(regionRoot, placement.Node, "subreddit star", marker.localPosition, placement.Radius, starMaterial);
+                    body.transform.localRotation = marker.localRotation;
+                }
+                Destroy(marker.gameObject);
+            }
+        }
         private Material starMaterial = null!;
         private Material planetMaterial = null!;
         private Material userMaterial = null!;
@@ -63,6 +149,7 @@ namespace ClustrGalaxy.World
             overview = overviewRenderer;
             navigation.ViewChanged += NavigationChanged;
             navigation.ModeChanged += MapModeChanged;
+            navigation.ChartPositions = TryGetChartPosition;
             ApplyVisibility(navigation.Level);
         }
 
@@ -131,6 +218,8 @@ namespace ClustrGalaxy.World
             DestroyRoot(ref regionRoot);
             DestroyRoot(ref systemRoot);
             DestroyRoot(ref discussionRoot);
+            chartPlacements.Clear();
+            chartMarkers.Clear();
             regionRoot = new GameObject($"Live Region {scene.root_id}").transform;
             regionRoot.SetParent(transform, false);
             regionRoot.gameObject.AddComponent<CelestialFrame>();
@@ -148,11 +237,13 @@ namespace ClustrGalaxy.World
                     var radius = Radius(node.metrics.unique_users > 0 ? node.metrics.unique_users : node.val,
                         loader.Manifest.normalization_quantiles.subreddit, 12f, 30f);
                     CreateSphere(regionRoot, node, "subreddit star", position, radius, starMaterial);
+                    chartPlacements[node.id] = new ChartPlacement(node, radius, false);
                 }
                 else if (kind == GalaxyEntityKind.User)
                 {
                     var ship = CreateCapsule(regionRoot, node, "user ship", position, 2.2f, userMaterial);
                     ship.transform.rotation = Quaternion.LookRotation(position.normalized, Vector3.up);
+                    chartPlacements[node.id] = new ChartPlacement(node, 2.2f, true);
                 }
             }
 
@@ -197,6 +288,9 @@ namespace ClustrGalaxy.World
             {
                 regionRoot.gameObject.SetActive(false);
             }
+            EnsureMaterials();
+            // Return lent chart bodies before the previous system is retired.
+            RestoreChartBodies();
             DestroyRoot(ref systemRoot);
             DestroyRoot(ref discussionRoot);
             systemRoot = new GameObject($"Live System {scene.root_id}").transform;
@@ -390,7 +484,7 @@ namespace ClustrGalaxy.World
             body.GetComponent<MeshRenderer>().sharedMaterial = material;
             InitializeEntity(body, node, type);
             if (type == "post planet" || type == "subreddit star") GetOrAdd<CelestialMeshDetail>(body).Configure();
-            else body.GetComponent<CelestialMeshDetail>()?.ReleaseDetail();
+            else if (body.TryGetComponent<CelestialMeshDetail>(out var detail)) detail.ReleaseDetail();
             return body;
         }
 
@@ -409,6 +503,7 @@ namespace ClustrGalaxy.World
             var existing = registry?.FindEntity(node.id);
             if (existing == null) return entityPool.Acquire(shape,parent);
             var body = existing.gameObject;
+            if (regionRoot != null && parent != regionRoot && body.transform.parent == regionRoot) LeaveChartMarker(body);
             body.SetActive(false);
             var orbit = body.GetComponent<KeplerOrbit>(); if (orbit != null) orbit.enabled = false;
             var gravity = body.GetComponent<GravitySource>(); if (gravity != null) gravity.enabled = false;

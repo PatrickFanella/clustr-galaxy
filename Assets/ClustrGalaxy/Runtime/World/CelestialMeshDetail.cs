@@ -42,7 +42,7 @@ namespace ClustrGalaxy.World
             middle.sharedMaterial = renderer.sharedMaterial;
             distant.gameObject.SetActive(true);
             distant.sharedMaterial = renderer.sharedMaterial;
-            var group = GetComponent<LODGroup>() ?? gameObject.AddComponent<LODGroup>();
+            var group = TryGetComponent<LODGroup>(out var existing) ? existing : gameObject.AddComponent<LODGroup>();
             group.enabled = true;
             // Unity multiplies projected height by the global quality bias. Keep these
             // silhouette thresholds tied to actual screen coverage at every launch quality.

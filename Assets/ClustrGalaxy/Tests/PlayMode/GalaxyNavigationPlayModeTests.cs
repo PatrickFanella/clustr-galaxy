@@ -400,6 +400,58 @@ namespace ClustrGalaxy.Tests
         }
 
         [UnityTest]
+        public IEnumerator PooledEntity_SameFrameReacquireDoesNotKeepTheDyingVisual()
+        {
+            var owner = new GameObject("pool visual owner");
+            try
+            {
+                var pool = new GalaxyEntityPool(owner.transform);
+                var body = pool.Acquire(PrimitiveType.Capsule, owner.transform);
+                body.GetComponent<GalaxyEntity>().Initialize("user_1", "Pilot", "user", 1, registry);
+                new GameObject("Catalog Visual").transform.SetParent(body.transform, false);
+
+                pool.Release(body);
+                var reused = pool.Acquire(PrimitiveType.Capsule, owner.transform);
+
+                Assert.That(reused, Is.SameAs(body));
+                Assert.That(reused.transform.Find("Catalog Visual"), Is.Null);
+                yield return null;
+            }
+            finally
+            {
+                Object.Destroy(owner);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator Registry_ReactivatingKnownEntitiesKeepsTheSortedView()
+        {
+            var owner = new GameObject("registry view owner");
+            try
+            {
+                for (var index = 0; index < 50; index++)
+                {
+                    var child = new GameObject("entity " + index);
+                    child.transform.SetParent(owner.transform, false);
+                    child.AddComponent<GalaxyEntity>().Initialize("post_" + index.ToString("D3"), "Post", "post", 1, registry);
+                }
+                yield return null;
+                var view = registry.Entities;
+                foreach (var entity in owner.GetComponentsInChildren<GalaxyEntity>())
+                {
+                    entity.gameObject.SetActive(false);
+                    entity.gameObject.SetActive(true);
+                }
+                Assert.That(registry.Entities, Is.SameAs(view));
+                Assert.That(registry.ActiveEntities.Count, Is.EqualTo(50));
+            }
+            finally
+            {
+                Object.Destroy(owner);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator PooledEntity_DoesNotRemainTargetableAfterRelease()
         {
             var owner = new GameObject("pool play mode owner");
