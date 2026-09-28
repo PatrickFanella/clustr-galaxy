@@ -1022,3 +1022,50 @@ Not changed: personal-best ranking still prefers accuracy over time (a design
 question), and the activity companion has no size budget below its 8 MiB file
 limit. External gates (Ubuntu licence, Unity runner, human controller
 acceptance, both 600-second runs) remain open.
+
+## Personal-best policy, 600-second qualification and controller session — 2026-09-27/28
+
+Owner decisions: the fastest completed run is the personal best (accuracy only
+breaks an exact tie), and committing a flight record drops ghosts recorded under
+other flight tunings while keeping their scores (`dbe9262`).
+
+Physical controller session `Builds/evidence/20260928T032740719241Z-manual-controller`
+on release `dbe9262` (Microsoft X-Box 360 pad, `/dev/input/event22`, 1280×720,
+Wayland): about seven minutes, 151 button and 40,068 axis events, exit 0, no player
+exceptions. **Human acceptance is pending** until the player's checklist
+observations are recorded. This build had a console defect (next paragraph);
+observations about console text fields must be read with that in mind.
+
+Full pass `20260928T033518042171Z` on clean `dbe9262` **failed**. Three demo
+journeys reported `Controller focus cannot reach: ENTER SURVEY`: adding the console
+text fields to the D-pad chain exhausted the journey's focus budget, and the fields
+activated on selection while gamepad Back was blocked during editing, which could
+trap controller focus. `8efa460` keeps the fields reachable without activating them
+on selection (A starts editing), always lets Back leave the console, and counts all
+selectables in the journey. The same run's 600-second active stress failed only on
+two allocating frames (11,558 and 304 bytes at about 112 s); a 150-second repeat
+(`20260928T041102658932Z`) allocated nothing, and the cause was not identified.
+Its 600-second public performance run passed.
+
+Full pass `20260928T041602793087Z` on clean `8efa460` (release tree unchanged
+throughout) passed every step except `public-hierarchy-jumps`, which failed with
+`BOUNDED SCOPE UNAVAILABLE` after the overview loaded; the provider community
+request succeeded (HTTP 200, 4.2 s) when probed afterwards. The pass therefore
+reports `passed: false`. On the same unchanged artifact, separate runs then passed:
+
+- Public hierarchy and round-trip jump `20260928T045232252732Z-hierarchy`.
+- Public warm start `20260928T045248952947Z-warm-start` (2.34 s to rendered cached overview).
+- **600-second public performance `20260928T045253527861Z-hierarchy`: qualified.**
+  Revision 493/catalog 14, 905 resident nodes, 71,998/71,998 valid GPU samples,
+  CPU p95 8.33 ms, GPU p95 0.40 ms, maximum ordinary stall 9.58 ms, zero ordinary
+  managed allocation, peak player memory 494,755,840 bytes, GPU 430,845,952 bytes.
+
+**600-second active stress inside the full pass: qualified.** 14,053 resident nodes
+and 57,000 routes, CPU p95 12.62 ms, GPU p95 0.75 ms, maximum ordinary stall
+21.15 ms, zero ordinary managed allocation, report source `8efa460`.
+
+Both 600-second runs therefore have qualified reports bound to clean `8efa460`, but
+not from a single passing full pass. Remaining gates: human controller and
+enjoyment acceptance, clean-Library Arch verification (this pass started with an
+existing Library), the licensed Ubuntu build and runtime, and the licensed Gitea
+runner.
