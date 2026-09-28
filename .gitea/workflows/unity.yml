@@ -6,7 +6,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Harness unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Compile and test exact checkout
         run: python3 scripts/validate.py
       - name: Build Linux players
         run: python3 scripts/build.py
+      - name: Retain validation and build evidence
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-beta-gates
+          path: |
+            Builds/validation
+            Builds/build-logs

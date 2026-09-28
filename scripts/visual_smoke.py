@@ -30,7 +30,7 @@ def main():
             data=path.read_bytes()[:24];captures[name]={"path":str(path),"dimensions":list(struct.unpack(">II",data[16:24])) if data[:8]==b"\x89PNG\r\n\x1a\n" else None}
     errors=player_errors(log.read_text(errors="replace"))
     result.update(artifact=artifact,report=report,captures=captures,runtime_errors=errors,player_accepted=False,release_qualified=False)
-    result["passed"]=result["process_exit"]==0 and report.get("passed",False) and not errors and len(captures)==4 and all(x["dimensions"]==[width,height] for x in captures.values())
+    result["passed"]=result["process_exit"]==0 and not result["timed_out"] and report.get("passed") is True and not errors and len(captures)==4 and all(x["dimensions"]==[width,height] for x in captures.values())
     (output/"summary.json").write_text(json.dumps(result,indent=2)+"\n")
     print(f"passed={result['passed']}; {output}",flush=True)
     return 0 if result["passed"] else 2

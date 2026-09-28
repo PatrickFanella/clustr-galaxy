@@ -14,6 +14,28 @@ from unity_process import run, player_errors
 from artifact_identity import identify
 
 
+def evaluate_profile(report, artifact, requested_seconds):
+    """Bind a profile verdict to the artifact under test; 30 s runs are preflights only."""
+    if report is None: return ["Beta profile report missing"]
+    failures = []
+    if not artifact.get("source_sha") or report.get("source_sha") != artifact["source_sha"]:
+        failures.append("Report source does not match the tested artifact")
+    if report.get("duration_seconds") != requested_seconds:
+        failures.append("Report duration does not match the requested profile")
+    verdict = report.get("qualified") if requested_seconds == 600 else report.get("preflight_passed")
+    if verdict is not True: failures.append("Report verdict did not pass")
+    return failures
+
+
+def load_profile(config):
+    """The single report named by the player's latest-report pointer under this evidence config."""
+    pointers = list(config.rglob("latest-report-path.txt")) if config.exists() else []
+    if len(pointers) != 1: return None, None
+    path = pathlib.Path(pointers[0].read_text().strip())
+    try: return path, json.loads(path.read_text())
+    except (OSError, ValueError): return path, None
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--player",default="Builds/LinuxRelease/ClustrGalaxy.x86_64")
@@ -69,11 +91,16 @@ def main():
                         offline_result["network_requests"]==0 and "[ClustrGalaxy.LiveSmoke] JUMP COMPLETE" in offline_text and
                         "[ClustrGalaxy.LiveSmoke] FAILED" not in offline_text and not player_errors(offline_text))
         log=(evidence/"player.log").read_text(errors="replace")
+        profile_path, profile_failures = None, []
+        if args.profile_seconds:
+            profile_path, profile = load_profile(evidence/"config")
+            profile_failures = evaluate_profile(profile, artifact, args.profile_seconds)
         with player.open("rb") as stream: checksum=hashlib.file_digest(stream,"sha256").hexdigest()
         result.update(player_sha256=checksum,artifact=artifact,window_system=args.window_system,single_threaded_rendering_requested=args.single_threaded_rendering,scenario="live-hierarchy" if args.live else "fixture-stress" if args.stress else "fixture-hierarchy",
                       active_features=args.active_features, offline_restart_requested=args.offline_restart, offline_restart=offline_result, jump_requested=args.jump, profile_seconds=args.profile_seconds,
                       fixture_calls=None if args.live else Handler.calls,
-                      passed=(not args.offline_restart or offline_result is not None and offline_result["passed"]) and result["process_exit"]==0 and not result["timed_out"] and "[ClustrGalaxy.LiveSmoke] COMPLETE" in log
+                      profile_report=str(profile_path) if profile_path else None, profile_failures=profile_failures,
+                      passed=not profile_failures and (not args.offline_restart or offline_result is not None and offline_result["passed"]) and result["process_exit"]==0 and not result["timed_out"] and "[ClustrGalaxy.LiveSmoke] COMPLETE" in log
                       and (not args.jump or "[ClustrGalaxy.LiveSmoke] JUMP COMPLETE" in log)
                       and "[ClustrGalaxy.LiveSmoke] FAILED" not in log and not player_errors(log))
         (evidence/"summary.json").write_text(json.dumps(result,indent=2)+"\n")

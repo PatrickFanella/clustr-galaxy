@@ -8,16 +8,23 @@ import json
 import threading
 
 
+def _reap_group(process):
+    """Kill any process left in the session this invocation created (workers, helpers)."""
+    try: os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError): pass
+
+
 def _terminate(process):
-    if process.poll() is not None: return
-    os.killpg(process.pid, signal.SIGTERM)
-    try: process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
+    if process.poll() is None:
+        os.killpg(process.pid, signal.SIGTERM)
+        try: process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+    _reap_group(process)
 
 
-def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_stdout=False, readiness_marker=None):
+def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_stdout=False, readiness_marker=None, cwd=None):
     # Convert harness termination into a normal unwind so owned display/audio
     # contexts clean up and a detached Unity player cannot survive its runner.
     previous = None
@@ -29,16 +36,16 @@ def run(command, log, *, env=None, timeout=900, shutdown_timeout=45, capture_std
     output_stream = None
     try:
         if capture_stdout: output_stream = pathlib.Path(log).open("a")
-        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout, output_stream=output_stream, readiness_marker=readiness_marker)
+        return _run(command, log, env=env, timeout=timeout, shutdown_timeout=shutdown_timeout, output_stream=output_stream, readiness_marker=readiness_marker, cwd=cwd)
     finally:
         if output_stream is not None: output_stream.close()
         if previous is not None: signal.signal(signal.SIGTERM, previous)
 
 
-def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_stream=None, readiness_marker=None):
+def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_stream=None, readiness_marker=None, cwd=None):
     log = pathlib.Path(log)
     started = time.monotonic()
-    process = subprocess.Popen(command, env=env, stdout=output_stream if output_stream is not None else subprocess.DEVNULL,
+    process = subprocess.Popen(command, env=env, cwd=cwd, stdout=output_stream if output_stream is not None else subprocess.DEVNULL,
                                stderr=subprocess.STDOUT, start_new_session=True)
     readiness_seconds = None
     shutdown_started = None
@@ -68,6 +75,8 @@ def _run(command, log, *, env=None, timeout=900, shutdown_timeout=45, output_str
                     process.wait()
                 break
             time.sleep(.01 if readiness_marker is not None and readiness_seconds is None else .25)
+        # The leader has exited; nothing it started may outlive this run.
+        _reap_group(process)
     except BaseException as error:
         _terminate(process)
         log.with_suffix(".interrupted.json").write_text(json.dumps({

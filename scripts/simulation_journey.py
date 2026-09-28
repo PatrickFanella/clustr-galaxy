@@ -37,7 +37,7 @@ def main():
     except (OSError,ValueError,KeyError,TypeError): trajectory_valid=False
     errors=player_errors(log.read_text(errors="replace"))
     result.update(trajectory=str(trajectory_path),trajectory_valid=trajectory_valid,artifact=artifact,report=report,captures=captures,runtime_errors=errors,player_accepted=False,release_qualified=False)
-    result["passed"]=trajectory_valid and result["process_exit"]==0 and report.get("passed",False) and not errors and len(captures)==2 and all(x["dimensions"]==[width,height] for x in captures.values())
+    result["passed"]=trajectory_valid and result["process_exit"]==0 and not result["timed_out"] and report.get("passed") is True and not errors and len(captures)==2 and all(x["dimensions"]==[width,height] for x in captures.values())
     (output/"summary.json").write_text(json.dumps(result,indent=2)+"\n")
     print(f"passed={result['passed']}; {output}",flush=True)
     return 0 if result["passed"] else 2

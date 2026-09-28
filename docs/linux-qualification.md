@@ -44,7 +44,12 @@ python3 scripts/build.py --configuration release
 ```
 
 `validate.py` defaults to both suites and fails on process failure, compilation
-errors/project C# warnings, failed tests, empty or missing XML. Unity shutdown
+errors/project C# warnings, failed tests, empty or missing XML. Before the first
+suite it deletes this project's compiled assemblies from `Library/ScriptAssemblies`
+and `Library/Bee/artifacts`, so project code is recompiled and its diagnostics are
+printed even with a warm Library. Every project assembly must be rewritten during
+the run (`project_compilation.compiled`); the summary is `complete` and `passed`
+only after all requested suites finish. Unity shutdown
 timeouts remain failures even when test XML passes. Evidence is timestamped in
 Builds/validation and Builds/build-logs. Build JSON records artifact hashes and
 never grants qualification by itself. Dirty source is labelled `-working` and
@@ -89,13 +94,20 @@ Ubuntu build and Ubuntu-built-player smoke remain uncompleted.
 
 The workflow requires a runner labelled `unity-6000.4.10f1-linux`, Python 3.11+,
 Git, a C11 compiler, exact Unity editor and Linux module, a valid headless editor entitlement,
-and writable isolated project/work directories. Configure UNITY_EDITOR in the
+and writable isolated project/work directories. Without `DISPLAY`, `build.py` starts
+an owned headless Weston session with Xwayland and requires hardware GL (not
+llvmpipe), so the runner also needs Weston, Xwayland, GPU device access, and the
+PulseAudio or PipeWire tools listed above. In the Ubuntu container, pass the GPU
+device (for example `--device /dev/dri`) and set `CLUSTR_DRI_PRIME`. Configure UNITY_EDITOR in the
 runner environment. Use one Unity job per checkout. Register the label as a host
 runner only on an isolated build machine; do not expose production credentials.
 The inspected existing Gitea runner advertises Ubuntu and kvant labels, but not
 the required licensed Unity label. Suitable runner registration and CI execution
 have not been demonstrated.
-The checked-in workflow is configuration, not a passing CI result.
+The checked-in workflow is configuration, not a passing CI result. It runs the
+harness unit tests, `validate.py` and `build.py`, and uploads `Builds/validation`
+and `Builds/build-logs`. It does not run any player gate; a green run is not a
+full pass.
 
 ## Player acceptance
 

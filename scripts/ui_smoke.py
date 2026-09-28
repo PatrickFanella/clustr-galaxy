@@ -23,8 +23,9 @@ def main():
     output.mkdir(parents=True)
     artifact = identify(player)
     results = []
+    resolutions = ((1280,720),(1920,1080),(2560,1440))
     with player.open("rb") as stream: checksum = hashlib.file_digest(stream, "sha256").hexdigest()
-    for width, height in ((1280,720),(1920,1080),(2560,1440)):
+    for width, height in resolutions:
         evidence = (output / f"{width}x{height}").resolve()
         evidence.mkdir()
         with isolated_display(evidence / "display", width, height) as display:
@@ -52,10 +53,13 @@ def main():
                       and not player_errors(text) and "[ClustrGalaxy.UiSmoke] FAIL" not in text,
                       screenshot_dimensions=dimensions, screenshots=[str(path) for path in screenshots])
         results.append(result)
+        # Interim summaries stay incomplete; only the final resolution can make the run pass.
+        complete = len(results) == len(resolutions)
         (output / "summary.json").write_text(json.dumps(dict(player=str(player),player_sha256=checksum,
-              artifact=artifact,scenarios=results,passed=all(item["passed"] for item in results)),indent=2)+"\n")
+              artifact=artifact,scenarios=results,complete=complete,
+              passed=complete and all(item["passed"] for item in results)),indent=2)+"\n")
         print(f"{width}x{height}: {result['passed']}; {evidence}",flush=True)
-    return 0 if all(item["passed"] for item in results) else 2
+    return 0 if len(results) == len(resolutions) and all(item["passed"] for item in results) else 2
 
 
 if __name__ == "__main__":

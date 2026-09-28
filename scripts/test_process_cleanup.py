@@ -32,3 +32,23 @@ class ProcessCleanupTests(unittest.TestCase):
             finally:
                 if parent.poll() is None: parent.kill(); parent.wait()
 
+    def test_normal_exit_reaps_helpers_left_in_the_session(self):
+        from unity_process import run
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            pid_file, log = root / "helper.pid", root / "player.log"
+            helper = ("import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(30)")
+            leader = ("import subprocess,sys,pathlib;p=subprocess.Popen([sys.executable,'-c'," + repr(helper) +
+                      "]);pathlib.Path(" + repr(str(pid_file)) + ").write_text(str(p.pid))")
+            result = run([sys.executable, "-c", leader], log, timeout=10)
+            self.assertEqual(result["process_exit"], 0)
+            helper_pid = int(pid_file.read_text())
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try: os.kill(helper_pid, 0)
+                except ProcessLookupError: break
+                try: os.waitpid(helper_pid, os.WNOHANG)
+                except ChildProcessError: pass
+                time.sleep(.05)
+            with self.assertRaises(ProcessLookupError): os.kill(helper_pid, 0)
+

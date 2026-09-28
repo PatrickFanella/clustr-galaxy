@@ -47,7 +47,7 @@ def main():
                   copied_profile_unchanged=restored, runtime_errors=errors, reports=reports,
                   release_qualified=False)
     result["functional_passed"] = len(reports) == 2 and not errors and unchanged and restored and all(r["functional_passed"] for r in reports)
-    result["passed"] = result["process_exit"] == 0 and result["functional_passed"] and all(r["measurements_passed"] for r in reports)
+    result["passed"] = result["process_exit"] == 0 and not result["timed_out"] and result["functional_passed"] and all(r["measurements_passed"] for r in reports)
     (evidence / "summary.json").write_text(json.dumps(result, indent=2) + "\n")
     print(f"functional={result['functional_passed']}; measurements={result['passed']}; {evidence}", flush=True)
     return 0 if result["passed"] else 2

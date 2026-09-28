@@ -49,12 +49,18 @@ def main():
         temporary.write_text(json.dumps(report, indent=2) + "\n")
         temporary.replace(output / "summary.json")
 
+    def artifacts_unchanged():
+        """Both players must still be the artifacts recorded after the build step."""
+        return all(identify(ROOT / "Builds" / folder / "ClustrGalaxy.x86_64")["tree_sha256"] == report[name]["tree_sha256"]
+                   for name, folder in (("release_artifact", "LinuxRelease"), ("development_artifact", "Linux")))
+
     def step(name, script, arguments=(), pattern="Builds/evidence/*/summary.json", expected=1):
         before = set(ROOT.glob(pattern))
         command = [sys.executable, str(ROOT / "scripts" / script), *arguments]
         print("START " + name, flush=True)
         (output / (name + ".log")).write_text("Child evidence paths and process result are recorded in summary.json.\n")
-        result = run(command, output / (name + ".log"), timeout=2400, capture_stdout=True)
+        # Children resolve Builds/... relative to their working directory; bind it to this checkout.
+        result = run(command, output / (name + ".log"), timeout=2400, capture_stdout=True, cwd=ROOT)
         paths = sorted(set(ROOT.glob(pattern)) - before)
         values = []
         for path in paths:
@@ -62,7 +68,7 @@ def main():
             except (OSError, ValueError): values.append({"passed": False})
         result.update(name=name, reports=[str(p) for p in paths], passed=evidence_passed(result, values, expected))
         if "release_artifact" in report:
-            result["artifact_unchanged"] = identify(ROOT / "Builds/LinuxRelease/ClustrGalaxy.x86_64")["tree_sha256"] == report["release_artifact"]["tree_sha256"]
+            result["artifact_unchanged"] = artifacts_unchanged()
             result["passed"] &= result["artifact_unchanged"]
         report["steps"].append(result)
         save()
@@ -73,7 +79,7 @@ def main():
     os_release = pathlib.Path("/etc/os-release")
     report["host_os_id"], report["host_os_like"] = host_identity(os_release.read_text() if os_release.exists() else "")
     save()
-    checks = run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], output / "python-tests.log", timeout=120, capture_stdout=True)
+    checks = run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"], output / "python-tests.log", timeout=120, capture_stdout=True, cwd=ROOT)
     checks.update(name="python-tests", passed=checks["process_exit"] == 0 and not checks["timed_out"])
     report["steps"].append(checks); save()
     if not checks["passed"]: return 2

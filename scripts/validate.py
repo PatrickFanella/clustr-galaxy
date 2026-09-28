@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from unity_process import run
 from private_audio import private_audio
@@ -36,6 +37,46 @@ def inspect_result(xml, log, process):
     return summary
 
 
+def project_assemblies(root):
+    """Assembly names defined by this project's asmdef files."""
+    return sorted(json.loads(path.read_text())["name"] for path in (root / "Assets/ClustrGalaxy").rglob("*.asmdef"))
+
+
+def force_project_compilation(root):
+    """Remove compiled project outputs so Unity must run csc and print their diagnostics.
+
+    Incremental compilation reuses unchanged assemblies silently, so a warning-free log
+    would otherwise not show that project code compiles without warnings.
+    """
+    removed = []
+    library = root / "Library"
+    folders = [library / "ScriptAssemblies", *sorted((library / "Bee/artifacts").glob("*.dag"))]
+    for folder in folders:
+        for name in project_assemblies(root):
+            for path in folder.glob(name + ".*"):
+                if path.is_file():
+                    path.unlink()
+                    removed.append(str(path.relative_to(root)))
+    return removed
+
+
+def compilation_evidence(root, since):
+    """Every project assembly must have been written after `since`."""
+    missing, stale = [], []
+    for name in project_assemblies(root):
+        path = root / "Library/ScriptAssemblies" / (name + ".dll")
+        if not path.exists(): missing.append(name)
+        elif path.stat().st_mtime < since: stale.append(name)
+    return {"compiled": not missing and not stale, "missing": missing, "stale": stale}
+
+
+def overall(suites, expected_modes, compilation):
+    """Passed only once every requested suite completed and project code actually compiled."""
+    complete = [suite["suite"] for suite in suites] == list(expected_modes)
+    return {"complete": complete,
+            "passed": complete and compilation.get("compiled") is True and all(suite["passed"] for suite in suites)}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--unity", default=os.environ.get("UNITY_EDITOR", "/home/onnwee/Videos/6000.4.10f1/Editor/Unity"))
@@ -46,9 +87,21 @@ def main():
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     out = root / "Builds" / "validation" / stamp
     out.mkdir(parents=True)
+    modes = ["EditMode", "PlayMode"] if args.mode == "all" else [args.mode]
     evidence = {"source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
-                "source_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root)), "suites": []}
-    for mode in (["EditMode", "PlayMode"] if args.mode == "all" else [args.mode]):
+                "source_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root)),
+                "requested_suites": modes, "suites": [], "complete": False, "passed": False}
+    started = time.time()
+    evidence["forced_recompilation"] = force_project_compilation(root)
+    compilation = {"compiled": False}
+
+    def save():
+        temporary = out / "summary.pending"
+        temporary.write_text(json.dumps(evidence, indent=2) + "\n")
+        temporary.replace(out / "summary.json")
+
+    save()
+    for mode in modes:
         xml, log = out / (mode + ".xml"), out / (mode + ".log")
         command = [args.unity, "-batchmode", "-nographics", "-noaudio", "-projectPath", str(root), "-runTests",
                    "-testPlatform", mode, "-testResults", str(xml), "-logFile", str(log)]
@@ -56,9 +109,14 @@ def main():
             summary = inspect_result(xml, log, run(command, log, env=env))
         summary["suite"] = mode
         evidence["suites"].append(summary)
-        evidence["passed"] = all(item["passed"] for item in evidence["suites"])
-        (out / "summary.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        if len(evidence["suites"]) == 1:
+            compilation = compilation_evidence(root, started)
+            evidence["project_compilation"] = compilation
+        evidence.update(overall(evidence["suites"], modes, compilation))
+        save()
         print(f"{mode}: {'PASS' if summary['passed'] else 'FAIL'}; {xml}", flush=True)
+    if not compilation.get("compiled"):
+        print("Project scripts were not compiled in this run: " + json.dumps(compilation), flush=True)
     return 0 if evidence["passed"] else 2
 
 
