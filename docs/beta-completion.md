@@ -975,3 +975,50 @@ materializer. The previous run `20260926T020842258292Z` is preserved as failed:
 its first chart test loaded a second system without a jump (correctly
 inspection-only), and Unity exited -11 after the run from the known SIGSEGV in
 the HID input thread (`PLATFORM_hid_enumerate`).
+
+## Player verification and second review round — 2026-09-27
+
+Release player built from clean `0a65102` (`Builds/build-logs/20260928T022948Z`)
+passed the fixture jump journey, the near-limit stress hierarchy (community and
+system 5,000/15,000, discussion 2,048/15,000, thread 2,000/12,000) and the public
+hierarchy with a round-trip jump on revision 493/catalog 14. A 30-second
+active-feature stress preflight (`20260928T023750452930Z-hierarchy`) passed with
+its report bound to the same clean source: CPU p95 11.51 ms, GPU p95 0.54 ms, no
+failures. This is a preflight, not either 600-second qualification run.
+
+A second review covered activities, persistence, secondary UI and the Python
+harness. Fixes, with unit or EditMode tests where applicable:
+
+- Harness: `validate.py` deletes this project's compiled assemblies before the
+  first suite and requires every project assembly to be rebuilt, because warm
+  Library runs had silently reused assemblies and printed no diagnostics. Summaries
+  stay `complete: false` until every suite or resolution finishes. Visual,
+  simulation and interaction harnesses fail on timeouts. The process wrapper
+  reaps its whole session. `build.py` clears its output directory and fails if a
+  build changes tracked files. `full_pass.py` runs children from the checkout
+  root and re-checks both artifacts. `hierarchy_smoke.py` requires the profile
+  report's source and duration to match the tested artifact. CI runs the harness
+  unit tests and uploads evidence; the docs list the Weston, GPU and audio
+  requirements for runners and the Ubuntu container.
+- Activities: a revised mystery interpretation is recorded instead of dropped;
+  catalog-0 snapshots can record flights; a failed ghost capture keeps the score;
+  an unsaved flight record blocks a new run until retried; removing a bookmark
+  also removes its observatory display. Survey documents missing any field are
+  quarantined instead of loaded with defaults, and dates parse with the invariant
+  round-trip format.
+- UI: modals open in Editor Play Mode (`TryGetComponent`-based lookup), Escape
+  no longer closes a modal while its text field is being edited, HUD teardown is
+  guarded, qualification runners exit 2 on an unhandled exception, and
+  personal-best rows show accuracy next to time.
+
+Validation `20260928T024326317007Z` passes 316 EditMode and 437 PlayMode tests with
+forced project recompilation and no project compiler diagnostics. The release
+player rebuilt from clean `24ba9a7` (`Builds/build-logs/20260928T024449Z`, no
+tracked files changed by the build) passed the fixture jump, stress and public
+jump hierarchies again (`20260928T024607651644Z`, `20260928T024618430963Z`,
+`20260928T024631838060Z`).
+
+Not changed: personal-best ranking still prefers accuracy over time (a design
+question), and the activity companion has no size budget below its 8 MiB file
+limit. External gates (Ubuntu licence, Unity runner, human controller
+acceptance, both 600-second runs) remain open.
