@@ -138,7 +138,10 @@ namespace ClustrGalaxy.Core.Activities
             if(SaveBestGhost&&Identity.HasValue&&Elapsed<=900)
             {
                 var id=Identity.Value;
-                ghost=new FlightGhost(Recording.Capture(new ReplayIdentity(id.Snapshot,id.Mode,1,TuningId,Mode,Course.Id,Course.Version)),Course.Points[0]);
+                // A ghost is optional; an unrecordable run still keeps its score.
+                try{ghost=new FlightGhost(Recording.Capture(new ReplayIdentity(id.Snapshot,id.Mode,1,TuningId,Mode,Course.Id,Course.Version)),Course.Points[0]);}
+                catch(ArgumentException){ghost=null;}
+                catch(InvalidOperationException){ghost=null;}
             }
             return new FlightRecord(Course.Id,Course.Version,Mode,Elapsed,
                 Course.Kind==FlightActivityKind.StableOrbit?Math.Min(1,validSeconds/Elapsed):gateAccuracy/Course.Points.Count,TuningId,ghost);

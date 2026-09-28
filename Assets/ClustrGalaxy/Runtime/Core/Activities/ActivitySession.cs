@@ -59,7 +59,11 @@ namespace ClustrGalaxy.Core.Activities
                 var index=diary.FindIndex(x=>x.Id==intent.Value);if(index<0)throw new ArgumentException("The diary moment is no longer available.");
                 var entry=diary[index];
                 if(intent.Operation==ActivityOperation.DeleteBookmark)
-                {if(!entry.Retained)throw new ArgumentException("Only a saved bookmark can be removed explicitly.");diary.RemoveAt(index);}
+                {
+                    if(!entry.Retained)throw new ArgumentException("Only a saved bookmark can be removed explicitly.");diary.RemoveAt(index);
+                    // An explicitly removed bookmark also leaves the observatory; automatic eviction does not.
+                    displays.RemoveAll(x=>x.Kind==ObservatoryItemKind.Journal&&x.Reference==entry.Id);
+                }
                 else diary[index]=new DiaryEntry(entry.Id,entry.Text,entry.Utc,true);
             }
             else if(intent.Operation==ActivityOperation.StartExpedition)
@@ -178,6 +182,12 @@ namespace ClustrGalaxy.Core.Activities
                         record = new ActivityRecord(record.Id, record.ContentVersion, record.Observations, true, intent.Value, intent.Explanation);
                         Replace(records, record);
                         AddDiary(diary, new DiaryEntry("interpretation:" + record.Id, definition.Title + " — " + (CampaignContent.Find(record.Id,intent.Value)?.Text ?? intent.Value), intent.Utc));
+                    }
+                    else if (record.Interpretation != intent.Value || record.Explanation != (intent.Explanation ?? string.Empty))
+                    {
+                        // A revised reading replaces the recorded answer; completion and its diary entry are unchanged.
+                        record = new ActivityRecord(record.Id, record.ContentVersion, record.Observations, true, intent.Value, intent.Explanation);
+                        Replace(records, record);
                     }
                 }
                 else throw new ArgumentException("Unsupported activity operation.");

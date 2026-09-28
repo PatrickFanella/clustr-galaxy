@@ -34,6 +34,35 @@ namespace ClustrGalaxy.Tests
             Assert.That(session.Survey,Is.Null);
         }
 
+        private sealed class FailingActivityRepository : IActivityRepository
+        {
+            private readonly MemoryActivityRepository inner = new();
+            public bool Fail;
+            public ActivityState LoadOrCreate(ActivityIdentity identity) => inner.LoadOrCreate(identity);
+            public void Save(ActivityState state) { if (Fail) throw new IOException("disk full"); inner.Save(state); }
+        }
+
+        [Test] public async System.Threading.Tasks.Task UnsavedFlightRecordBlocksANewRunUntilRetried()
+        {
+            var manifest=new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");var a=(GalaxyEntityId)"subreddit:a";
+            var scene=new GalaxySnapshotScene(9,3,new SpatialScopeRequest(SpatialScope.Overview),new[]{new SnapshotNode(a,GalaxyEntityKind.Subreddit,"a",1)},Array.Empty<SnapshotRoute>());
+            var activities=new FailingActivityRepository();
+            using var session=new ClustrGalaxy.Core.Session.GalaxySession(new DeterministicSnapshotSource(manifest,new[]{scene}),
+                new MemorySurveyRepository(manifest.SurveySnapshot,"pilot",a),"pilot",activities);
+            await session.OpenAsync();
+            var course=FlightCourse.Playground(FlightActivityKind.RingRun,new ReplayPosition(100,200,300));
+            session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a});
+            activities.Fail=true;
+            foreach(var gate in course.Points)session.AdvanceFlightActivity(gate,.2,NavigationFlightMode.PilotAssist);
+            Assert.That(session.FlightActivity.Completed,Is.True);
+            Assert.That(session.FlightError,Is.Not.Empty);
+            Assert.Throws<InvalidOperationException>(()=>session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a}));
+            activities.Fail=false;
+            Assert.That(session.CommitFlightActivity().Committed,Is.True);
+            Assert.That(session.Activities.State.Flights.Count,Is.EqualTo(1));
+            Assert.DoesNotThrow(()=>session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a}));
+        }
+
         [Test] public async System.Threading.Tasks.Task ImportedPracticeGhostDoesNotGrantProgressOrOwnSourceEntities()
         {
             var manifest=new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");var a=(GalaxyEntityId)"subreddit:a";

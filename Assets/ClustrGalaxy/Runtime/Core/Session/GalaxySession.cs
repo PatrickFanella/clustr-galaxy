@@ -141,6 +141,8 @@ namespace ClustrGalaxy.Core.Session
         {
             if (Travel?.State.Active == true || Flight.Recovering) throw new InvalidOperationException("End travel or recovery before starting a flight activity.");
             if(Activities==null)throw new InvalidOperationException("Activity storage is unavailable.");
+            // A completed record whose save failed stays retryable; a new run would discard it.
+            if(pendingFlightRecord!=null)throw new InvalidOperationException("Retry saving the completed flight record before starting another.");
             var ids=anchors.ToArray();
             if(course.Kind==FlightActivityKind.Scenic)
             {
@@ -174,7 +176,9 @@ namespace ClustrGalaxy.Core.Session
             if(pendingFlightRecord==null||Activities==null)return null;
             var outcome=Activities.Apply(new ActivityIntent("flight:"+FlightActivity.Id,Activities.State.Identity,
                 ActivityOperation.CompleteFlight,DateTime.UtcNow,flight:pendingFlightRecord));
-            FlightError=outcome.Committed?"":outcome.Error;return outcome;
+            FlightError=outcome.Committed?"":outcome.Error;
+            if(outcome.Committed)pendingFlightRecord=null;
+            return outcome;
         }
         private bool CanCommitFlight(FlightRecord record)=>ReferenceEquals(record,pendingFlightRecord);
 

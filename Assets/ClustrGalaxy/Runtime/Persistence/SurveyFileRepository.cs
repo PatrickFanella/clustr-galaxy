@@ -1,8 +1,11 @@
 using System;
+using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using ClustrGalaxy.Core.Domain;
 using ClustrGalaxy.Core.Persistence;
 using ClustrGalaxy.Core.Survey;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace ClustrGalaxy.Persistence
@@ -10,7 +13,8 @@ namespace ClustrGalaxy.Persistence
     [Serializable]
     internal sealed class SurveyStateDocument
     {
-        public int schema_version = SurveyState.SchemaVersion;
+        // Zero until read: a document without schema_version must not look current.
+        public int schema_version;
         public string profile_id = string.Empty;
         public long revision_id;
         public long catalog_id;
@@ -77,6 +81,7 @@ namespace ClustrGalaxy.Persistence
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
             var document = ToDocument(state);
+            document.schema_version = SurveyState.SchemaVersion;
             var json = JsonUtility.ToJson(document, false);
             documents.Write(PathFor(state.ProfileId, state.Snapshot), json,
                 candidate => TryParse(candidate, state.ProfileId, state.Snapshot, out _));
@@ -93,6 +98,8 @@ namespace ClustrGalaxy.Persistence
             state = null;
             try
             {
+                // JsonUtility keeps defaults for absent keys; a v2 document must contain every field.
+                if (!HasEveryField(JObject.Parse(json), typeof(SurveyStateDocument))) return false;
                 var value = JsonUtility.FromJson<SurveyStateDocument>(json);
                 if (value == null || value.schema_version != SurveyState.SchemaVersion ||
                     !string.Equals(value.profile_id, profileId, StringComparison.Ordinal) ||
@@ -102,9 +109,8 @@ namespace ClustrGalaxy.Persistence
                 var personal = (value.personal_constellations ?? Array.Empty<PersonalConstellationDocument>())
                     .Select(item => new PersonalConstellationRecord(item.id, item.name, item.reason,
                         (item.members ?? Array.Empty<string>()).Select(member => (GalaxyEntityId)member),
-                        DateTime.Parse(item.created_utc, null, System.Globalization.DateTimeStyles.RoundtripKind))).ToArray();
-                DateTime? saved = string.IsNullOrWhiteSpace(value.saved_utc) ? null :
-                    DateTime.Parse(value.saved_utc, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                        ParseUtc(item.created_utc))).ToArray();
+                DateTime? saved = string.IsNullOrWhiteSpace(value.saved_utc) ? null : ParseUtc(value.saved_utc);
                 state = new SurveyState(snapshot, profileId, (GalaxyEntityId)value.starting_system_id,
                     StringsToEntities(value.known_entities), StringsToEntities(value.identified_entities),
                     StringsToRoutes(value.known_routes), StringsToEntities(value.completed_scans),
@@ -115,6 +121,19 @@ namespace ClustrGalaxy.Persistence
                 return true;
             }
             catch (Exception) { state = null; return false; }
+        }
+
+        private static DateTime ParseUtc(string value) =>
+            DateTime.ParseExact(value, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+        private static bool HasEveryField(JObject document, Type type)
+        {
+            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+                if (document[field.Name] == null) return false;
+            if (type == typeof(SurveyStateDocument) && document["personal_constellations"] is JArray items)
+                foreach (var item in items)
+                    if (item is not JObject member || !HasEveryField(member, typeof(PersonalConstellationDocument))) return false;
+            return true;
         }
 
         private static SurveyStateDocument ToDocument(SurveyState state) => new()

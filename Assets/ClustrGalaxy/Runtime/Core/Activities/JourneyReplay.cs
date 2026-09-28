@@ -34,7 +34,7 @@ namespace ClustrGalaxy.Core.Activities
         public ReplayIdentity(SurveySnapshotId snapshot, ActivityWorldMode worldMode, int contentVersion,
             string tuningId, NavigationFlightMode flightMode, string courseId = "", int courseVersion = 0)
         {
-            if (snapshot.RevisionId <= 0 || snapshot.CatalogId <= 0 || contentVersion < 1 ||
+            if (snapshot.RevisionId <= 0 || snapshot.CatalogId < 0 || contentVersion < 1 ||
                 !Enum.IsDefined(typeof(ActivityWorldMode), worldMode) || !Enum.IsDefined(typeof(NavigationFlightMode), flightMode) ||
                 !Token(tuningId, false) || !Token(courseId, true) || (courseId.Length == 0 ? courseVersion != 0 : courseVersion < 1))
                 throw new ArgumentException("Invalid replay identity.");

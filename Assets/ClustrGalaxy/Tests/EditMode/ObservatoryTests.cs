@@ -43,6 +43,15 @@ namespace ClustrGalaxy.Tests
             var restored=repo.LoadOrCreate(Id);Assert.That(restored.Displays,Is.Empty);Assert.That(restored.Diary.Single().Id,Is.EqualTo("moment"));
             Assert.That(session.Apply(new ActivityIntent("invalid",Id,ActivityOperation.ClearDisplay,DateTime.UtcNow,value:"6")).Committed,Is.False);
         }
+        [Test] public void ExplicitlyRemovedBookmarkLeavesTheObservatory()
+        {
+            var session=new ActivitySession(new MemoryActivityRepository(),Id,AuthoredActivityCatalog.Definitions);
+            Assert.That(session.Apply(new ActivityIntent("saved",Id,ActivityOperation.SaveBookmark,DateTime.UtcNow,value:"Kept moment")).Committed,Is.True);
+            Assert.That(session.Apply(new ActivityIntent("place",Id,ActivityOperation.PlaceDisplay,DateTime.UtcNow,display:new ObservatoryDisplay(1,ObservatoryItemKind.Journal,"saved"))).Committed,Is.True);
+            Assert.That(session.Apply(new ActivityIntent("remove",Id,ActivityOperation.DeleteBookmark,DateTime.UtcNow,value:"saved")).Committed,Is.True);
+            Assert.That(session.State.Diary.Any(x=>x.Id=="saved"),Is.False);
+            Assert.That(session.State.Displays,Is.Empty);
+        }
         [Test] public void ChosenJournalMomentSurvivesAutomaticDiaryEviction()
         {
             var session=new ActivitySession(new MemoryActivityRepository(),Id,AuthoredActivityCatalog.Definitions);session.Apply(Note("moment"));

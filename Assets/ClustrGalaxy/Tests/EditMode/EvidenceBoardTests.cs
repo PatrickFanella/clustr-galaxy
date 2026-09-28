@@ -48,6 +48,15 @@ namespace ClustrGalaxy.Tests
             Assert.That(restored.EvidenceBoards.Single().Layout.Edges.Count,Is.EqualTo(1));Assert.That(restored.Find(Case.Id).Completed,Is.True);
             Assert.That(restored.Find(Case.Id).Explanation,Is.EqualTo("A personal reading."));Assert.That(restored.Diary.Count(x=>x.Id=="interpretation:"+Case.Id),Is.EqualTo(1));
         }
+        [Test] public void RevisedInterpretationReplacesTheRecordedAnswerWithoutASecondDiaryEntry()
+        {
+            var session=Ready(new MemoryActivityRepository());
+            Assert.That(session.Apply(new ActivityIntent("first",Id,ActivityOperation.Interpret,DateTime.UtcNow,Case.Id,Case.Interpretations[0],"First reading.",evidenceBoard:Connected())).Committed,Is.True);
+            Assert.That(session.Apply(new ActivityIntent("second",Id,ActivityOperation.Interpret,DateTime.UtcNow,Case.Id,Case.Interpretations[1],"Second reading.",evidenceBoard:Connected())).Committed,Is.True);
+            Assert.That(session.State.Find(Case.Id).Interpretation,Is.EqualTo(Case.Interpretations[1]));
+            Assert.That(session.State.Find(Case.Id).Explanation,Is.EqualTo("Second reading."));
+            Assert.That(session.State.Diary.Count(x=>x.Id=="interpretation:"+Case.Id),Is.EqualTo(1));
+        }
         [Test] public void HistoricalCompletionWithoutBoardIsPreservedAndCanBeDecorated()
         {
             var repo=new MemoryActivityRepository();repo.Save(new ActivityState(Id,new[]{new ActivityRecord(Case.Id,Case.ContentVersion,Case.Observations,true,Case.Interpretations[0])}));

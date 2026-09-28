@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ClustrGalaxy.Core.Domain;
 using ClustrGalaxy.Core.Persistence;
 using ClustrGalaxy.Core.Survey;
@@ -11,6 +12,32 @@ namespace ClustrGalaxy.Tests
 {
     public sealed class SurveyJourneyTests
     {
+        [TestCase("processed_intents")]
+        [TestCase("schema_version")]
+        [TestCase("discoveries")]
+        public void SurveyDocumentMissingAFieldIsQuarantinedInsteadOfDefaulted(string field)
+        {
+            var root = Path.Combine(Path.GetTempPath(), "galaxy-strict-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var snapshot = new SurveySnapshotId(9,3,"demo"); var home = (GalaxyEntityId)"subreddit:technology";
+                var repository = new SurveyFileRepository(new FileDurableDocumentStore(root));
+                var session = new SurveySession(repository,"pilot",snapshot,home);
+                Assert.That(session.Apply(new StartSurveyIntent("start",snapshot,DateTime.UtcNow,home,new[]{home})).Succeeded,Is.True);
+                var file = Directory.EnumerateFiles(root,"*.json",SearchOption.AllDirectories).Single();
+                var json = File.ReadAllText(file);
+                var stripped = Regex.Replace(json, "\"" + field + "\":(\\[[^\\]]*\\]|[^,}]*),?", "");
+                Assert.That(stripped, Is.Not.EqualTo(json));
+                File.WriteAllText(file, stripped);
+
+                var reopened = new SurveySession(repository,"pilot",snapshot,home);
+
+                Assert.That(reopened.State.ProcessedIntentIds, Is.Empty);
+                Assert.That(Directory.EnumerateFiles(root,"*.corrupt-*",SearchOption.AllDirectories).Count(), Is.EqualTo(1));
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        }
+
         [Test]
         public void DemoJourneyPersistsContractsConstellationDiscoveryAndConfirmedLocalQueue()
         {
