@@ -143,7 +143,8 @@ namespace ClustrGalaxy.UI
             var editingText = InputCaptured && (nameField.isFocused || reasonField.isFocused || searchField.isFocused);
             if (!editingText && (Keyboard.current?.tabKey.wasPressedThisFrame == true || Gamepad.current?.startButton.wasPressedThisFrame == true))
                 SetMenuOpen(!InputCaptured);
-            if (InputCaptured && !editingText && (Keyboard.current?.escapeKey.wasPressedThisFrame == true ||
+            // Escape belongs to an active text field; gamepad Back always leaves the console.
+            if (InputCaptured && (!editingText && Keyboard.current?.escapeKey.wasPressedThisFrame == true ||
                 Gamepad.current?.buttonEast.wasPressedThisFrame == true)) SetMenuOpen(false);
             var state = visibility?.SurveySession?.State;
             var thread = threadInspection?.DisplayedModel;
@@ -270,7 +271,9 @@ namespace ClustrGalaxy.UI
             var field = go.GetComponent<InputField>(); var label = Label(go.transform, "Text"); Stretch(label.rectTransform);
             field.textComponent = label; field.characterLimit = limit;
             var hint = Label(go.transform, "Placeholder"); Stretch(hint.rectTransform); hint.text = placeholder; hint.color = Color.gray;
-            field.placeholder = hint; field.onValueChanged.AddListener(changed); return field;
+            field.placeholder = hint; field.onValueChanged.AddListener(changed);
+            // D-pad focus passes through; A (submit) starts editing, so a controller cannot be trapped in text entry.
+            field.shouldActivateOnSelect = false; return field;
         }
         private Text Label(Transform parent, string name)
         {

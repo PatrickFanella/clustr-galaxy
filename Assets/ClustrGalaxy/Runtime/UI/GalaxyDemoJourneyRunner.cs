@@ -740,7 +740,8 @@ namespace ClustrGalaxy.UI
             {yield return Click("SECTION: ALL ACTIONS");button=hud.GetComponentsInChildren<Button>().FirstOrDefault(value=>(value.gameObject.name==label||value.GetComponentInChildren<Text>()?.text==label));}
             if (!Require(button != null && button.interactable, "HUD action unavailable: " + label)) yield break;
             var found = false;
-            var focusLimit=hud.GetComponentsInChildren<Button>().Length+1;
+            // Text fields share the console's navigation chain with the buttons.
+            var focusLimit=hud.GetComponentsInChildren<Selectable>().Length+1;
             for (var attempt = 0; attempt < focusLimit; attempt++)
             {
                 var focused = EventSystem.current.currentSelectedGameObject;
