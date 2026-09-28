@@ -69,8 +69,10 @@ namespace ClustrGalaxy.Core.Activities
         public string CourseId {get;} public int Version {get;} public NavigationFlightMode Mode {get;}
         public double Seconds {get;} public double Accuracy {get;} public string TuningId {get;}
         public string Key => CourseId+":"+Version+":"+Mode+":"+TuningId;
-        public bool Improves(FlightRecord previous) => previous==null || Accuracy>previous.Accuracy+.0001 ||
-            (Math.Abs(Accuracy-previous.Accuracy)<.0001 && Seconds<previous.Seconds);
+        /// <summary>The fastest completed run is the personal best; accuracy only breaks an exact tie.</summary>
+        public bool Improves(FlightRecord previous) => previous==null || Seconds<previous.Seconds-.0001 ||
+            (Math.Abs(Seconds-previous.Seconds)<.0001 && Accuracy>previous.Accuracy+.0001);
+        public FlightRecord WithoutGhost() => Ghost==null ? this : new FlightRecord(CourseId,Version,Mode,Seconds,Accuracy,TuningId,null);
     }
     /// <summary>Session-owned transient course evaluator. It never grants Survey awards.</summary>
     public sealed class FlightActivityRun

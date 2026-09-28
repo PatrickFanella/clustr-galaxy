@@ -119,6 +119,8 @@ namespace ClustrGalaxy.Core.Activities
                 if(record==null||flightEligibility?.Invoke(record)!=true)throw new ArgumentException("No completed session flight is available.");
                 var index=flights.FindIndex(x=>x.Key==record.Key);
                 if(index<0)flights.Add(record);else if(record.Improves(flights[index]))flights[index]=record;
+                // Ghosts from other flight tunings can never race again; keep their scores, drop the recordings.
+                for(var i=0;i<flights.Count;i++)if(flights[i].TuningId!=record.TuningId)flights[i]=flights[i].WithoutGhost();
                 if(expedition?.Status==ExpeditionStatus.Active&&expedition.Plan.Mood==ExpeditionMood.PilotPractice&&expedition.CourseId==record.CourseId)expedition=expedition.Advance();
                 AddDiary(diary,new DiaryEntry(intent.Id,"Flight completed — "+record.CourseId+" — "+record.Mode,intent.Utc));
             }

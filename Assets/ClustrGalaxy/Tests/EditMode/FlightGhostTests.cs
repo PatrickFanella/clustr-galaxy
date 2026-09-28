@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using ClustrGalaxy.Core.Activities;
 using ClustrGalaxy.Core.Navigation;
@@ -21,6 +22,26 @@ namespace ClustrGalaxy.Tests
             Assert.That(Complete(Run(default,false)).Ghost,Is.Null);
             Assert.That(Complete(Run(default)).Ghost,Is.Not.Null);
             Assert.That(new ActivityPreferences().SaveBestGhosts,Is.False);
+        }
+        [Test] public void FastestRunIsThePersonalBestAndAccuracyOnlyBreaksTies()
+        {
+            FlightRecord Record(double seconds,double accuracy)=>new("ring-run",1,NavigationFlightMode.PilotAssist,seconds,accuracy,"tuning");
+            Assert.That(Record(30,.8).Improves(Record(42,.95)),Is.True);
+            Assert.That(Record(42,.99).Improves(Record(30,.8)),Is.False);
+            Assert.That(Record(30,.9).Improves(Record(30,.8)),Is.True);
+            Assert.That(Record(30,.8).Improves(Record(30,.8)),Is.False);
+        }
+        [Test] public void NewTuningPrunesStaleGhostsButKeepsTheirScores()
+        {
+            var session=new ActivitySession(new MemoryActivityRepository(),Identity,AuthoredActivityCatalog.Definitions,flightEligibility:_=>true);
+            var old=Complete(Run(default));Assert.That(old.Ghost,Is.Not.Null);
+            Assert.That(session.Apply(new ActivityIntent("old",Identity,ActivityOperation.CompleteFlight,DateTime.UtcNow,flight:old)).Committed,Is.True);
+            var current=new FlightRecord(old.CourseId,old.Version,old.Mode,60,1,"tuning-v2");
+            Assert.That(session.Apply(new ActivityIntent("current",Identity,ActivityOperation.CompleteFlight,DateTime.UtcNow,flight:current)).Committed,Is.True);
+            var kept=session.State.Flights.Single(x=>x.TuningId=="tuning");
+            Assert.That(kept.Ghost,Is.Null);
+            Assert.That(kept.Seconds,Is.EqualTo(old.Seconds));
+            Assert.That(session.State.Flights.Count,Is.EqualTo(2));
         }
         [Test] public void RecordingIncludesStartAtMaximumSupportedStep()
         {

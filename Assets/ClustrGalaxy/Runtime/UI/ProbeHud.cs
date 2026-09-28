@@ -469,7 +469,7 @@ namespace ClustrGalaxy.UI
                         if(scenicChoices>=8)break;
                     }
                     if(scenicChoices==8)AddButton("Showing up to 8 loaded routes for this selection",()=>{});
-                    foreach(var record in activities.State.Flights)AddButton("PERSONAL BEST · "+record.CourseId+" · "+record.Mode+" · "+Math.Round(record.Accuracy*100)+"% ACCURACY · "+record.Seconds.ToString("F1")+"s",()=>{});
+                    foreach(var record in activities.State.Flights)AddButton("PERSONAL BEST · "+record.CourseId+" · "+record.Mode+" · "+record.Seconds.ToString("F1")+"s · "+Math.Round(record.Accuracy*100)+"% ACCURACY",()=>{});
                 }
                 currentSection=ProbeHudSection.Creations;
                 var recorder = GetComponent<JourneyRecorder>();
