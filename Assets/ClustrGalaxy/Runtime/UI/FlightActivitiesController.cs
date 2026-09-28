@@ -64,7 +64,7 @@ namespace ClustrGalaxy.UI
                 var file=Directory.Exists(folder)?Directory.GetFiles(folder,"*.clustr-replay").OrderBy(x=>x,StringComparer.Ordinal).LastOrDefault():null;
                 if(file==null)throw new InvalidOperationException("No saved flight recording yet.");
                 using var stream=File.OpenRead(file);var replay=ReplayPackage.Read(stream);
-                (GetComponent<JourneyReplayViewer>()??gameObject.AddComponent<JourneyReplayViewer>()).Open(replay);
+                this.GetOrAddComponent<JourneyReplayViewer>().Open(replay);
             }
             catch(Exception e){Status=e.Message;hud.InvalidateExploration();}
         }

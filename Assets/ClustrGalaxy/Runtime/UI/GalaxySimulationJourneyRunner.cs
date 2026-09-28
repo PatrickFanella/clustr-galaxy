@@ -33,8 +33,10 @@ namespace ClustrGalaxy.UI
                 minimum = Math.Min(minimum, Vector3.Distance(position, sources[i].transform.position) - sources[i].Definition.ExclusionRadius - ShipSurfaceSafety.HullRadius);
             return minimum;
         }
+        private RunnerFailureWatchdog watchdog;
         private IEnumerator Start()
         {
+            watchdog = new RunnerFailureWatchdog("ClustrGalaxy.SimulationJourney");
             yield return new WaitForSecondsRealtime(3);
             var owner = GetComponent<GalaxySessionBehaviour>(); var navigation = GetComponent<GalaxyNavigationController>();
             var controller = GetComponent<GalaxySystemCruiseController>(); var body = GetComponent<Rigidbody>();
@@ -172,6 +174,11 @@ namespace ClustrGalaxy.UI
                 result.no_recovery && result.no_progress && result.journey_seconds >= 60 && result.journey_seconds <= 120 && result.samples >= 100;
             File.WriteAllText(Path.Combine(folder, "summary.json"), JsonUtility.ToJson(result, true));
             Debug.Log("[ClustrGalaxy.SimulationJourney] passed=" + result.passed); Application.Quit(result.passed ? 0 : 2);
+        }
+        private void OnDestroy()
+        {
+            watchdog?.Dispose();
+            Time.timeScale = 1;
         }
     }
 }

@@ -31,8 +31,10 @@ namespace ClustrGalaxy.UI
         private readonly string[] members = { "subreddit:technology", "post:retro-computing", "post:open-source-ai",
             "post:linux-handhelds", "post:right-to-repair", "post:privacy-tools" };
 
+        private RunnerFailureWatchdog watchdog;
         private IEnumerator Start()
         {
+            watchdog = new RunnerFailureWatchdog("ClustrGalaxy.DemoJourney");
             session = GetComponent<GalaxySessionBehaviour>();
             hud = GetComponent<ProbeHud>();
             visibility = GetComponent<GalaxySurveyVisibilityController>();
@@ -769,6 +771,8 @@ namespace ClustrGalaxy.UI
         }
         private void OnDestroy()
         {
+            watchdog?.Dispose();
+            Time.timeScale = 1;
             if (controller == null) return;
             InputSystem.RemoveDevice(controller);
             InputSystem.settings.backgroundBehavior = previousBackground;

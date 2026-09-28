@@ -68,7 +68,7 @@ namespace ClustrGalaxy.UI
         }
         private void OpenDiary()
         {
-            panel.SetActive(false);diary=GetComponent<JourneyDiary>()??gameObject.AddComponent<JourneyDiary>();
+            panel.SetActive(false);diary=this.GetOrAddComponent<JourneyDiary>();
             diary.Open(()=>{if(panel==null)return;panel.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current.SetSelectedGameObject(buttons[4].gameObject);},activity);
         }
         private void LinkFocus()
@@ -82,7 +82,7 @@ namespace ClustrGalaxy.UI
         }
         private void OpenBoard()
         {
-            panel.SetActive(false);board=GetComponent<EvidenceBoardEditor>()??gameObject.AddComponent<EvidenceBoardEditor>();
+            panel.SetActive(false);board=this.GetOrAddComponent<EvidenceBoardEditor>();
             board.Open(activity,AuthoredActivityCatalog.Definitions[page],()=>{if(panel==null)return;panel.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current.SetSelectedGameObject(buttons[6].gameObject);});
         }
         private void Interpret(int choice)
@@ -101,8 +101,8 @@ namespace ClustrGalaxy.UI
         private Text Label(string value,int size,float x,float y,float width,float height){var label=ConstellationDiagram.MakeText(panel.transform,value,size);Place(label.rectTransform,x,y,width,height);return label;}
         private void Add(string value,float x,float y,UnityEngine.Events.UnityAction action,float width=290)
         {var image=NewImage(value);Place(image.rectTransform,x,y,width,50);image.color=new Color(.14f,.23f,.28f);var button=image.gameObject.AddComponent<Button>();button.onClick.AddListener(action);buttons.Add(button);var label=ConstellationDiagram.MakeText(image.transform,value,16);label.alignment=TextAnchor.MiddleCenter;label.rectTransform.anchorMin=Vector2.zero;label.rectTransform.anchorMax=Vector2.one;label.rectTransform.offsetMin=label.rectTransform.offsetMax=Vector2.zero;}
-        private void Update(){if(IsOpen&&panel.activeSelf&&Time.frameCount>resumedFrame&&(Keyboard.current?.escapeKey.wasPressedThisFrame==true||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
-        public void Close(){if(!IsOpen)return;board?.Close();diary?.Close();panel.SetActive(false);Destroy(panel);panel=null;hud.SetModalInputCaptured(false);}
+        private void Update(){if(IsOpen&&panel.activeSelf&&Time.frameCount>resumedFrame&&((Keyboard.current?.escapeKey.wasPressedThisFrame==true&&!(explanation!=null&&explanation.isFocused))||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
+        public void Close(){if(!IsOpen)return;board?.Close();diary?.Close();panel.SetActive(false);Destroy(panel);panel=null;if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }
 }

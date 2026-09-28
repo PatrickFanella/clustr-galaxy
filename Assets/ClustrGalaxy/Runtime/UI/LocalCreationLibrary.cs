@@ -50,11 +50,11 @@ namespace ClustrGalaxy.UI
                 if(files.Length==0)throw new InvalidOperationException("Choose a saved replay first.");
                 if(files[selected].EndsWith(".png",StringComparison.Ordinal))
                 {
-                    imageChild=GetComponent<LocalImageViewer>()??gameObject.AddComponent<LocalImageViewer>();
+                    imageChild=this.GetOrAddComponent<LocalImageViewer>();
                     imageChild.OpenSaved(files[selected],()=>{if(panel==null)return;panel.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current?.SetSelectedGameObject(buttons[2].gameObject);});
                     panel.SetActive(false);return;
                 }
-                var replay=library.Read(files[selected]);panel.SetActive(false);child=GetComponent<JourneyReplayViewer>()??gameObject.AddComponent<JourneyReplayViewer>();
+                var replay=library.Read(files[selected]);panel.SetActive(false);child=this.GetOrAddComponent<JourneyReplayViewer>();
                 child.Open(replay,()=>{if(panel==null)return;panel.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current?.SetSelectedGameObject(buttons[2].gameObject);});
             }
             catch(Exception e){panel.SetActive(true);message="Cannot view this file: "+e.Message;Refresh();EventSystem.current?.SetSelectedGameObject(buttons[2].gameObject);}
@@ -79,7 +79,7 @@ namespace ClustrGalaxy.UI
         private Text Label(string value,int size,float x,float y,float w,float h){var label=ConstellationDiagram.MakeText(panel.transform,value,size);Place(label.rectTransform,x,y,w,h);return label;}
         private void Add(string value,float x,float y,UnityEngine.Events.UnityAction action)
         {var image=Image(value);Place(image.rectTransform,x,y,390,50);image.color=new Color(.14f,.23f,.28f);var button=image.gameObject.AddComponent<Button>();button.onClick.AddListener(action);buttons.Add(button);var label=ConstellationDiagram.MakeText(image.transform,value,16);label.alignment=TextAnchor.MiddleCenter;label.rectTransform.anchorMin=Vector2.zero;label.rectTransform.anchorMax=Vector2.one;label.rectTransform.offsetMin=label.rectTransform.offsetMax=Vector2.zero;}
-        private void Update(){if(IsOpen&&panel.activeSelf&&Time.frameCount>resumedFrame&&(Keyboard.current?.escapeKey.wasPressedThisFrame==true||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
+        private void Update(){if(IsOpen&&panel.activeSelf&&Time.frameCount>resumedFrame&&((Keyboard.current?.escapeKey.wasPressedThisFrame==true&&!(source!=null&&source.isFocused))||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
         public void Close(){if(!IsOpen)return;var closingPanel=panel;panel=null;child?.Close();imageChild?.Close();closingPanel.SetActive(false);Destroy(closingPanel);buttons.Clear();if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }

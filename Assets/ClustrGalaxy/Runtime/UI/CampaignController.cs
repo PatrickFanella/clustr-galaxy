@@ -132,7 +132,7 @@ namespace ClustrGalaxy.UI
         public void AddActions(Action<string,UnityAction> add)
         {
             var activity=owner.Session?.Activities;if(activity==null)return;
-            add("OPEN CAMPAIGN NOTEBOOK",()=> (GetComponent<CampaignNotebook>()??gameObject.AddComponent<CampaignNotebook>()).Open());
+            add("OPEN CAMPAIGN NOTEBOOK",()=> this.GetOrAddComponent<CampaignNotebook>().Open());
             if(activity.State.Identity.Snapshot.StorageNamespace!="demo")return;
             add(status,()=>{});
             if(owner.Session.Campaign.Error.Length!=0)add("RETRY CLUE SAVE",()=>{var result=owner.Session.Campaign.Retry();status=result?.Error??"";hud.InvalidateExploration();});

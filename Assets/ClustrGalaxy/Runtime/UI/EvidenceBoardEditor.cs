@@ -66,7 +66,7 @@ namespace ClustrGalaxy.UI
         private void Update()
         {
             if(!IsOpen)return;
-            if(Keyboard.current?.escapeKey.wasPressedThisFrame==true||Gamepad.current?.buttonEast.wasPressedThisFrame==true){Close();return;}
+            if((Keyboard.current?.escapeKey.wasPressedThisFrame==true&&!(explanation!=null&&explanation.isFocused))||Gamepad.current?.buttonEast.wasPressedThisFrame==true){Close();return;}
             if(explanation.isFocused)return;
             var focused=diagram.FocusedMember();if(!focused.IsEmpty&&focused!=selected){selected=focused;Refresh();}
             var step=Gamepad.current?.rightShoulder.wasPressedThisFrame==true?1:Gamepad.current?.leftShoulder.wasPressedThisFrame==true?-1:0;

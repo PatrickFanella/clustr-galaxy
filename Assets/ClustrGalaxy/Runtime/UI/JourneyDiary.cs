@@ -71,8 +71,8 @@ namespace ClustrGalaxy.UI
         private static void Stretch(RectTransform rect){rect.anchorMin=Vector2.zero;rect.anchorMax=Vector2.one;rect.offsetMin=new Vector2(10,5);rect.offsetMax=new Vector2(-10,-5);}
         private Text Label(string value,int size,float x,float y,float w,float h){var text=ConstellationDiagram.MakeText(panel.transform,value,size);text.supportRichText=false;Place(text.rectTransform,x,y,w,h);return text;}
         private void Add(string value,float x,float y,UnityEngine.Events.UnityAction action){var image=Image(value);Place(image.rectTransform,x,y,390,50);image.color=new Color(.14f,.23f,.28f);var button=image.gameObject.AddComponent<Button>();button.onClick.AddListener(action);buttons.Add(button);var label=ConstellationDiagram.MakeText(image.transform,value,16);label.alignment=TextAnchor.MiddleCenter;Stretch(label.rectTransform);}
-        private void Update(){if(IsOpen&&(Keyboard.current?.escapeKey.wasPressedThisFrame==true||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
-        public void Close(){if(!IsOpen)return;panel.SetActive(false);Destroy(panel);panel=null;buttons.Clear();var callback=closed;closed=null;if(callback!=null)callback();else hud.SetModalInputCaptured(false);}
+        private void Update(){if(IsOpen&&((Keyboard.current?.escapeKey.wasPressedThisFrame==true&&!(draft!=null&&draft.isFocused))||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
+        public void Close(){if(!IsOpen)return;panel.SetActive(false);Destroy(panel);panel=null;buttons.Clear();var callback=closed;closed=null;if(callback!=null)callback();else if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }
 }

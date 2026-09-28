@@ -91,7 +91,7 @@ namespace ClustrGalaxy.UI
             marker.anchoredPosition=Point(replay.At(time).Position);timeline.SetValueWithoutNotify((float)time);
             if(displayedSecond!=(int)time){displayedSecond=(int)time;clock.text=time.ToString("F1")+" / "+replay.Duration.ToString("F1")+" seconds · "+playbackSpeed+"× · Timeline: seek · A/Enter: select · B/Escape: return";}
         }
-        public void Close(){if(panel==null)return;panel.SetActive(false);Destroy(panel);panel=null;var callback=closed;closed=null;if(callback!=null)callback();else hud.SetModalInputCaptured(false);}
+        public void Close(){if(panel==null)return;panel.SetActive(false);Destroy(panel);panel=null;var callback=closed;closed=null;if(callback!=null)callback();else if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }
 }

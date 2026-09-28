@@ -17,8 +17,10 @@ namespace ClustrGalaxy.UI
                 ClustrGalaxy.Core.Activities.ActivityOperation.SetPreferences, DateTime.UtcNow, preferences: preferences));
             if (!outcome.Committed) throw new InvalidOperationException(outcome.Error);
         }
+        private RunnerFailureWatchdog watchdog;
         private IEnumerator Start()
         {
+            watchdog = new RunnerFailureWatchdog("ClustrGalaxy.VisualSmoke");
             yield return new WaitForSecondsRealtime(3);
             var owner=GetComponent<GalaxySessionBehaviour>();var hud=GetComponent<ProbeHud>();
             var folder=Path.Combine(Application.persistentDataPath,"ClustrGalaxy","visual-smoke");Directory.CreateDirectory(folder);
@@ -165,6 +167,11 @@ namespace ClustrGalaxy.UI
             result.passed &= result.stellar_recovered;
             File.WriteAllText(Path.Combine(folder,"summary.json"),JsonUtility.ToJson(result,true));
             Debug.Log("[ClustrGalaxy.VisualSmoke] passed="+result.passed);Application.Quit(result.passed?0:2);
+        }
+        private void OnDestroy()
+        {
+            watchdog?.Dispose();
+            Time.timeScale = 1;
         }
     }
 }

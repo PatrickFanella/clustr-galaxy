@@ -164,12 +164,12 @@ namespace ClustrGalaxy.UI
             var display=activity.State.Displays.FirstOrDefault(x=>x.Slot==slot);
             var record=display?.Kind==ObservatoryItemKind.Flight?activity.State.Flights.FirstOrDefault(x=>x.Key==display.Reference):null;
             if(record?.Ghost==null){message="This display has no saved recording. Enable best-ghost saving before completing a new best run.";Refresh();return;}
-            var replay=record.Ghost.Replay;panel.SetActive(false);world.SetActive(false);child=GetComponent<JourneyReplayViewer>()??gameObject.AddComponent<JourneyReplayViewer>();
+            var replay=record.Ghost.Replay;panel.SetActive(false);world.SetActive(false);child=this.GetOrAddComponent<JourneyReplayViewer>();
             child.Open(replay,()=>{if(panel==null)return;panel.SetActive(true);world.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current?.SetSelectedGameObject(buttons[5].gameObject);});
         }
         private void ViewDiary()
         {
-            panel.SetActive(false);world.SetActive(false);diaryChild=GetComponent<JourneyDiary>()??gameObject.AddComponent<JourneyDiary>();
+            panel.SetActive(false);world.SetActive(false);diaryChild=this.GetOrAddComponent<JourneyDiary>();
             diaryChild.Open(()=>{if(panel==null)return;panel.SetActive(true);world.SetActive(true);resumedFrame=Time.frameCount;Refresh();EventSystem.current?.SetSelectedGameObject(buttons[8].gameObject);});
         }
         private void Update()
@@ -184,7 +184,7 @@ namespace ClustrGalaxy.UI
         private void Add(string value,float x,float y,UnityEngine.Events.UnityAction action)
         {var image=Image(value);Place(image.rectTransform,x,y,390,50);image.color=new Color(.14f,.23f,.28f);var button=image.gameObject.AddComponent<Button>();button.onClick.AddListener(action);buttons.Add(button);var label=ConstellationDiagram.MakeText(image.transform,value,16);label.alignment=TextAnchor.MiddleCenter;label.rectTransform.anchorMin=Vector2.zero;label.rectTransform.anchorMax=Vector2.one;label.rectTransform.offsetMin=label.rectTransform.offsetMax=Vector2.zero;}
         public void Close()
-        {if(!IsOpen)return;child?.Close();diaryChild?.Close();panel.SetActive(false);Destroy(panel);panel=null;Destroy(world);world=null;if(texture!=null){texture.Release();Destroy(texture);texture=null;}if(material!=null)Destroy(material);for(var i=0;i<ownedMaterials.Length;i++){if(ownedMaterials[i]!=null)Destroy(ownedMaterials[i]);ownedMaterials[i]=null;}buttons.Clear();choices.Clear();hud.SetModalInputCaptured(false);}
+        {if(!IsOpen)return;child?.Close();diaryChild?.Close();panel.SetActive(false);Destroy(panel);panel=null;Destroy(world);world=null;if(texture!=null){texture.Release();Destroy(texture);texture=null;}if(material!=null)Destroy(material);for(var i=0;i<ownedMaterials.Length;i++){if(ownedMaterials[i]!=null)Destroy(ownedMaterials[i]);ownedMaterials[i]=null;}buttons.Clear();choices.Clear();if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }
 }

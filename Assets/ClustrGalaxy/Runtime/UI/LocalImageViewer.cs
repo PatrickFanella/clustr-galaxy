@@ -29,7 +29,7 @@ namespace ClustrGalaxy.UI
             try{texture=ScreenCapture.CaptureScreenshotAsTexture();if(texture==null)throw new InvalidOperationException("Rendered image unavailable.");}
             catch(Exception e){error=e.Message;}
             finally{for(var i=0;i<canvases.Length;i++)if(canvases[i]!=null)canvases[i].enabled=enabled[i];capturing=false;}
-            if(error!=null){hud.SetModalInputCaptured(false);Debug.LogWarning("[ClustrGalaxy.Image] Capture failed: "+error);yield break;}
+            if(error!=null){if(hud!=null)hud.SetModalInputCaptured(false);Debug.LogWarning("[ClustrGalaxy.Image] Capture failed: "+error);yield break;}
             OpenPanel("SCREENSHOT PREVIEW",true);
         }
         public void OpenSaved(string path,Action onClose=null)
@@ -68,7 +68,7 @@ namespace ClustrGalaxy.UI
         private Button Button(string value,float x,UnityEngine.Events.UnityAction action)
         {var go=new GameObject(value,typeof(RectTransform),typeof(Image),typeof(Button));go.transform.SetParent(panel.transform,false);Place(go.GetComponent<RectTransform>(),x,85,600,50);go.GetComponent<Image>().color=new Color(.14f,.23f,.28f);var button=go.GetComponent<Button>();button.onClick.AddListener(action);var label=ConstellationDiagram.MakeText(go.transform,value,18);label.alignment=TextAnchor.MiddleCenter;label.rectTransform.anchorMin=Vector2.zero;label.rectTransform.anchorMax=Vector2.one;label.rectTransform.offsetMin=label.rectTransform.offsetMax=Vector2.zero;return button;}
         private void Update(){if(panel!=null&&(Keyboard.current?.escapeKey.wasPressedThisFrame==true||Gamepad.current?.buttonEast.wasPressedThisFrame==true))Close();}
-        public void Close(){if(panel==null)return;panel.SetActive(false);Destroy(panel);panel=null;if(texture!=null)Destroy(texture);texture=null;var callback=closed;closed=null;if(callback!=null)callback();else hud.SetModalInputCaptured(false);}
+        public void Close(){if(panel==null)return;panel.SetActive(false);Destroy(panel);panel=null;if(texture!=null)Destroy(texture);texture=null;var callback=closed;closed=null;if(callback!=null)callback();else if(hud!=null)hud.SetModalInputCaptured(false);}
         private void OnDestroy(){Close();}
     }
 }

@@ -407,14 +407,14 @@ namespace ClustrGalaxy.UI
                 {
                     var selectedPersonal = state.PersonalConstellations.FirstOrDefault(item => item.Id == savedPersonalId);
                     if (selectedPersonal != null) AddButton("EDIT SAVED CONSTELLATION DESIGN", () =>
-                        (GetComponent<ConstellationStudio>() ?? gameObject.AddComponent<ConstellationStudio>()).Open(selectedPersonal));
+                        this.GetOrAddComponent<ConstellationStudio>().Open(selectedPersonal));
                 }
                 var activeSession=GetComponent<GalaxySessionBehaviour>().Session;
                 if(activeSession.SelectedPracticeGhost!=null)AddButton("CLEAR IMPORTED PRACTICE GHOST — "+activeSession.SelectedPracticeGhost.Replay.Identity.CourseId,activeSession.ClearPracticeGhost);
-                AddButton("CAPTURE SCREENSHOT",()=> (GetComponent<LocalImageViewer>()??gameObject.AddComponent<LocalImageViewer>()).Capture());
-                AddButton("OPEN JOURNEY DIARY",()=> (GetComponent<JourneyDiary>()??gameObject.AddComponent<JourneyDiary>()).Open());
-                AddButton("OPEN LOCAL CREATIONS",()=> (GetComponent<LocalCreationLibrary>()??gameObject.AddComponent<LocalCreationLibrary>()).Open());
-                AddButton("OPEN PROBE OBSERVATORY",()=> (GetComponent<ProbeObservatory>()??gameObject.AddComponent<ProbeObservatory>()).Open());
+                AddButton("CAPTURE SCREENSHOT",()=> this.GetOrAddComponent<LocalImageViewer>().Capture());
+                AddButton("OPEN JOURNEY DIARY",()=> this.GetOrAddComponent<JourneyDiary>().Open());
+                AddButton("OPEN LOCAL CREATIONS",()=> this.GetOrAddComponent<LocalCreationLibrary>().Open());
+                AddButton("OPEN PROBE OBSERVATORY",()=> this.GetOrAddComponent<ProbeObservatory>().Open());
                 currentSection=ProbeHudSection.Discoveries;
                 GetComponent<CampaignController>()?.AddActions(AddButton);
                 currentSection=ProbeHudSection.Activities;
@@ -469,7 +469,7 @@ namespace ClustrGalaxy.UI
                         if(scenicChoices>=8)break;
                     }
                     if(scenicChoices==8)AddButton("Showing up to 8 loaded routes for this selection",()=>{});
-                    foreach(var record in activities.State.Flights)AddButton("PERSONAL BEST · "+record.CourseId+" · "+record.Mode+" · "+record.Seconds.ToString("F1")+"s",()=>{});
+                    foreach(var record in activities.State.Flights)AddButton("PERSONAL BEST · "+record.CourseId+" · "+record.Mode+" · "+Math.Round(record.Accuracy*100)+"% ACCURACY · "+record.Seconds.ToString("F1")+"s",()=>{});
                 }
                 currentSection=ProbeHudSection.Creations;
                 var recorder = GetComponent<JourneyRecorder>();
