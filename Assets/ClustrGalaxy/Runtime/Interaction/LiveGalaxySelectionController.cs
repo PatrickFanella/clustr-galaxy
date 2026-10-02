@@ -12,6 +12,13 @@ namespace ClustrGalaxy.Interaction
         private ProbeTargeting targeting = null!;
         private SpatialSceneLoader loader = null!;
         private GalaxyNavigationController navigation = null!;
+        private bool selectingArrival;
+        public void SelectArrivalTarget(GalaxyEntity target)
+        {
+            selectingArrival = true;
+            try { targeting.SelectTarget(target); }
+            finally { selectingArrival = false; }
+        }
 
         public void Initialize(ProbeTargeting probeTargeting, SpatialSceneLoader sceneLoader,
             GalaxyNavigationController navigationController)
@@ -20,10 +27,12 @@ namespace ClustrGalaxy.Interaction
             loader = sceneLoader;
             navigation = navigationController;
             targeting.TargetChanged += InspectTarget;
+            navigation.ScopeRequested += LoadRequestedScope;
         }
 
         private void InspectTarget(GalaxyEntity target)
         {
+            if (selectingArrival) return;
             var metadata = target != null ? target.GetComponent<LiveEntityMetadata>() : null;
             if (metadata?.Node == null || loader.Manifest == null)
             {
@@ -32,25 +41,7 @@ namespace ClustrGalaxy.Interaction
 
             try
             {
-                switch (target.Kind)
-                {
-                    case GalaxyEntityKind.Community:
-                        navigation.NavigateTo(GalaxyNavigationLevel.Region, metadata.Node.id);
-                        loader.LoadCommunity(metadata.Node.id);
-                        break;
-                    case GalaxyEntityKind.Subreddit:
-                        navigation.NavigateTo(GalaxyNavigationLevel.System, metadata.Node.id);
-                        loader.LoadSystem(metadata.Node.id);
-                        break;
-                    case GalaxyEntityKind.Post:
-                        navigation.NavigateTo(GalaxyNavigationLevel.Inspect, metadata.Node.id);
-                        loader.LoadDiscussion(metadata.Node.id);
-                        break;
-                    case GalaxyEntityKind.Comment when metadata.Node.metrics.reply_count > 0:
-                        navigation.NavigateTo(GalaxyNavigationLevel.Inspect, metadata.Node.id);
-                        loader.LoadThread(metadata.Node.id);
-                        break;
-                }
+                navigation.NavigateTo(navigation.Level, metadata.Node.id);
             }
             catch (InvalidOperationException exception)
             {
@@ -58,8 +49,11 @@ namespace ClustrGalaxy.Interaction
             }
         }
 
+        private void LoadRequestedScope(ClustrGalaxy.Core.Data.SpatialScopeRequest scope) => loader.LoadScope(scope);
+
         private void OnDestroy()
         {
+            if (navigation != null) navigation.ScopeRequested -= LoadRequestedScope;
             if (targeting != null)
             {
                 targeting.TargetChanged -= InspectTarget;

@@ -8,17 +8,19 @@ using ClustrGalaxy.Core.Survey;
 
 namespace ClustrGalaxy.Core.Data
 {
-    public enum SnapshotDataMode { Connecting, LivePinned, OfflinePinned, LegacyUnpinned, DeterministicDemo, Failed }
+    public enum SnapshotDataMode { Connecting, LivePinned, OfflinePinned, LegacyUnpinned, DeterministicDemo, DeterministicFixture, Failed }
 
     public sealed class GalaxySnapshotManifest
     {
-        public GalaxySnapshotManifest(long revisionId, long catalogId, string contractVersion, string storageNamespace = "pinned")
+        public GalaxySnapshotManifest(long revisionId, long catalogId, string contractVersion, string storageNamespace = "pinned", string sourceJson = "")
         {
+            SourceJson = sourceJson;
             RevisionId = revisionId; CatalogId = catalogId; ContractVersion = contractVersion ?? string.Empty;
             StorageNamespace = string.IsNullOrWhiteSpace(storageNamespace) ? "pinned" : storageNamespace;
         }
         public long RevisionId { get; }
         public long CatalogId { get; }
+        public string SourceJson { get; }
         public string ContractVersion { get; }
         public string StorageNamespace { get; }
         public bool IsCompatible => RevisionId > 0 && CatalogId >= 0 && ContractVersion == "spatial-scene-v1";
@@ -54,12 +56,12 @@ namespace ClustrGalaxy.Core.Data
     public sealed class GalaxySnapshotScene
     {
         public GalaxySnapshotScene(long revisionId, long catalogId, SpatialScopeRequest scope,
-            IEnumerable<SnapshotNode> nodes, IEnumerable<SnapshotRoute> routes, bool truncated = false)
+            IEnumerable<SnapshotNode> nodes, IEnumerable<SnapshotRoute> routes, bool truncated = false, string sourceJson = "", string completion = "")
         {
             RevisionId = revisionId; CatalogId = catalogId; Scope = scope;
             Nodes = (nodes ?? Array.Empty<SnapshotNode>()).Where(value => value != null).ToArray();
             Routes = (routes ?? Array.Empty<SnapshotRoute>()).Where(value => value != null).ToArray();
-            Truncated = truncated;
+            Truncated = truncated; SourceJson = sourceJson; Completion = completion;
         }
         public long RevisionId { get; }
         public long CatalogId { get; }
@@ -67,6 +69,8 @@ namespace ClustrGalaxy.Core.Data
         public IReadOnlyList<SnapshotNode> Nodes { get; }
         public IReadOnlyList<SnapshotRoute> Routes { get; }
         public bool Truncated { get; }
+        public string SourceJson { get; }
+        public string Completion { get; }
         public bool BelongsTo(GalaxySnapshotManifest manifest) => manifest != null &&
             RevisionId == manifest.RevisionId && CatalogId == manifest.CatalogId;
     }
@@ -159,6 +163,8 @@ namespace ClustrGalaxy.Core.Data
         private readonly Dictionary<SpatialScopeRequest, GalaxySnapshotScene> scenes = new();
         private CancellationTokenSource pending = new();
         private long operationId;
+        private bool disposed;
+        private SnapshotLoadOutcome staged;
 
         public GalaxySnapshotSession(IGalaxySnapshotSource sourceAdapter)
         { source = sourceAdapter ?? throw new ArgumentNullException(nameof(sourceAdapter)); }
@@ -168,6 +174,7 @@ namespace ClustrGalaxy.Core.Data
 
         public async Task<SnapshotLoadOutcome> OpenAsync(CancellationToken cancellationToken = default)
         {
+            if (Manifest != null) return Failure(operationId, "Snapshot identity is frozen; create a new session to refresh.");
             var operation = Begin(cancellationToken, out var token);
             SnapshotSourceResult result;
             try { result = await source.OpenAsync(token); }
@@ -175,19 +182,28 @@ namespace ClustrGalaxy.Core.Data
             { return operation != operationId ? Stale(operation) : Failure(operation, "Snapshot open was cancelled."); }
             catch (Exception exception)
             { return operation != operationId ? Stale(operation) : Failure(operation, exception.Message); }
-            if (operation != operationId) return Stale(operation);
-            if (!result.Succeeded || result.Manifest == null || result.Scene == null)
-                return Failure(operation, result.Error);
+            if (operation != operationId || token.IsCancellationRequested) return Stale(operation);
+            if (result == null || !result.Succeeded || result.Manifest == null || result.Scene == null)
+                return Failure(operation, result?.Error ?? "Missing snapshot response.");
             if (!result.Manifest.IsCompatible || !result.Scene.BelongsTo(result.Manifest) ||
                 result.Scene.Scope.Scope != SpatialScope.Overview)
                 return Failure(operation, "Snapshot overview failed compatibility or identity validation.");
             Manifest = result.Manifest;
             scenes.Clear(); scenes[result.Scene.Scope] = result.Scene;
-            Mode = result.Offline ? SnapshotDataMode.OfflinePinned : SnapshotDataMode.LivePinned;
+            Mode = Manifest.StorageNamespace == "demo" ? SnapshotDataMode.DeterministicDemo : result.Offline ? SnapshotDataMode.OfflinePinned : Manifest.StorageNamespace == "fixture" ? SnapshotDataMode.DeterministicFixture : SnapshotDataMode.LivePinned;
             return Success(operation, result.Scene);
         }
 
         public async Task<SnapshotLoadOutcome> LoadAsync(SpatialScopeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var candidate = await StageAsync(request, cancellationToken);
+            return candidate.Succeeded ? CommitStaged(candidate) : candidate;
+        }
+
+        // Loading for travel validates a destination without replacing the current usable view.
+        // Only the exact, still-current receipt can become an active scene.
+        public async Task<SnapshotLoadOutcome> StageAsync(SpatialScopeRequest request,
             CancellationToken cancellationToken = default)
         {
             if (request.Scope == SpatialScope.Overview) throw new ArgumentException("Use OpenAsync for an overview.", nameof(request));
@@ -199,26 +215,47 @@ namespace ClustrGalaxy.Core.Data
             { return operation != operationId ? Stale(operation) : Failure(operation, "Snapshot load was cancelled."); }
             catch (Exception exception)
             { return operation != operationId ? Stale(operation) : Failure(operation, exception.Message); }
-            if (operation != operationId) return Stale(operation);
-            if (!result.Succeeded || result.Scene == null) return Failure(operation, result.Error);
-            if (!result.Scene.BelongsTo(Manifest) || !result.Scene.Scope.Equals(request))
+            if (operation != operationId || token.IsCancellationRequested) return Stale(operation);
+            if (result == null || !result.Succeeded || result.Scene == null) return Failure(operation, result?.Error ?? "Missing snapshot response.");
+            if (result.Manifest == null || result.Manifest.RevisionId != Manifest.RevisionId ||
+                result.Manifest.CatalogId != Manifest.CatalogId || result.Manifest.ContractVersion != Manifest.ContractVersion ||
+                result.Manifest.StorageNamespace != Manifest.StorageNamespace ||
+                !result.Scene.BelongsTo(Manifest) || !result.Scene.Scope.Equals(request))
                 return Failure(operation, "Bounded scope failed snapshot identity validation.");
-            scenes[request] = result.Scene;
-            Mode = result.Offline ? SnapshotDataMode.OfflinePinned : SnapshotDataMode.LivePinned;
-            return Success(operation, result.Scene);
+            var mode = Manifest.StorageNamespace == "demo" ? SnapshotDataMode.DeterministicDemo :
+                result.Offline ? SnapshotDataMode.OfflinePinned :
+                Manifest.StorageNamespace == "fixture" ? SnapshotDataMode.DeterministicFixture : SnapshotDataMode.LivePinned;
+            staged = new SnapshotLoadOutcome(operation, true, false, mode, Manifest, result.Scene,
+                "DESTINATION VALIDATED — AWAITING ARRIVAL", "");
+            return staged;
         }
 
-        public void CancelPending() { pending.Cancel(); operationId++; }
-        public void Dispose() { pending.Cancel(); pending.Dispose(); }
+        public SnapshotLoadOutcome CommitStaged(SnapshotLoadOutcome candidate)
+        {
+            if (disposed || candidate == null || !ReferenceEquals(candidate, staged) ||
+                candidate.OperationId != operationId || pending.IsCancellationRequested)
+                return Stale(candidate?.OperationId ?? operationId);
+            staged = null;
+            scenes[candidate.Scene.Scope] = candidate.Scene;
+            Mode = candidate.Mode;
+            return Success(candidate.OperationId, candidate.Scene);
+        }
+
+        public void ReleaseScene(SpatialScopeRequest scope)
+        { if (scope.Scope != SpatialScope.Overview) scenes.Remove(scope); }
+
+        public void CancelPending() { if (disposed) return; pending.Cancel(); staged = null; operationId++; }
+        public void Dispose() { if (disposed) return; CancelPending(); disposed = true; pending.Dispose(); }
 
         private long Begin(CancellationToken caller, out CancellationToken token)
         {
-            pending.Cancel(); pending.Dispose(); pending = CancellationTokenSource.CreateLinkedTokenSource(caller);
+            if (disposed) throw new ObjectDisposedException(nameof(GalaxySnapshotSession));
+            staged = null; pending.Cancel(); pending.Dispose(); pending = CancellationTokenSource.CreateLinkedTokenSource(caller);
             token = pending.Token;
             return ++operationId;
         }
         private SnapshotLoadOutcome Success(long operation, GalaxySnapshotScene scene) => new(operation, true, false,
-            Mode, Manifest, scene, Mode == SnapshotDataMode.OfflinePinned ? "OFFLINE PINNED" : "LIVE PINNED", "");
+            Mode, Manifest, scene, Mode == SnapshotDataMode.DeterministicDemo ? "AUTHORED LOCAL DEMO" : Mode == SnapshotDataMode.OfflinePinned ? "OFFLINE PINNED" : "LIVE PINNED", "");
         private SnapshotLoadOutcome Failure(long operation, string error)
         { return new(operation, false, false, SnapshotDataMode.Failed, Manifest, null, "SNAPSHOT UNAVAILABLE", error); }
         private SnapshotLoadOutcome Stale(long operation) => new(operation, false, true, Mode, Manifest, null, "STALE RESULT", "");

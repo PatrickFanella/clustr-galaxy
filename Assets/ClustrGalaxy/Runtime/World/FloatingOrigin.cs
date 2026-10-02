@@ -9,12 +9,17 @@ namespace ClustrGalaxy.World
     {
         [SerializeField] private float rebaseThreshold = 8000f;
 
+        public static FloatingOrigin Active { get; private set; }
+        private void Awake() => Active = this;
+        private void OnDestroy() { if (Active == this) Active = null; }
+
         public DoubleVector3 LogicalOrigin { get; private set; } = DoubleVector3.Zero;
         public event Action<Vector3, DoubleVector3> Rebased = delegate { };
 
         private void FixedUpdate()
         {
-            var shift = FloatingOriginMath.RequiredShift(transform.position, rebaseThreshold);
+            var observer = GetComponent<Rigidbody>();
+            var shift = FloatingOriginMath.RequiredShift(observer != null ? observer.position : transform.position, rebaseThreshold);
             if (shift != Vector3.zero)
             {
                 Rebase(shift);
@@ -31,10 +36,12 @@ namespace ClustrGalaxy.World
             var roots = SceneManager.GetActiveScene().GetRootGameObjects();
             foreach (var root in roots)
             {
+                if (root.TryGetComponent<CelestialFrame>(out _))
+                { CelestialFrame.Shift(root.transform, shift); continue; }
                 var rigidbody = root.GetComponent<Rigidbody>();
                 if (rigidbody != null)
                 {
-                    rigidbody.position += shift;
+                    ShiftRigidbody(rigidbody, shift);
                 }
                 else
                 {
@@ -44,8 +51,27 @@ namespace ClustrGalaxy.World
 
             ShiftWorldSpaceEffects(roots, shift);
             LogicalOrigin = LogicalOrigin.Add(-shift);
+            foreach (var root in roots)
+            {
+                foreach (var source in root.GetComponentsInChildren<ClustrGalaxy.Simulation.GravitySource>(true))
+                    source.RefreshStaticPosition();
+                foreach (var orbit in root.GetComponentsInChildren<ClustrGalaxy.Simulation.KeplerOrbit>(true))
+                    if (orbit.enabled) orbit.RefreshPosition();
+            }
             Physics.SyncTransforms();
             Rebased(shift, LogicalOrigin);
+        }
+
+        internal static void ShiftRigidbody(Rigidbody body, Vector3 shift)
+        {
+            // Interpolation retains a render pose from the old coordinate frame. Reset that
+            // history and synchronize both poses so it cannot trigger a second origin shift.
+            var interpolation = body.interpolation;
+            var position = body.position + shift;
+            body.interpolation = RigidbodyInterpolation.None;
+            body.position = position;
+            body.transform.position = position;
+            body.interpolation = interpolation;
         }
 
         private static void ShiftWorldSpaceEffects(GameObject[] roots, Vector3 shift)

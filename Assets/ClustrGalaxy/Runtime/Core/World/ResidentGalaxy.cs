@@ -61,9 +61,19 @@ namespace ClustrGalaxy.Core.World
         private readonly Dictionary<GalaxyRouteId, ResidentRoute> routes = new();
         private readonly HashSet<GalaxyRouteId> activeRoutes = new();
 
-        public IReadOnlyList<ResidentEntity> LoadedEntities => loaded.Values.OrderBy(value => value.Id).ToArray();
-        public IReadOnlyList<ResidentEntity> ActiveEntities => active.Select(id => loaded[id]).OrderBy(value => value.Id).ToArray();
-        public IReadOnlyList<ResidentRoute> LoadedRoutes => routes.Values.OrderBy(value => value.Id).ToArray();
+        private readonly Dictionary<SpatialScopeRequest, Dictionary<GalaxyEntityId, ResidentEntity>> entityScopes = new();
+        private readonly Dictionary<SpatialScopeRequest, Dictionary<GalaxyRouteId, ResidentRoute>> routeScopes = new();
+        private readonly Dictionary<string, HashSet<GalaxyEntityId>> references = new(StringComparer.Ordinal);
+        private IReadOnlyList<ResidentEntity> loadedView = Array.Empty<ResidentEntity>();
+        private IReadOnlyList<ResidentEntity> activeView = Array.Empty<ResidentEntity>();
+        private IReadOnlyList<ResidentRoute> routeView = Array.Empty<ResidentRoute>();
+        private bool explore = true;
+        private HashSet<GalaxyEntityId> known = new();
+        private HashSet<GalaxyRouteId> knownRoutes = new();
+
+        public IReadOnlyList<ResidentEntity> LoadedEntities => loadedView;
+        public IReadOnlyList<ResidentEntity> ActiveEntities => activeView;
+        public IReadOnlyList<ResidentRoute> LoadedRoutes => routeView;
         public bool TryFindLoaded(GalaxyEntityId id, out ResidentEntity entity) => loaded.TryGetValue(id, out entity);
         public bool TryFindActive(GalaxyEntityId id, out ResidentEntity entity)
         {
@@ -73,34 +83,60 @@ namespace ClustrGalaxy.Core.World
         }
 
         public ResidentGalaxyChangeSet ApplyProjection(SpatialScopeRequest scope, IEnumerable<ResidentEntity> entities,
-            IEnumerable<ResidentRoute> projectedRoutes)
+            IEnumerable<ResidentRoute> projectedRoutes, IEnumerable<SpatialScopeRequest> releasedScopes = null)
         {
             var incoming = (entities ?? Array.Empty<ResidentEntity>()).ToDictionary(value => value.Id);
             var incomingRoutes = (projectedRoutes ?? Array.Empty<ResidentRoute>()).ToDictionary(value => value.Id);
-            var released = loaded.Values.Where(value => value.Owner.Equals(scope) && !incoming.ContainsKey(value.Id))
-                .Select(value => value.Id).ToArray();
-            var releasedRoutes = routes.Values.Where(value => value.Owner.Equals(scope) && !incomingRoutes.ContainsKey(value.Id))
-                .Select(value => value.Id).ToArray();
-            foreach (var id in released) { loaded.Remove(id); active.Remove(id); }
-            foreach (var id in releasedRoutes) { routes.Remove(id); activeRoutes.Remove(id); }
+            foreach (var released in releasedScopes ?? Array.Empty<SpatialScopeRequest>())
+            { entityScopes.Remove(released); routeScopes.Remove(released); }
+            entityScopes[scope] = incoming;
+            routeScopes[scope] = incomingRoutes;
+            if (incoming.Count == 0) entityScopes.Remove(scope);
+            if (incomingRoutes.Count == 0) routeScopes.Remove(scope);
+            return Rebuild(incoming.Keys);
+        }
 
-            var added = new List<GalaxyEntityId>(); var updated = new List<GalaxyEntityId>();
-            foreach (var pair in incoming)
-            {
-                if (loaded.ContainsKey(pair.Key)) updated.Add(pair.Key); else added.Add(pair.Key);
-                loaded[pair.Key] = pair.Value;
-                active.Add(pair.Key);
-            }
-            foreach (var pair in incomingRoutes) { routes[pair.Key] = pair.Value; activeRoutes.Add(pair.Key); }
-            return new ResidentGalaxyChangeSet(added, updated, added, null, released,
-                incomingRoutes.Keys.Concat(releasedRoutes));
+        public ResidentGalaxyChangeSet SetReferences(string owner, IEnumerable<GalaxyEntityId> ids)
+        {
+            if (string.IsNullOrWhiteSpace(owner)) throw new ArgumentException("A reference owner is required.", nameof(owner));
+            var next = new HashSet<GalaxyEntityId>((ids ?? Array.Empty<GalaxyEntityId>()).Where(id => !id.IsEmpty));
+            if ((!references.TryGetValue(owner, out var previous) && next.Count == 0) || previous != null && previous.SetEquals(next))
+                return new ResidentGalaxyChangeSet(null,null,null,null,null,null);
+            if (next.Count == 0) references.Remove(owner); else references[owner] = next;
+            return Rebuild(Array.Empty<GalaxyEntityId>());
+        }
+
+        private ResidentGalaxyChangeSet Rebuild(IEnumerable<GalaxyEntityId> updated)
+        {
+            var previousIds = new HashSet<GalaxyEntityId>(loaded.Keys);
+            var previousActive = new HashSet<GalaxyEntityId>(active);
+            var previousRoutes = new HashSet<GalaxyRouteId>(routes.Keys);
+            var retainedIds = new HashSet<GalaxyEntityId>(references.Values.SelectMany(ids => ids));
+            var retainedEntities = loaded.Values.Where(entity => retainedIds.Contains(entity.Id)).ToArray();
+            var retainedRoutes = routes.Values.Where(route => retainedIds.Contains(route.SourceId) || retainedIds.Contains(route.TargetId)).ToArray();
+            loaded.Clear(); routes.Clear();
+            foreach (var projection in entityScopes.Values)
+                foreach (var pair in projection) loaded[pair.Key] = pair.Value;
+            foreach (var projection in routeScopes.Values)
+                foreach (var pair in projection) routes[pair.Key] = pair.Value;
+            foreach (var entity in retainedEntities) if (!loaded.ContainsKey(entity.Id)) loaded.Add(entity.Id, entity);
+            foreach (var route in retainedRoutes)
+                if (!routes.ContainsKey(route.Id) && loaded.ContainsKey(route.SourceId) && loaded.ContainsKey(route.TargetId)) routes.Add(route.Id, route);
+            loadedView = loaded.Values.OrderBy(value => value.Id).ToArray();
+            routeView = routes.Values.OrderBy(value => value.Id).ToArray();
+            ApplySurveyVisibility(explore, known, knownRoutes);
+            return new ResidentGalaxyChangeSet(loaded.Keys.Except(previousIds), updated.Intersect(previousIds),
+                active.Except(previousActive), previousActive.Except(active), previousIds.Except(loaded.Keys),
+                previousRoutes.Union(routes.Keys));
         }
 
         public ResidentGalaxyChangeSet ApplySurveyVisibility(bool explore, IEnumerable<GalaxyEntityId> knownEntities,
             IEnumerable<GalaxyRouteId> knownRoutes)
         {
-            var known = new HashSet<GalaxyEntityId>(knownEntities ?? Array.Empty<GalaxyEntityId>());
+            this.explore = explore;
+            known = new HashSet<GalaxyEntityId>(knownEntities ?? Array.Empty<GalaxyEntityId>());
             var knownRouteSet = new HashSet<GalaxyRouteId>(knownRoutes ?? Array.Empty<GalaxyRouteId>());
+            this.knownRoutes = knownRouteSet;
             var nextActive = new HashSet<GalaxyEntityId>(explore ? loaded.Keys : loaded.Keys.Where(known.Contains));
             var nextRoutes = new HashSet<GalaxyRouteId>(explore ? routes.Keys : routes.Keys.Where(knownRouteSet.Contains));
             var activated = nextActive.Except(active).ToArray();
@@ -108,6 +144,7 @@ namespace ClustrGalaxy.Core.World
             var routeChanges = nextRoutes.SymmetricDifference(activeRoutes);
             active.Clear(); active.UnionWith(nextActive);
             activeRoutes.Clear(); activeRoutes.UnionWith(nextRoutes);
+            activeView = active.Select(id => loaded[id]).OrderBy(value => value.Id).ToArray();
             return new ResidentGalaxyChangeSet(null, null, activated, deactivated, null, routeChanges);
         }
 

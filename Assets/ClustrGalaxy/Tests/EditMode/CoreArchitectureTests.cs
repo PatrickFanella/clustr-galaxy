@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Activities;
 using ClustrGalaxy.Core.Persistence;
 using ClustrGalaxy.Core.Data;
 using ClustrGalaxy.Core.Navigation;
@@ -15,6 +17,235 @@ namespace ClustrGalaxy.Tests
 {
     public sealed class CoreArchitectureTests
     {
+        [Test]
+        public async System.Threading.Tasks.Task ScenicActivitiesRequirePublishedRoutesAndReleaseSharedOwners()
+        {
+            var manifest=new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");var a=(GalaxyEntityId)"subreddit:a";var b=(GalaxyEntityId)"subreddit:b";
+            var route=(GalaxyRouteId)"route:a-b";var scope=new SpatialScopeRequest(SpatialScope.Overview);
+            var scene=new GalaxySnapshotScene(9,3,scope,new[]{new SnapshotNode(a,GalaxyEntityKind.Subreddit,"a",1),new SnapshotNode(b,GalaxyEntityKind.Subreddit,"b",1)},
+                new[]{new SnapshotRoute(route,a,b,1,false)});
+            using var session=new ClustrGalaxy.Core.Session.GalaxySession(new DeterministicSnapshotSource(manifest,new[]{scene}),new MemorySurveyRepository(manifest.SurveySnapshot,"pilot",a),"pilot");
+            await session.OpenAsync();
+            var course=ClustrGalaxy.Core.Activities.FlightCourse.Scenic(0,default,new ClustrGalaxy.Core.Activities.ReplayPosition(1000,0,0));
+            Assert.Throws<InvalidOperationException>(()=>session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a,b}));
+            session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a,b},route);
+            session.SetSelection(a);session.ReleaseScope(scope);Assert.That(session.Resident.TryFindLoaded(b,out _),Is.True);
+            session.CancelFlightActivity();Assert.That(session.Resident.TryFindLoaded(a,out _),Is.True);Assert.That(session.Resident.TryFindLoaded(b,out _),Is.False);
+            Assert.That(session.Survey,Is.Null);
+        }
+
+        private sealed class FailingActivityRepository : IActivityRepository
+        {
+            private readonly MemoryActivityRepository inner = new();
+            public bool Fail;
+            public ActivityState LoadOrCreate(ActivityIdentity identity) => inner.LoadOrCreate(identity);
+            public void Save(ActivityState state) { if (Fail) throw new IOException("disk full"); inner.Save(state); }
+        }
+
+        [Test] public async System.Threading.Tasks.Task UnsavedFlightRecordBlocksANewRunUntilRetried()
+        {
+            var manifest=new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");var a=(GalaxyEntityId)"subreddit:a";
+            var scene=new GalaxySnapshotScene(9,3,new SpatialScopeRequest(SpatialScope.Overview),new[]{new SnapshotNode(a,GalaxyEntityKind.Subreddit,"a",1)},Array.Empty<SnapshotRoute>());
+            var activities=new FailingActivityRepository();
+            using var session=new ClustrGalaxy.Core.Session.GalaxySession(new DeterministicSnapshotSource(manifest,new[]{scene}),
+                new MemorySurveyRepository(manifest.SurveySnapshot,"pilot",a),"pilot",activities);
+            await session.OpenAsync();
+            var course=FlightCourse.Playground(FlightActivityKind.RingRun,new ReplayPosition(100,200,300));
+            session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a});
+            activities.Fail=true;
+            foreach(var gate in course.Points)session.AdvanceFlightActivity(gate,.2,NavigationFlightMode.PilotAssist);
+            Assert.That(session.FlightActivity.Completed,Is.True);
+            Assert.That(session.FlightError,Is.Not.Empty);
+            Assert.Throws<InvalidOperationException>(()=>session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a}));
+            activities.Fail=false;
+            Assert.That(session.CommitFlightActivity().Committed,Is.True);
+            Assert.That(session.Activities.State.Flights.Count,Is.EqualTo(1));
+            Assert.DoesNotThrow(()=>session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a}));
+        }
+
+        [Test] public async System.Threading.Tasks.Task ImportedPracticeGhostDoesNotGrantProgressOrOwnSourceEntities()
+        {
+            var manifest=new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");var a=(GalaxyEntityId)"subreddit:a";
+            var scene=new GalaxySnapshotScene(9,3,new SpatialScopeRequest(SpatialScope.Overview),new[]{new SnapshotNode(a,GalaxyEntityKind.Subreddit,"a",1)},Array.Empty<SnapshotRoute>());
+            using var session=new ClustrGalaxy.Core.Session.GalaxySession(new DeterministicSnapshotSource(manifest,new[]{scene}),new MemorySurveyRepository(manifest.SurveySnapshot,"other-profile",a),"other-profile");
+            await session.OpenAsync();var before=session.Activities.State;
+            var course=FlightCourse.Playground(FlightActivityKind.RingRun,new ReplayPosition(100,200,300));
+            var replay=new JourneyReplay(new ReplayIdentity(manifest.SurveySnapshot,ActivityWorldMode.Explore,1,"tuning",NavigationFlightMode.PilotAssist,course.Id,course.Version),
+                new[]{new ReplayPose(0,course.Points[0],Quaternion.Identity),new ReplayPose(.1,course.Points[1],Quaternion.Identity)},course.Points[0]);
+            using var file=new MemoryStream();ClustrGalaxy.Persistence.ReplayPackage.Write(file,replay);file.Position=0;
+            var oldReplay = new JourneyReplay(new ReplayIdentity(manifest.SurveySnapshot,ActivityWorldMode.Explore,1,"tuning",NavigationFlightMode.PilotAssist,course.Id,1),replay.Poses,course.Points[0]);
+            Assert.Throws<InvalidOperationException>(()=>session.SelectPracticeGhost(oldReplay));
+            Assert.That(oldReplay.Poses.Count,Is.EqualTo(2),"Historical recordings remain declarative playback data.");
+            session.SelectPracticeGhost(ClustrGalaxy.Persistence.ReplayPackage.Read(file));
+            Assert.That(session.Activities.State,Is.SameAs(before));Assert.That(session.Survey,Is.Null);
+            session.StartFlightActivity(course,NavigationFlightMode.PilotAssist,false,"tuning",new[]{a});Assert.That(session.FlightActivity.BestGhost,Is.SameAs(session.SelectedPracticeGhost));
+            session.StartFlightActivity(course,NavigationFlightMode.PilotMastery,false,"tuning",new[]{a});Assert.That(session.FlightActivity.BestGhost,Is.Null);
+            Assert.Throws<InvalidOperationException>(()=>session.SelectPracticeGhost(new JourneyReplay(replay.Identity,replay.Poses)));
+            Assert.That(session.Activities.State,Is.SameAs(before));session.ApplySurveyVisibility(false);Assert.That(session.SelectedPracticeGhost,Is.Null);
+        }
+
+        [Test]
+        public void NavigationBack_RestoresScopeAndClearsThreadSelection()
+        {
+            var navigation = new GalaxyNavigation();
+            var pose = new NavigationPose(Vector3.Zero, Quaternion.Identity);
+            navigation.Apply(new InspectNavigationTargetIntent(new NavigationTarget((GalaxyEntityId)"post:a",
+                GalaxyEntityKind.Post, "Post", Vector3.Zero, true, true), pose));
+            navigation.Apply(new InspectNavigationTargetIntent(new NavigationTarget((GalaxyEntityId)"comment:a",
+                GalaxyEntityKind.Comment, "Comment", Vector3.One, true, true), pose));
+            var back = navigation.Apply(new ReturnNavigationIntent());
+            Assert.That(back.State.SelectedId.IsEmpty, Is.True);
+            Assert.That(back.Effect.ScopeToLoad.HasValue, Is.True);
+            Assert.That(back.Effect.ScopeToLoad.Value.Scope, Is.EqualTo(SpatialScope.Discussion));
+            Assert.That(back.Effect.ScopeToLoad.Value.RootId.Value, Is.EqualTo("post:a"));
+        }
+
+        [Test]
+        public void SurveyStartScreenAlwaysOffersReturnToExplore()
+        {
+            var presentation = new ProbeHudPresenter().Present(new ProbeHudReadModel
+                { Survey = true, RequiresSurveyStart = true });
+            Assert.That(presentation.Actions, Does.Contain(ProbeHudAction.ChooseStartingSystem));
+            Assert.That(presentation.Actions, Does.Contain(ProbeHudAction.ReturnToExplore));
+            Assert.That(presentation.Actions.Contains(ProbeHudAction.Scan), Is.False);
+        }
+
+        [Test]
+        public void HudDraft_EnablesSaveOnlyForNamedIdentifiedMembership()
+        {
+            var members = new[] { (GalaxyEntityId)"post:a", (GalaxyEntityId)"post:b", (GalaxyEntityId)"post:c" };
+            var model = new ProbeHudReadModel { Survey = true, DraftName = "Local group", DraftReason = "Shared interest",
+                DraftMembers = members, IdentifiedEntities = members };
+            var presenter = new ProbeHudPresenter();
+            Assert.That(presenter.Present(model).Actions.Contains(ProbeHudAction.SavePersonalConstellation), Is.True);
+            model.DraftName = "";
+            Assert.That(presenter.Present(model).Actions.Contains(ProbeHudAction.SavePersonalConstellation), Is.False);
+            model.DraftName = "Local group"; model.IdentifiedEntities = new[] { members[0] };
+            Assert.That(presenter.Present(model).Actions.Contains(ProbeHudAction.SavePersonalConstellation), Is.False);
+            Assert.That(model.DraftValidation, Does.Contain("identified"));
+        }
+
+        [Test]
+        public void ReferenceOwnersKeepSelectionAndNavigationUntilBothRelease()
+        {
+            var resident = new ResidentGalaxy();
+            var scope = new SpatialScopeRequest(SpatialScope.System,(GalaxyEntityId)"system:a");
+            var id = (GalaxyEntityId)"post:a";
+            resident.ApplyProjection(scope,new[]{new ResidentEntity(id,GalaxyEntityKind.Post,
+                GalaxyKinds.VisualFor(GalaxyEntityKind.Post),scope,"A",1)},null);
+            resident.SetReferences("selection",new[]{id});
+            resident.SetReferences("navigation",new[]{id});
+            Assert.That(resident.Release(scope).Released,Is.Empty);
+            Assert.That(resident.TryFindLoaded(id,out _),Is.True);
+            resident.SetReferences("selection",Array.Empty<GalaxyEntityId>());
+            Assert.That(resident.TryFindLoaded(id,out _),Is.True);
+            var released = resident.SetReferences("navigation",Array.Empty<GalaxyEntityId>()).Released;
+            Assert.That(released.Count,Is.EqualTo(1));
+            Assert.That(released[0].Equals(id),Is.True);
+            Assert.That(resident.LoadedEntities,Is.Empty);
+        }
+
+        [Test]
+        public void CleanSignalAwardCommitsWithScanAndSurvivesRetry()
+        {
+            var snapshot = new SurveySnapshotId(9,3,"demo"); var id = (GalaxyEntityId)"subreddit:technology";
+            var repository = new MemorySurveyRepository(snapshot, "pilot", id) { FailSave = true };
+            var session = new SurveySession(repository, "pilot", snapshot, id);
+            var intent = new CompleteScanIntent("clean", snapshot, DateTime.UtcNow, id, GalaxyEntityKind.Subreddit,
+                Array.Empty<SurveyRoute>(), Array.Empty<GalaxyEntityId>(), cleanSignal: true);
+            var failed = session.Apply(intent);
+            Assert.That(failed.Succeeded, Is.False); Assert.That(failed.Celebrations, Is.Empty);
+            Assert.That(session.State.Discoveries, Is.Empty);
+            repository.FailSave = false; var success = session.Apply(intent); Assert.That(success.Succeeded, Is.True);
+            Assert.That(success.Celebrations.Count, Is.EqualTo(1)); Assert.That(session.Apply(intent).Celebrations, Is.Empty);
+            Assert.That(session.State.Discoveries, Does.Contain("clean-signal:subreddit:technology"));
+            Assert.That(session.Apply(intent).Changed, Is.False);
+            Assert.That(new SurveySession(repository, "pilot", snapshot, id).State.Discoveries,
+                Does.Contain("clean-signal:subreddit:technology"));
+        }
+
+        [Test]
+        public async System.Threading.Tasks.Task ActivityReferencesRespectOtherOwnersAndReleaseOnModeChange()
+        {
+            var manifest = new GalaxySnapshotManifest(9, 3, "spatial-scene-v1", "demo");
+            var id = (GalaxyEntityId)"post:activity";
+            var scope = new SpatialScopeRequest(SpatialScope.Overview);
+            var scene = new GalaxySnapshotScene(9, 3, scope,
+                new[] { new SnapshotNode(id, GalaxyEntityKind.Post, "Activity", 1) }, null);
+            using var session = new ClustrGalaxy.Core.Session.GalaxySession(
+                new DeterministicSnapshotSource(manifest, new[] { scene }),
+                new MemorySurveyRepository(manifest.SurveySnapshot, "pilot", id), "pilot");
+            await session.OpenAsync();
+            session.RetainActivityEntities("course", new[] { id });
+            session.RetainActivityEntities("expedition", new[] { id });
+            session.SetSelection(id);
+            session.ReleaseScope(scope);
+            session.ReleaseActivityEntities("course");
+            Assert.That(session.Resident.TryFindLoaded(id, out _), Is.True);
+            session.ApplySurveyVisibility(false);
+            Assert.That(session.Resident.TryFindLoaded(id, out _), Is.True);
+            session.SetSelection(default);
+            Assert.That(session.Resident.TryFindLoaded(id, out _), Is.False);
+            Assert.Throws<InvalidOperationException>(() => session.RetainActivityEntities("missing", new[] { id }));
+            Assert.That(session.Activities.State.Identity.Mode, Is.EqualTo(ClustrGalaxy.Core.Activities.ActivityWorldMode.Survey));
+        }
+
+        [Test]
+        public async System.Threading.Tasks.Task SurveyStartUpdatesNavigationOnlyAfterPersistenceSucceeds()
+        {
+            var manifest = new GalaxySnapshotManifest(9, 3, "spatial-scene-v1", "demo");
+            var id = (GalaxyEntityId)"subreddit:technology";
+            var scene = new GalaxySnapshotScene(9, 3, new SpatialScopeRequest(SpatialScope.Overview),
+                new[] { new SnapshotNode(id, GalaxyEntityKind.Subreddit, "Technology", 1) }, null);
+            var repository = new MemorySurveyRepository(manifest.SurveySnapshot, "pilot", id) { FailSave = true };
+            using var session = new ClustrGalaxy.Core.Session.GalaxySession(
+                new DeterministicSnapshotSource(manifest, new[] { scene }), repository, "pilot");
+            await session.OpenAsync();
+            session.Navigation.Apply(new EnterSurveyNavigationIntent());
+            Assert.That(session.StartSurvey(id, new[] { id }, "start", DateTime.UtcNow).Succeeded, Is.False);
+            Assert.That(session.Survey, Is.Null);
+            Assert.That(session.Navigation.State.RequiresSurveyStart, Is.True);
+            repository.FailSave = false;
+            Assert.That(session.StartSurvey(id, new[] { id }, "start", DateTime.UtcNow).Succeeded, Is.True);
+            Assert.That(session.Navigation.State.RequiresSurveyStart, Is.False);
+            Assert.That(session.Navigation.State.FocusedId, Is.EqualTo(id));
+            Assert.That(session.Navigation.State.Status, Is.EqualTo("SURVEY STARTED"));
+        }
+
+        [Test]
+        public async System.Threading.Tasks.Task OpenedSnapshotCannotBeReplacedWithinTheSession()
+        {
+            var manifest = new GalaxySnapshotManifest(9,3,"spatial-scene-v1","demo");
+            var scene = new GalaxySnapshotScene(9,3,new SpatialScopeRequest(SpatialScope.Overview),null,null);
+            using var session = new GalaxySnapshotSession(new DeterministicSnapshotSource(manifest,new[]{scene}));
+            Assert.That((await session.OpenAsync()).Succeeded,Is.True);
+            Assert.That((await session.OpenAsync()).Succeeded,Is.False);
+            Assert.That(session.Manifest,Is.SameAs(manifest));
+            session.Dispose();
+            Assert.DoesNotThrow(session.CancelPending);
+        }
+
+        [Test]
+        public void SystemCompletionRewardsOnlyTheFirstCompletingScan()
+        {
+            var snapshot = new SurveySnapshotId(9, 3, "demo");
+            var system = (GalaxyEntityId)"subreddit:technology"; var post = (GalaxyEntityId)"post:a";
+            var repository = new MemorySurveyRepository(snapshot, "pilot", system);
+            var session = new SurveySession(repository, "pilot", snapshot, system);
+            var weakRoute = new[] { new SurveyRoute((GalaxyRouteId)"route:weak", system, (GalaxyEntityId)"subreddit:next", 1f) };
+
+            var first = session.Apply(new CompleteScanIntent("scan:system", snapshot, DateTime.UtcNow, system,
+                GalaxyEntityKind.Subreddit, Array.Empty<SurveyRoute>(), new[] { post }, system, systemCompletedNow: true));
+            var later = session.Apply(new CompleteScanIntent("scan:post", snapshot, DateTime.UtcNow, post,
+                GalaxyEntityKind.Post, weakRoute, new[] { post }, system, systemCompletedNow: true));
+
+            Assert.That(first.Celebrations.Count(cue => cue.Kind == CelebrationKind.SystemRoutes), Is.EqualTo(1));
+            Assert.That(later.Succeeded, Is.True, later.Rejection);
+            Assert.That(later.Celebrations.Any(cue => cue.Kind == CelebrationKind.SystemRoutes), Is.False);
+            Assert.That(later.RevealedRoutes, Is.Empty);
+            Assert.That(session.State.CompletedSystemCount, Is.EqualTo(1));
+        }
+
         [Test]
         public void SurveyIntent_CommitsOneStateAndReplayDoesNotWrite()
         {
@@ -129,14 +360,17 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
-        public void Navigation_MapCloseRestoresMomentumAndFastTravelClearsIt()
+        public void Navigation_ChartDoesNotPauseOrRestoreStaleMomentumAndFastTravelClearsIt()
         {
             var navigation = new GalaxyNavigation();
-            navigation.Apply(new SetMapIntent(true, new NavigationPose(Vector3.Zero, Quaternion.Identity),
+            var open = navigation.Apply(new SetMapIntent(true, new NavigationPose(Vector3.Zero, Quaternion.Identity),
                 new Vector3(4, 0, 0), new Vector3(0, 2, 0)));
             var close = navigation.Apply(new SetMapIntent(false, new NavigationPose(Vector3.Zero, Quaternion.Identity),
                 Vector3.Zero, Vector3.Zero));
-            Assert.That(close.Effect.Velocity.X, Is.EqualTo(4));
+            Assert.That(open.Effect.PausePhysics, Is.False);
+            Assert.That(close.Effect.ResumePhysics, Is.False);
+            Assert.That(close.Effect.Teleport, Is.False);
+            Assert.That(close.Effect.Velocity, Is.EqualTo(Vector3.Zero));
 
             var target = new NavigationTarget((GalaxyEntityId)"subreddit:next", GalaxyEntityKind.Subreddit,
                 "next", new Vector3(100, 0, 0), true, true, 2, 3);
@@ -146,6 +380,67 @@ namespace ClustrGalaxy.Tests
             Assert.That(travel.Effect.Teleport, Is.True);
             Assert.That(travel.Effect.Velocity, Is.EqualTo(Vector3.Zero));
             Assert.That(travel.Effect.Rebase, Is.True);
+        }
+
+        [Test]
+        public void Navigation_StatusNeverNamesAnUnidentifiedTarget()
+        {
+            var navigation = new GalaxyNavigation();
+            var target = new NavigationTarget((GalaxyEntityId)"subreddit:secret", GalaxyEntityKind.Subreddit,
+                "Secret Name", new Vector3(10, 0, 0), true, true, 2, 3, identified: false);
+            navigation.Apply(new PlotApproachIntent(target, false));
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+            Assert.That(navigation.State.Status, Does.Contain(NavigationTarget.UnidentifiedLabel));
+
+            var arrival = navigation.AdvancePhysics(new NavigationPose(new Vector3(10, 0, 0), Quaternion.Identity),
+                Vector3.Zero, NavigationFlightMode.Autopilot, _ => target, 8, 100f);
+            Assert.That(arrival.Succeeded, Is.True);
+            Assert.That(navigation.State.AutopilotArrived, Is.True);
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+
+            navigation.Apply(new FastTravelIntent(target));
+            navigation.AdvancePhysics(new NavigationPose(Vector3.Zero, Quaternion.Identity), Vector3.Zero,
+                NavigationFlightMode.PilotAssist, _ => target, 8);
+            Assert.That(navigation.State.Status, Does.Not.Contain("Secret Name"));
+        }
+
+        [Test]
+        public void HudPresentation_HidesThreadRowsForUnidentifiedSurveyTargets()
+        {
+            var rows = new[] { new ProbeHudThreadRow(1, "author", 3, 0, "excerpt", false) };
+            var hidden = new ProbeHudPresenter().Present(new ProbeHudReadModel
+            { Survey = true, TargetId = "comment:a", TargetIdentified = false, ThreadRows = rows });
+            var shown = new ProbeHudPresenter().Present(new ProbeHudReadModel
+            { Survey = true, TargetId = "comment:a", TargetIdentified = true, ThreadRows = rows });
+            Assert.That(hidden.ThreadRows, Is.Empty);
+            Assert.That(shown.ThreadRows.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Navigation_AutopilotGuidanceDoesNotAllocatePerTick()
+        {
+            var navigation = new GalaxyNavigation();
+            var target = new NavigationTarget((GalaxyEntityId)"subreddit:next", GalaxyEntityKind.Subreddit,
+                "Next", new Vector3(500, 0, 0), true, true, 2, 3);
+            Func<GalaxyEntityId, NavigationTarget> resolve = _ => target;
+            navigation.Apply(new PlotApproachIntent(target, false));
+            var enRoute = new NavigationPose(Vector3.Zero, Quaternion.Identity);
+            var anchor = new NavigationPose(new Vector3(500 - 3 - GalaxyNavigation.DefaultClearance, 0, 0), Quaternion.Identity);
+
+            foreach (var pose in new[] { enRoute, anchor })
+            {
+                for (var tick = 0; tick < 3; tick++)
+                    navigation.AdvancePhysics(pose, Vector3.Zero, NavigationFlightMode.Autopilot, resolve, 8);
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                NavigationOutcome outcome = null;
+                for (var tick = 0; tick < 200; tick++)
+                    outcome = navigation.AdvancePhysics(pose, Vector3.Zero, NavigationFlightMode.Autopilot, resolve, 8);
+                Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+                if (pose.Position == Vector3.Zero) Assert.That(outcome.Effect.Velocity.Length(), Is.GreaterThan(0f));
+                else Assert.That(outcome.Effect.Velocity, Is.EqualTo(Vector3.Zero));
+            }
+            Assert.That(navigation.State.AutopilotArrived, Is.True);
+            Assert.That(navigation.State.Status, Does.StartWith("AUTOPILOT ARRIVED"));
         }
 
         [Test]
@@ -160,6 +455,47 @@ namespace ClustrGalaxy.Tests
             Assert.That(presentation.Actions, Does.Contain(ProbeHudAction.ConfirmLocalQueue));
         }
 
+        [Test]
+        public void FailedSaveLeavesStateUntouchedAndSameIntentCanRetry()
+        {
+            var snapshot = new SurveySnapshotId(9, 3, "pinned");
+            var repository = new MemorySurveyRepository(snapshot, "pilot", (GalaxyEntityId)"subreddit:a");
+            var session = new SurveySession(repository, "pilot", snapshot, (GalaxyEntityId)"subreddit:a");
+            var before = session.State;
+            var intent = new StartSurveyIntent("start", snapshot, DateTime.UtcNow,
+                (GalaxyEntityId)"subreddit:a", new[] { (GalaxyEntityId)"post:a" });
+            repository.FailSave = true;
+            Assert.That(session.Apply(intent).Succeeded, Is.False);
+            Assert.That(session.State, Is.SameAs(before));
+            Assert.That(session.State.IsKnown((GalaxyEntityId)"post:a"), Is.False);
+            repository.FailSave = false;
+            Assert.That(session.Apply(intent).Changed, Is.True);
+            Assert.That(session.State.IsKnown((GalaxyEntityId)"post:a"), Is.True);
+            Assert.That(repository.SaveCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void StreamingPreservesSurveyVisibilityAndSharedScopeOwnership()
+        {
+            var galaxy = new ResidentGalaxy();
+            var first = new SpatialScopeRequest(SpatialScope.Community, (GalaxyEntityId)"community:a");
+            var second = new SpatialScopeRequest(SpatialScope.System, (GalaxyEntityId)"subreddit:a");
+            var id = (GalaxyEntityId)"subreddit:a";
+            galaxy.ApplyProjection(first, new[] { new ResidentEntity(id, GalaxyEntityKind.Subreddit,
+                GalaxyVisualKind.Star, first, "a", 1) }, null);
+            galaxy.ApplySurveyVisibility(false, new[] { id }, Array.Empty<GalaxyRouteId>());
+            galaxy.ApplyProjection(second, new[] {
+                new ResidentEntity(id, GalaxyEntityKind.Subreddit, GalaxyVisualKind.Star, second, "a", 1),
+                new ResidentEntity((GalaxyEntityId)"post:hidden", GalaxyEntityKind.Post, GalaxyVisualKind.Planet, second, "hidden", 1)
+            }, null);
+            Assert.That(galaxy.TryFindActive((GalaxyEntityId)"post:hidden", out _), Is.False);
+            galaxy.Release(second);
+            Assert.That(galaxy.TryFindActive(id, out _), Is.True);
+            Assert.That(galaxy.TryFindLoaded((GalaxyEntityId)"post:hidden", out _), Is.False);
+            galaxy.Release(first);
+            Assert.That(galaxy.LoadedEntities, Is.Empty);
+        }
+
         private sealed class MemorySurveyRepository : ISurveyRepository
         {
             private SurveyState state;
@@ -172,7 +508,12 @@ namespace ClustrGalaxy.Tests
             }
             public int SaveCount { get; private set; }
             public SurveyState LoadOrCreate(string profileId, SurveySnapshotId snapshot, GalaxyEntityId startingSystemId) => state;
-            public void Save(SurveyState value) { state = value; SaveCount++; }
+            public bool FailSave { get; set; }
+            public void Save(SurveyState value)
+            {
+                if (FailSave) throw new IOException("simulated disk failure");
+                state = value; SaveCount++;
+            }
         }
 
         private sealed class ControlledSnapshotSource : IGalaxySnapshotSource

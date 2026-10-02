@@ -6,6 +6,7 @@ namespace ClustrGalaxy.Data
     public enum GalaxyDataMode
     {
         LocalDemo,
+        DeterministicFixture,
         Connecting,
         LegacyUnpinned,
         LivePinned,

@@ -1,0 +1,18 @@
+{
+  "package": "com.unity.serialization",
+  "version": "3.1.5",
+  "upstream_url": "https://download.packages.unity.com/com.unity.serialization/-/com.unity.serialization-3.1.5.tgz",
+  "upstream_sha1": "c463b52e88d71aa1adbb674e4926cf8f1e3b054c",
+  "upstream_sha256": "dd380ee2e21fbdd1140e818401e9012a4ad3d1daf5c45f450d09268307eca309",
+  "upstream_file_count": 339,
+  "changed_files": {
+    "Runtime/Unity.Serialization/Binary/Adapters/Internal/BinaryAdapter+UnityEditor.cs": {
+      "before_sha256": "51b1c64278bce1791e049e5db190a09797267b1127990c3b98115d2be79a96b6",
+      "after_sha256": "65e5a4759363ab545aba280f72afd2c7a6aa3aefa074bce9400225a24b0a8a50"
+    },
+    "Runtime/Unity.Serialization/Json/Adapters/Internal/JsonAdapter+UnityEditor.cs": {
+      "before_sha256": "104bb384b05fdd6fe5302bbb12bad78acb9f86bbe3fded8eab22b6e428d3f303",
+      "after_sha256": "a73003a272c7a13566a9b677f8c528deb70136de24eee41cc67c8dc981f1067d"
+    }
+  }
+}

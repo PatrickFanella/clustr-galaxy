@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using ClustrGalaxy.Gameplay;
+using ClustrGalaxy.Core.Activities;
 using ClustrGalaxy.Data;
 using ClustrGalaxy.Interaction;
 using ClustrGalaxy.World;
@@ -13,8 +14,8 @@ using ClustrGalaxy.Core.Survey;
 namespace ClustrGalaxy.Scanning
 {
     /// <summary>
-    /// Input and range adapter around <see cref="ScanRules"/>. The only mutation
-    /// point is a completed, uninterrupted Survey-mode charge.
+    /// Input and range adapter for Survey scans; reveal rules live in the Survey
+    /// session. The only mutation point is a completed, uninterrupted Survey-mode charge.
     /// </summary>
     public sealed class SignalScanner : MonoBehaviour
     {
@@ -30,6 +31,15 @@ namespace ClustrGalaxy.Scanning
         private SpatialSceneLoader dataLoader = null!;
         private GalaxyEntityRegistry registry = null!;
         private bool holding;
+        private GalaxyEntity chargingTarget;
+        private GalaxyWorldMode chargingMode;
+        private Transform scanView;
+        private readonly SignalTuning tuning = new();
+        public bool AutomaticTuning { get; set; }
+        public bool CleanSignal => tuning.Clean;
+        public float TuningProgress => tuning.AlignedSeconds / SignalTuning.RequiredAlignmentSeconds;
+        public Vector3 TuningDirection { get; private set; }
+        public event Action<GalaxyEntity, bool, bool> ScanFinished = delegate { };
         private float chargeSeconds;
 
         public SignalScanState State { get; private set; } = SignalScanState.Idle;
@@ -55,6 +65,7 @@ namespace ClustrGalaxy.Scanning
         public void Initialize(GalaxyModeState modeState, GalaxySurveyVisibilityController visibilityController,
             ProbeTargeting targetController, IEnumerable<ScanRoute> initialRoutes = null)
         {
+            scanView = Camera.main != null ? Camera.main.transform : transform;
             modes = modeState ?? throw new ArgumentNullException(nameof(modeState));
             visibility = visibilityController ?? throw new ArgumentNullException(nameof(visibilityController));
             targeting = targetController ?? throw new ArgumentNullException(nameof(targetController));
@@ -119,6 +130,7 @@ namespace ClustrGalaxy.Scanning
                 return;
             }
             holding = true;
+            chargingTarget = targeting.Target; chargingMode = modes.WorldMode; tuning.Reset();
             chargeSeconds = 0f;
             State = SignalScanState.Charging;
         }
@@ -147,7 +159,12 @@ namespace ClustrGalaxy.Scanning
                     : ScanResult.NoSignal;
                 return;
             }
-            chargeSeconds += Mathf.Max(0f, deltaTime);
+            if (float.IsNaN(deltaTime) || float.IsInfinity(deltaTime) || deltaTime < 0) return;
+            var direction = (chargingTarget.transform.position - scanView.position).normalized;
+            TuningDirection = Quaternion.AngleAxis(Mathf.Sin(chargeSeconds * 2f) * 7f, scanView.up) * direction;
+            tuning.Advance(Mathf.Min(deltaTime, RequiredHoldSeconds - chargeSeconds),
+                Vector3.Angle(scanView.forward, TuningDirection), AutomaticTuning);
+            chargeSeconds += deltaTime;
             if (chargeSeconds < RequiredHoldSeconds) return;
             holding = false;
             CompleteScan();
@@ -162,6 +179,13 @@ namespace ClustrGalaxy.Scanning
         private void CompleteScan()
         {
             var target = targeting.Target;
+            if (modes.WorldMode == GalaxyWorldMode.Explore)
+            {
+                State = SignalScanState.Complete;
+                LastResult = new ScanResult(State, false, Array.Empty<string>(), Array.Empty<string>());
+                ScanFinished(target, tuning.Clean, true);
+                return;
+            }
             var session = visibility.SurveySession;
             if (target == null || session == null || !visibility.IsKnown(target))
             {
@@ -189,7 +213,7 @@ namespace ClustrGalaxy.Scanning
                 (GalaxyEntityId)target.StableId, target.Kind,
                 routes.Select(route => new SurveyRoute((GalaxyRouteId)route.Id, (GalaxyEntityId)route.SourceId,
                     (GalaxyEntityId)route.TargetId, route.Weight)),
-                LoadedPostIds(target).Select(id => (GalaxyEntityId)id), systemId, completedNow);
+                LoadedPostIds(target).Select(id => (GalaxyEntityId)id), systemId, completedNow, tuning.Clean);
             var outcome = visibility.ApplySurveyIntent(intent);
             if (!outcome.Succeeded)
             {
@@ -201,18 +225,20 @@ namespace ClustrGalaxy.Scanning
             LastResult = new ScanResult(State, !outcome.Changed,
                 outcome.RevealedEntities.Select(id => id.Value).ToArray(),
                 outcome.RevealedRoutes.Select(id => id.Value).ToArray());
+            if (outcome.Changed) ScanFinished(target, tuning.Clean, false);
         }
 
         private bool CanCharge(out SignalScanState failure)
         {
-            if (modes == null || modes.WorldMode != GalaxyWorldMode.Survey || visibility == null ||
-                visibility.SurveySession == null || targeting == null || targeting.Target == null ||
-                !visibility.IsKnown(targeting.Target))
+            if (modes == null || visibility == null || targeting == null || targeting.Target == null ||
+                (holding && (targeting.Target != chargingTarget || modes.WorldMode != chargingMode)) ||
+                (modes.WorldMode == GalaxyWorldMode.Survey &&
+                    (visibility.SurveySession == null || !visibility.IsKnown(targeting.Target))))
             {
                 failure = SignalScanState.NoSignal;
                 return false;
             }
-            if (Vector3.Distance(transform.position, targeting.Target.transform.position) > maximumScanRange)
+            if (targeting.Target.SurfaceDistance(transform.position) > maximumScanRange)
             {
                 failure = SignalScanState.OutOfRange;
                 return false;
@@ -231,7 +257,7 @@ namespace ClustrGalaxy.Scanning
         {
             SignalStrength01 = targeting?.Target == null
                 ? 0f
-                : SignalStrengthForDistance(Vector3.Distance(transform.position, targeting.Target.transform.position), maximumScanRange);
+                : SignalStrengthForDistance(targeting.Target.SurfaceDistance(transform.position), maximumScanRange);
         }
 
         private void RebuildPinnedRoutes()

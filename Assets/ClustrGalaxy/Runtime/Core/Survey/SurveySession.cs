@@ -4,6 +4,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Activities;
 
 namespace ClustrGalaxy.Core.Survey
 {
@@ -40,7 +41,7 @@ namespace ClustrGalaxy.Core.Survey
             this.repository = repository ?? throw new ArgumentNullException(nameof(repository));
             state = repository.LoadOrCreate(profileId, snapshot, startingSystemId) ??
                 throw new InvalidOperationException("The Survey repository returned no state.");
-            if (state.Snapshot != snapshot)
+            if (state.Snapshot != snapshot || !string.Equals(state.ProfileId, profileId, StringComparison.Ordinal))
                 throw new InvalidOperationException("The Survey repository returned a different snapshot.");
         }
 
@@ -94,12 +95,29 @@ namespace ClustrGalaxy.Core.Survey
             }
 
             if (!string.IsNullOrEmpty(rejection)) return Rejected(rejection);
+            var celebrations = new List<CelebrationCue>();
+            if (intent is CompleteScanIntent completedScan)
+            {
+                celebrations.Add(new CelebrationCue("discovery:" + intent.IntentId, CelebrationKind.Discovery, new[] { completedScan.TargetId }));
+                if (mutable.CompletedSystemCount > state.CompletedSystemCount)
+                    celebrations.Add(new CelebrationCue("system:" + intent.IntentId, CelebrationKind.SystemRoutes, new[] { completedScan.SystemId }));
+                if (mutable.CompletedAuthoredConstellationCount > state.CompletedAuthoredConstellationCount)
+                    celebrations.Add(new CelebrationCue("constellation:" + intent.IntentId, CelebrationKind.Constellation, AuthoredMembers));
+            }
+            if (intent is SavePersonalConstellationIntent)
+                celebrations.Add(new CelebrationCue("personal:" + intent.IntentId, CelebrationKind.Constellation,
+                    mutable.PersonalConstellations.First(item => item.Id == personalId).Members));
+            if (intent is PilotMasteryArrivalIntent)
+                celebrations.Add(new CelebrationCue("flight:" + intent.IntentId, CelebrationKind.FlightRibbon, null));
             mutable.ProcessedIntentIds.Add(intent.IntentId);
             mutable.SavedUtc = intent.Utc;
-            state = mutable.Freeze();
-            repository.Save(state);
+            var candidate = mutable.Freeze();
+            try { repository.Save(candidate); }
+            catch (System.IO.IOException) { return Rejected("Progress could not be saved. Please retry."); }
+            catch (UnauthorizedAccessException) { return Rejected("Progress storage is not writable. Please retry."); }
+            state = candidate;
             return new SurveyTransitionOutcome(true, true, string.Empty, state, revealedEntities, revealedRoutes,
-                notifications, achievements, cosmetic, personalId, queueStatus);
+                notifications, achievements, cosmetic, personalId, queueStatus, celebrations.AsReadOnly());
         }
 
         private string ApplyStart(Mutable mutable, StartSurveyIntent intent)
@@ -124,6 +142,11 @@ namespace ClustrGalaxy.Core.Survey
             if (mutable.CompletedScans.Contains(intent.TargetId)) return "That Survey signal is already complete.";
 
             mutable.CompletedScans.Add(intent.TargetId);
+            if (intent.CleanSignal)
+            {
+                mutable.Discoveries.Add("clean-signal:" + intent.TargetId.Value);
+                notifications.Add("CLEAN SIGNAL — artistic tuning");
+            }
             mutable.IdentifiedEntities.Add(intent.TargetId);
             mutable.KnownEntities.Add(intent.TargetId);
             foreach (var post in intent.LoadedPostIds.OrderBy(value => value))
@@ -134,8 +157,13 @@ namespace ClustrGalaxy.Core.Survey
                 .OrderByDescending(route => route.Weight).ThenBy(route => route.Id).ToArray();
             var revealLimit = mutable.ScannerLevel >= 3 ? 4 : mutable.ScannerLevel >= 2 ? 2 : 1;
             foreach (var route in candidates.Take(revealLimit)) AddRoute(mutable, route, entities, routes);
-            if (intent.SystemCompletedNow)
-                foreach (var route in candidates.Skip(revealLimit).Where(route => route.Weight <= 2f))
+            // The scanner reports "complete after this scan"; only the first completion rewards the system.
+            var firstSystemCompletion = intent.SystemCompletedNow && !intent.SystemId.IsEmpty &&
+                !mutable.ProgressKeys.Contains("system:" + intent.SystemId.Value);
+            if (firstSystemCompletion)
+                foreach (var route in intent.Routes.Where(route => route.SourceId == intent.SystemId &&
+                    route.Weight <= 2f && !mutable.KnownRoutes.Contains(route.Id))
+                    .GroupBy(route => route.Id).Select(group => group.First()).OrderBy(route => route.Id))
                     AddRoute(mutable, route, entities, routes);
 
             if (intent.TargetKind == GalaxyEntityKind.Post) mutable.ScannedPostCount++;
@@ -144,11 +172,12 @@ namespace ClustrGalaxy.Core.Survey
             if (entities.Any(entity => entity.Value.StartsWith("subreddit:", StringComparison.Ordinal)))
                 Unlock(mutable, FirstSystem, achievements);
 
-            if (intent.SystemCompletedNow && !intent.SystemId.IsEmpty &&
-                mutable.ProgressKeys.Add("system:" + intent.SystemId.Value))
+            if (firstSystemCompletion && mutable.ProgressKeys.Add("system:" + intent.SystemId.Value))
                 mutable.CompletedSystemCount++;
 
-            if (!mutable.CompletedConstellations.Contains(AuthoredConstellation) &&
+            if (state.Snapshot.StorageNamespace == "demo" && AuthoredMembers.Contains(intent.TargetId))
+                notifications.Add("AUTHORED // Example Constellation " + AuthoredMembers.Count(mutable.CompletedScans.Contains) + "/6");
+            if (state.Snapshot.StorageNamespace == "demo" && !mutable.CompletedConstellations.Contains(AuthoredConstellation) &&
                 AuthoredMembers.All(mutable.CompletedScans.Contains))
             {
                 mutable.CompletedConstellations.Add(AuthoredConstellation);
@@ -157,7 +186,7 @@ namespace ClustrGalaxy.Core.Survey
                 notifications.Add("CONSTELLATION COMPLETE // Example Constellation");
             }
 
-            if (!mutable.Discoveries.Contains(AuthoredDiscovery))
+            if (state.Snapshot.StorageNamespace == "demo" && !mutable.Discoveries.Contains(AuthoredDiscovery))
             {
                 var expected = DiscoverySequence[Math.Min(mutable.AuthoredSequenceProgress, DiscoverySequence.Length - 1)];
                 mutable.AuthoredSequenceProgress = intent.TargetId == expected

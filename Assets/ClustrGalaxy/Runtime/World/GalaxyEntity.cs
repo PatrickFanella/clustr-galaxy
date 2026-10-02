@@ -6,6 +6,9 @@ namespace ClustrGalaxy.World
     public sealed class GalaxyEntity : MonoBehaviour
     {
         private GalaxyEntityRegistry registry;
+        private SphereCollider surface;
+        public float SurfaceRadius => surface != null ? surface.radius * Mathf.Max(Mathf.Abs(transform.lossyScale.x), Mathf.Max(Mathf.Abs(transform.lossyScale.y), Mathf.Abs(transform.lossyScale.z))) : 0f;
+        public float SurfaceDistance(Vector3 point) => Mathf.Max(0f, Vector3.Distance(point, transform.position) - SurfaceRadius);
 
         public string StableId { get; private set; } = string.Empty;
         public string DisplayName { get; private set; } = string.Empty;
@@ -18,6 +21,7 @@ namespace ClustrGalaxy.World
             GalaxyEntityRegistry entityRegistry = null)
         {
             registry?.Unregister(this);
+            surface = GetComponent<SphereCollider>();
             StableId = stableId;
             DisplayName = displayName;
             EntityType = entityType;

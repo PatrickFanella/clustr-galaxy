@@ -9,6 +9,7 @@ EditorBuildSettings:
     path: Assets/ClustrGalaxy/Scenes/Galaxy.unity
     guid: ad61e127ca0480783ac870c05c1cd0e2
   m_configObjects:
+    com.unity.addressableassets: {fileID: 11400000, guid: 22b4e75ecec4bb069b77f753a648f283, type: 2}
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 3cc43688281736fff9ab6745d1165b7c, type: 2}
     com.unity.xr.openxr.settings4: {fileID: 11400000, guid: b1c967aebbb9cff4083ed9759ffc21de, type: 2}

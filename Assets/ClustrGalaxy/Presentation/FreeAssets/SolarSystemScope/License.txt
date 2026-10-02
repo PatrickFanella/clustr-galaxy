@@ -1,0 +1,6 @@
+Solar System Scope textures by Solar System Scope / INOVE.
+Source: https://edu.solarsystemscope.com/textures/
+Licensed under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+Original maps are unmodified. Unity imports resize/compress them for rendering.
+Used as artistic celestial surfaces, not representations of Clustr source metrics.

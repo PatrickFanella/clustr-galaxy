@@ -26,7 +26,7 @@ namespace ClustrGalaxy.Simulation
 
             var softening = Math.Max(0d, softeningRadius);
             var denominator = Math.Pow(
-                distanceSquared + softening * softening,
+                Math.Max(distanceSquared, softening * softening),
                 1.5d);
             var scale = gravitationalParameter / denominator;
             var acceleration = towardSource * (float)scale;

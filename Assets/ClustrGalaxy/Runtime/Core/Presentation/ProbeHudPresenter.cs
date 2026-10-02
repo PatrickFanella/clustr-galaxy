@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Survey;
 
 namespace ClustrGalaxy.Core.Presentation
 {
@@ -11,11 +13,23 @@ namespace ClustrGalaxy.Core.Presentation
         ConfirmLocalQueue, CancelLocalQueue
     }
 
+    public enum ProbeHudSection { Common, Selection, Discoveries, Creations, Activities, Preferences, All }
+    public static class ProbeHudSections
+    {
+        public static readonly IReadOnlyList<ProbeHudSection> Selectable=Array.AsReadOnly(new[]{ProbeHudSection.Selection,ProbeHudSection.Discoveries,ProbeHudSection.Creations,ProbeHudSection.Activities,ProbeHudSection.Preferences,ProbeHudSection.All});
+        public static string Title(ProbeHudSection section)=>section switch
+        {ProbeHudSection.Selection=>"FLIGHT & SELECTION",ProbeHudSection.Discoveries=>"DISCOVERIES",ProbeHudSection.Creations=>"CREATIONS & DIARY",ProbeHudSection.Activities=>"ROUTES & EXPEDITIONS",ProbeHudSection.Preferences=>"AUDIO & ACCESSIBILITY",ProbeHudSection.All=>"ALL ACTIONS",_=>"GENERAL"};
+        public static ProbeHudSection For(ProbeHudAction action)=>action switch
+        {ProbeHudAction.AddConstellationMember or ProbeHudAction.SavePersonalConstellation or ProbeHudAction.RequestLocalQueue or ProbeHudAction.ConfirmLocalQueue or ProbeHudAction.CancelLocalQueue=>ProbeHudSection.Creations,_=>ProbeHudSection.Selection};
+        public static bool Visible(ProbeHudSection row,ProbeHudSection selected)=>row==ProbeHudSection.Common||selected==ProbeHudSection.All||row==selected;
+    }
+
     public sealed class ProbeHudReadModel
     {
         public float Speed { get; set; }
         public string FlightMode { get; set; } = string.Empty;
         public bool Survey { get; set; }
+        public bool AuthoredContent { get; set; }
         public bool RequiresSurveyStart { get; set; }
         public string DataStatus { get; set; } = string.Empty;
         public string NavigationLevel { get; set; } = string.Empty;
@@ -26,6 +40,7 @@ namespace ClustrGalaxy.Core.Presentation
         public bool TargetKnown { get; set; }
         public bool TargetIdentified { get; set; }
         public bool TargetNavigable { get; set; }
+        public bool TargetApproachable { get; set; }
         public bool ScanAvailable { get; set; }
         public float ScanCharge { get; set; }
         public int ScannerLevel { get; set; } = 1;
@@ -34,6 +49,20 @@ namespace ClustrGalaxy.Core.Presentation
         public string QueueStatus { get; set; } = string.Empty;
         public bool HasSavedPersonalConstellation { get; set; }
         public bool AwaitingQueueConfirmation { get; set; }
+        public string DraftName { get; set; } = string.Empty;
+        public string DraftReason { get; set; } = string.Empty;
+        public IReadOnlyList<GalaxyEntityId> DraftMembers { get; set; } = Array.Empty<GalaxyEntityId>();
+        public IReadOnlyList<GalaxyEntityId> IdentifiedEntities { get; set; } = Array.Empty<GalaxyEntityId>();
+        public string SavedSelectionName { get; set; } = string.Empty;
+        public string DraftValidation
+        {
+            get
+            {
+                if (DraftMembers.Any(id => id.IsEmpty || !IdentifiedEntities.Contains(id))) return "Choose identified Survey entities only.";
+                try { _ = new PersonalConstellationRecord("draft", DraftName, DraftReason, DraftMembers, DateTime.UnixEpoch); return string.Empty; }
+                catch (ArgumentException exception) { return exception.Message; }
+            }
+        }
         public IReadOnlyList<ProbeHudThreadRow> ThreadRows { get; set; } = Array.Empty<ProbeHudThreadRow>();
     }
 
@@ -70,40 +99,47 @@ namespace ClustrGalaxy.Core.Presentation
             if (model == null) throw new ArgumentNullException(nameof(model));
             var lines = new List<string>
             {
-                $"SPEED  {model.Speed:000.0}",
                 "FLIGHT  " + model.FlightMode,
                 "WORLD  " + (model.Survey ? "SURVEY" : "EXPLORE"),
                 "DATA  " + model.DataStatus,
-                "VIEW  " + model.NavigationLevel,
-                ProbeHudPresentation.AuthoredProvenance
+                "VIEW  " + model.NavigationLevel
             };
+            if (model.AuthoredContent) lines.Add(ProbeHudPresentation.AuthoredProvenance);
             var actions = new List<ProbeHudAction>();
             if (!model.Survey) actions.Add(ProbeHudAction.EnterSurvey);
-            else if (model.RequiresSurveyStart) actions.Add(ProbeHudAction.ChooseStartingSystem);
-            else actions.Add(ProbeHudAction.ReturnToExplore);
+            else
+            {
+                if (model.RequiresSurveyStart) actions.Add(ProbeHudAction.ChooseStartingSystem);
+                actions.Add(ProbeHudAction.ReturnToExplore);
+            }
 
             if (!string.IsNullOrWhiteSpace(model.TargetId))
             {
                 lines.Add(model.TargetIdentified ? "TARGET  " + model.TargetName : "TARGET  UNIDENTIFIED SIGNAL");
                 if (model.TargetIdentified) lines.Add($"{model.TargetKind}  •  {model.TargetId}");
-                if (model.ScanAvailable) actions.Add(ProbeHudAction.Scan);
-                if (model.TargetNavigable)
+                if (model.Survey && model.ScanAvailable) { actions.Add(ProbeHudAction.Scan); lines.Add("HOLD SCAN FOR 1.5s"); }
+                if (model.TargetNavigable) actions.Add(ProbeHudAction.FastTravel);
+                if (model.TargetNavigable || model.TargetApproachable)
                 {
-                    actions.Add(ProbeHudAction.FastTravel);
                     actions.Add(ProbeHudAction.PlotAutopilot);
                     actions.Add(ProbeHudAction.TrackMastery);
                 }
-                if (model.Survey && model.TargetIdentified) actions.Add(ProbeHudAction.AddConstellationMember);
+                if (model.Survey && model.TargetIdentified && model.DraftMembers.Count < 12 &&
+                    !model.DraftMembers.Any(id => id.Value == model.TargetId)) actions.Add(ProbeHudAction.AddConstellationMember);
             }
             if (model.Survey && !model.RequiresSurveyStart)
             {
                 lines.Add("SCANNER LVL " + Math.Max(1, model.ScannerLevel));
                 if (!string.IsNullOrWhiteSpace(model.Objective)) lines.Add("OBJECTIVE  " + model.Objective);
-                actions.Add(ProbeHudAction.SavePersonalConstellation);
+                lines.Add("CONSTELLATION DRAFT  " + model.DraftMembers.Count + "/12 identified members (minimum 3)");
+                var validation = model.DraftValidation;
+                if (string.IsNullOrEmpty(validation)) actions.Add(ProbeHudAction.SavePersonalConstellation);
+                else lines.Add("DRAFT  " + validation);
+                if (!string.IsNullOrEmpty(model.SavedSelectionName)) lines.Add("SAVED SELECTION  " + model.SavedSelectionName);
             }
-            if (model.HasSavedPersonalConstellation && !model.AwaitingQueueConfirmation)
+            if (model.Survey && model.HasSavedPersonalConstellation && !model.AwaitingQueueConfirmation)
                 actions.Add(ProbeHudAction.RequestLocalQueue);
-            if (model.AwaitingQueueConfirmation)
+            if (model.Survey && model.AwaitingQueueConfirmation)
             {
                 lines.Add(ProbeHudPresentation.LocalOnlyQueueNotice);
                 actions.Add(ProbeHudAction.ConfirmLocalQueue);
@@ -112,7 +148,9 @@ namespace ClustrGalaxy.Core.Presentation
             if (!string.IsNullOrWhiteSpace(model.QueueStatus)) lines.Add(model.QueueStatus);
             if (!string.IsNullOrWhiteSpace(model.Notification)) lines.Add(model.Notification);
             if (!string.IsNullOrWhiteSpace(model.NavigationStatus)) lines.Add("TRAVEL  " + model.NavigationStatus);
-            return new ProbeHudPresentation(lines, actions, model.ThreadRows);
+            // Reply authors and excerpts are identifying source data.
+            var threadRows = !model.Survey || model.TargetIdentified ? model.ThreadRows : Array.Empty<ProbeHudThreadRow>();
+            return new ProbeHudPresentation(lines, actions, threadRows);
         }
     }
 }

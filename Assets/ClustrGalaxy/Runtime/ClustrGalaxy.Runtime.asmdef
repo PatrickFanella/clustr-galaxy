@@ -3,7 +3,10 @@
   "rootNamespace": "ClustrGalaxy",
   "references": [
     "ClustrGalaxy.Core",
-    "Unity.InputSystem"
+    "Unity.InputSystem",
+    "Unity.ugui",
+    "Unity.Addressables",
+    "Unity.ResourceManager"
   ],
   "autoReferenced": true
 }

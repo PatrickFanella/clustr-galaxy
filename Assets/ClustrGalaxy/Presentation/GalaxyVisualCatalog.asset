@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83ffe32569b9fec2fbbbcab491d8d97b, type: 3}
+  m_Name: GalaxyVisualCatalog
+  m_EditorClassIdentifier: ClustrGalaxy.Unity::ClustrGalaxy.World.GalaxyVisualCatalog
+  anomalyPrefabs:
+  - {fileID: 7353530685368549450, guid: 947c9ab0d2e32085097f045d91fdb294, type: 3}
+  - {fileID: 5852268271482114645, guid: 9494f6d4e019a43a1bd959fb285b34a2, type: 3}
+  - {fileID: 6572866386803096202, guid: 0d9f9ee392fea191f8902b3416dff377, type: 3}
+  - {fileID: 5670968796472012494, guid: 7889c8b426bcfe32f99c966c48079b88, type: 3}
+  - {fileID: 7283087125098751908, guid: 91fde0d895466821794b51a1f1282366, type: 3}
+  - {fileID: 7801965606652159968, guid: cf14f864fd99211c787d16820ff7b0c4, type: 3}
+  keepsakePrefabs:
+  - {fileID: 7733110374052089935, guid: 24a2c4031180d550090de3800fb8c062, type: 3}
+  - {fileID: 6206093111093692640, guid: a1de25809df5326c7820dd62f4eb30b4, type: 3}
+  - {fileID: 2589507297072345219, guid: 495c2486ef0dc84b69a1c70a266f24a9, type: 3}
+  observatoryPlatformPrefab: {fileID: 1348805929988264979, guid: 0a0706d300c5b4b10ae5ba84612930b0, type: 3}
+  userShipPrefabs:
+  - {fileID: 8609934710715256729, guid: 1b37d55ee92ed840c82055c7c52ad7db, type: 3}
+  - {fileID: 901321737132240339, guid: e5f6dbc5890cfd56ca3ae5334a2a92bd, type: 3}
+  - {fileID: 6311671099687644213, guid: 213bd78d00ef610b0a3799e7a2447461, type: 3}
+  - {fileID: 4499975535244270896, guid: f538bbfed5d0180e59768c3ad48032ca, type: 3}
+  - {fileID: 5113710067230016453, guid: 31f73516ce45f667890785724e87eb65, type: 3}
+  - {fileID: 2706856561113509155, guid: 12bc37fcf4a0270f3927d6b37cbdeec9, type: 3}
+  discussionSatellitePrefab: {fileID: 1406495621437270840, guid: a8a80d33e5ba362cab7798c2e6a6123d, type: 3}
+  explorationInstruments:
+  - {fileID: 8300000, guid: f0d1a8a6eac44af9b4ce8999c4e31b79, type: 3}
+  - {fileID: 8300000, guid: 3e8d156a52e842a58c3b9ccf8438fead, type: 3}
+  - {fileID: 8300000, guid: 71d239cda9d9477e876ad2c0573df3a1, type: 3}
+  activityMaterial: {fileID: 2100000, guid: 8aa8e85c315789f32ab3eb17b76e4959, type: 2}
+  starSurface: {fileID: 2100000, guid: e66e6c770430ddb00adc7916db5f047c, type: 2}
+  planetSurfaces:
+  - {fileID: 2100000, guid: f1a66b6493685888cbcdf6bb791092bf, type: 2}
+  - {fileID: 2100000, guid: 679ab8d14c81fd26a943173282178d29, type: 2}
+  - {fileID: 2100000, guid: 524a77008d3239cfb9a02f8adfbd1522, type: 2}
+  - {fileID: 2100000, guid: e54302e2a72ed36a9ba052003e041c7b, type: 2}
+  - {fileID: 2100000, guid: 7a556b5dc2d4c95e1ad55126b19f5a48, type: 2}
+  cockpitConsole: {fileID: 6661399368458204902, guid: 5ce04f8a549dfb7d3b1e4785de8d8ad8, type: 3}
+  engineSound: {fileID: 8300000, guid: 6fad383e50c851b79e01df2e685ee012, type: 3}
+  scannerSound: {fileID: 8300000, guid: da49fa9fe95555f2bb2c98bb19c8381b, type: 3}
+  interfaceSound: {fileID: 8300000, guid: 46ffd88b51185e908fd2d26d6daaf875, type: 3}
+  confirmPrompt: {fileID: 21300000, guid: 1955fea24b8354718cbc7a5a741dc643, type: 3}
+  backPrompt: {fileID: 21300000, guid: 7aee1fc6c9c75cc59b7eb26cd3423d23, type: 3}

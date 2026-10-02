@@ -61,7 +61,7 @@ namespace ClustrGalaxy.Core.Persistence
         {
             var path = Resolve(relativePath);
             if (!File.Exists(path)) return;
-            var quarantine = path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            var quarantine = path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N");
             File.Move(path, quarantine);
         }
 

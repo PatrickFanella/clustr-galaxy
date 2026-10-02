@@ -118,7 +118,7 @@ namespace ClustrGalaxy.World
             landmark.transform.SetParent(layerRoot, false);
             landmark.transform.localPosition = position;
             var activity = MetricNormalizer.NormalizeLog(node.val, 1, 50000);
-            var radius = Mathf.Lerp(1.3f, 6.5f, (float)Math.Pow(activity, 0.62d));
+            var radius = Mathf.Lerp(1.3f, 6.5f, (float)Math.Pow(activity, 0.62d)) * GalaxyTuning.RegionDistanceScale;
             landmark.transform.localScale = Vector3.one * radius * 2f;
             landmark.AddComponent<GalaxyEntity>().Initialize(
                 node.id,

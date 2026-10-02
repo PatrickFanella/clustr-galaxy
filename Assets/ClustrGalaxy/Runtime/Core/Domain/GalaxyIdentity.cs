@@ -26,7 +26,7 @@ namespace ClustrGalaxy.Core.Domain
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("A stable galaxy entity ID is required.", parameterName);
             var normalized = value.Trim();
-            if (normalized.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0)
+            if (normalized.IndexOf('\r') >= 0 || normalized.IndexOf('\n') >= 0 || normalized.IndexOf('\0') >= 0)
                 throw new ArgumentException("A stable galaxy entity ID cannot contain control separators.", parameterName);
             return normalized;
         }
@@ -39,7 +39,7 @@ namespace ClustrGalaxy.Core.Domain
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("A stable galaxy route ID is required.", nameof(value));
             var normalized = value.Trim();
-            if (normalized.IndexOfAny(new[] { '\r', '\n', '\0' }) >= 0)
+            if (normalized.IndexOf('\r') >= 0 || normalized.IndexOf('\n') >= 0 || normalized.IndexOf('\0') >= 0)
                 throw new ArgumentException("A stable galaxy route ID cannot contain control separators.", nameof(value));
             Value = normalized;
         }

@@ -1,12 +1,14 @@
 using ClustrGalaxy.World;
+using System.Linq;
 using UnityEditor;
+using UnityEditor.AddressableAssets;
 using UnityEngine;
 
 namespace ClustrGalaxy.Editor
 {
     public static class GalaxyVisualCatalogBuilder
     {
-        private const string ResourcesFolder = "Assets/ClustrGalaxy/Resources";
+        private const string ResourcesFolder = "Assets/ClustrGalaxy/Presentation";
         private const string CatalogPath = ResourcesFolder + "/GalaxyVisualCatalog.asset";
 
         [InitializeOnLoadMethod]
@@ -32,7 +34,7 @@ namespace ClustrGalaxy.Editor
 
             if (!AssetDatabase.IsValidFolder(ResourcesFolder))
             {
-                AssetDatabase.CreateFolder("Assets/ClustrGalaxy", "Resources");
+                AssetDatabase.CreateFolder("Assets/ClustrGalaxy", "Presentation");
             }
 
             var catalog = AssetDatabase.LoadAssetAtPath<GalaxyVisualCatalog>(CatalogPath);
@@ -42,11 +44,27 @@ namespace ClustrGalaxy.Editor
                 AssetDatabase.CreateAsset(catalog, CatalogPath);
             }
 
+            catalog.anomalyPrefabs = new[] { "EchoReceiver", "ShySatellite", "PocketOrrery", "WindowStation", "LanternCluster", "InvertedBeacon" }
+                .Select(name => LoadPrefab(ExplorationAssetBuilder.Folder + "/" + name + ".prefab")).ToArray();
+            catalog.keepsakePrefabs = new[] { "PocketResonator", "WanderingLantern", "WindowPrism" }
+                .Select(name => LoadPrefab(ExplorationAssetBuilder.Folder + "/" + name + ".prefab")).ToArray();
+            catalog.observatoryPlatformPrefab = LoadPrefab(ExplorationAssetBuilder.Folder + "/ObservatoryPlatform.prefab");
+            catalog.explorationInstruments = new[]
+            {
+                AssetDatabase.LoadAssetAtPath<AudioClip>(ResourcesFolder + "/Audio/SoftBell.wav"),
+                AssetDatabase.LoadAssetAtPath<AudioClip>(ResourcesFolder + "/Audio/WarmPluck.wav"),
+                AssetDatabase.LoadAssetAtPath<AudioClip>(ResourcesFolder + "/Audio/AiryGlass.wav")
+            };
             catalog.userShipPrefabs = ships;
             catalog.discussionSatellitePrefab = satellite;
+            FreePresentationAssetBuilder.Configure(catalog);
+            var settings = AddressableAssetSettingsDefaultObject.GetSettings(true);
+            var entry = settings.CreateOrMoveEntry(AssetDatabase.AssetPathToGUID(CatalogPath), settings.DefaultGroup);
+            entry.address = "galaxy-visual-catalog";
+            EditorUtility.SetDirty(settings);
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
-            Debug.Log("[ClustrGalaxy.Assets] Visual catalog linked to six ship prefabs and Sputnik.");
+            Debug.Log("[ClustrGalaxy.Assets] Visual catalog rebuilt with local presentation assets and fallbacks.");
         }
 
         private static GameObject LoadPrefab(string path) =>

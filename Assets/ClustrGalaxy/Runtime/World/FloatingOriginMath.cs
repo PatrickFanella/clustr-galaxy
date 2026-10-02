@@ -18,6 +18,8 @@ namespace ClustrGalaxy.World
         public double Y { get; }
         public double Z { get; }
 
+        public DoubleVector3 Add(DoubleVector3 value) => new(X + value.X, Y + value.Y, Z + value.Z);
+        public Vector3 RelativeTo(DoubleVector3 origin) => new((float)(X - origin.X), (float)(Y - origin.Y), (float)(Z - origin.Z));
         public DoubleVector3 Add(Vector3 value) =>
             new(X + value.x, Y + value.y, Z + value.z);
     }
