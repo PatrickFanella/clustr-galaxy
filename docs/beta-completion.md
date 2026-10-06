@@ -1,5 +1,10 @@
 # Linux beta completion ledger
 
+Latest remaining-gate check: [2026-09-19 continuation](qualification-continuation-2026-09-19.md).
+The exact-source Ubuntu retry still fails before discovery with Unity exit 198;
+Gitea run 8602 is queued without an assigned runner. Human acceptance remains open.
+The dated entries below preserve historical outcomes.
+
 Baseline: `775f826f51ee70d8f25e3e421887eaa5a6f10801` on main.
 Status: **NOT QUALIFIED — implementation remains incomplete** (2026-09-06).
 All work is local and uncommitted. There is no final qualified source SHA.
