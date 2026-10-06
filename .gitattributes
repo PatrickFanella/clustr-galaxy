@@ -1,0 +1,4 @@
+# Preserve the byte-verified upstream files and Unity-generated serialization.
+Assets/ClustrGalaxy/Presentation/FreeAssets/** -text -whitespace
+Assets/ClustrGalaxy/Presentation/FreeAssets.meta -whitespace
+Assets/ClustrGalaxy/Presentation/FreeAssets/**/*.fbx binary

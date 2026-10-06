@@ -106,19 +106,56 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void CacheBudgetIncludesQuarantineAndRejectsOversizedProtectedReplacement()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "clustr-cache-budget-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var cache = new SnapshotCache(root,4000);
+                cache.Write("manifest","old",true);
+                cache.Write("scope",new string('s',1200),false);
+                File.AppendAllText(cache.PathForKey("scope"),"tamper");
+                Assert.That(cache.TryRead("scope",out _),Is.False);
+                Assert.That(cache.UsedBytes,Is.LessThanOrEqualTo(4000));
+                Assert.Throws<IOException>(() => cache.Write("manifest",new string('n',4000),true));
+                Assert.That(new SnapshotCache(root,4000).TryRead("manifest",out var previous),Is.True);
+                Assert.That(previous,Is.EqualTo("old"));
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root,true); }
+        }
+
+        [Test]
+        public void InterruptedCacheReplacementKeepsPreviousManifestReadable()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "clustr-cache-interrupt-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var cache = new SnapshotCache(root);
+                cache.Write("manifest", "old", true);
+                var failing = new SnapshotCache(root, SnapshotCache.DefaultMaximumBytes,
+                    () => throw new IOException("simulated interruption before index commit"));
+                Assert.Throws<IOException>(() => failing.Write("manifest", "new", true));
+                Assert.That(new SnapshotCache(root).TryRead("manifest", out var value), Is.True);
+                Assert.That(value, Is.EqualTo("old"));
+            }
+            finally { if (Directory.Exists(root)) Directory.Delete(root,true); }
+        }
+
+        [Test]
         public void SnapshotCache_RejectsTamperingAndKeepsPinnedBaseEntries()
         {
             var root = Path.Combine(Path.GetTempPath(), "clustr-cache-test-" + Guid.NewGuid().ToString("N"));
             try
             {
-                var cache = new SnapshotCache(root, 80);
+                var cache = new SnapshotCache(root, 3000);
                 cache.Write("manifest", "{\"revision_id\":9}", pinnedBase: true);
-                cache.Write("old-system", new string('a', 60), pinnedBase: false);
-                cache.Write("new-system", new string('b', 60), pinnedBase: false);
+                cache.Write("old-system", new string('a', 1400), pinnedBase: false);
+                cache.Write("new-system", new string('b', 1400), pinnedBase: false);
 
                 Assert.That(cache.TryRead("manifest", out var manifestJson), Is.True);
                 Assert.That(manifestJson, Does.Contain("revision_id"));
                 Assert.That(cache.Contains("old-system"), Is.False);
+                Assert.That(cache.UsedBytes,Is.LessThanOrEqualTo(3000));
 
                 File.AppendAllText(cache.PathForKey("manifest"), "tampered");
                 Assert.That(cache.TryRead("manifest", out _), Is.False);
@@ -407,8 +444,8 @@ namespace ClustrGalaxy.Tests
         {
             var candidates = new[]
             {
-                new GalaxyMapCandidate("far", "community", new Vector2(0.6f, 0.5f), true),
-                new GalaxyMapCandidate("near", "community", new Vector2(0.51f, 0.5f), true)
+                new GalaxyMapCandidate("far", GalaxyEntityKind.Community, new Vector2(0.6f, 0.5f), true),
+                new GalaxyMapCandidate("near", GalaxyEntityKind.Community, new Vector2(0.51f, 0.5f), true)
             };
 
             var selected = GalaxyMapSelection.Nearest(
@@ -455,6 +492,29 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void Registry_ObsoleteObjectCallbacksCannotHideReplacement()
+        {
+            var oldObject = new GameObject("old registry object");
+            var newObject = new GameObject("replacement registry object");
+            try
+            {
+                var registry = new GalaxyEntityRegistry();
+                var oldEntity = oldObject.AddComponent<GalaxyEntity>();
+                oldEntity.Initialize("post:same", "Old", "post", 1, registry);
+                var replacement = newObject.AddComponent<GalaxyEntity>();
+                replacement.Initialize("post:same", "New", "post", 2, registry);
+                registry.MarkInactive(oldEntity);
+                registry.Unregister(oldEntity);
+                Assert.That(registry.FindActiveEntity("post:same"), Is.SameAs(replacement));
+                Assert.That(registry.ActiveEntities.Count, Is.EqualTo(1));
+                newObject.SetActive(false);
+                registry.Register(replacement);
+                Assert.That(registry.FindActiveEntity("post:same"), Is.Null);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(oldObject); UnityEngine.Object.DestroyImmediate(newObject); }
+        }
+
+        [Test]
         public void EntityPool_ReusesObjectsAndRemovesReleasedIdsFromRegistry()
         {
             var owner = new GameObject("pool owner");
@@ -465,6 +525,9 @@ namespace ClustrGalaxy.Tests
                 var first = pool.Acquire(PrimitiveType.Sphere, owner.transform);
                 first.GetComponent<GalaxyEntity>().Initialize("post_old", "Old", "post planet", 1, registry);
 
+                Assert.That(first.activeSelf, Is.False, "Acquisition must not expose an unvalidated entity.");
+                first.SetActive(true);
+                registry.MarkActive(first.GetComponent<GalaxyEntity>()); // EditMode does not dispatch MonoBehaviour callbacks.
                 Assert.That(registry.FindActiveEntity("post_old"), Is.Not.Null);
                 pool.Release(first);
                 Assert.That(registry.FindActiveEntity("post_old"), Is.Null);
@@ -472,7 +535,15 @@ namespace ClustrGalaxy.Tests
                 var reused = pool.Acquire(PrimitiveType.Sphere, owner.transform);
                 Assert.That(reused, Is.SameAs(first));
                 reused.GetComponent<GalaxyEntity>().Initialize("post_new", "New", "post planet", 2, registry);
+                Assert.That(reused.activeSelf, Is.False);
+                reused.SetActive(true);
+                registry.MarkActive(reused.GetComponent<GalaxyEntity>());
                 Assert.That(registry.FindActiveEntity("post_new"), Is.Not.Null);
+                reused.SetActive(false); // Survey-hidden residents must also return to the pool.
+                pool.Release(reused);
+                pool.Release(reused); // A duplicate release must not enqueue the same object twice.
+                Assert.That(pool.Acquire(PrimitiveType.Sphere, owner.transform), Is.SameAs(reused));
+                Assert.That(pool.Acquire(PrimitiveType.Sphere, owner.transform), Is.Not.SameAs(reused));
             }
             finally
             {
@@ -500,6 +571,34 @@ namespace ClustrGalaxy.Tests
             Assert.That(repeat, Is.EqualTo(first));
             Assert.That(first.y, Is.Not.Zero);
             Assert.That(first.magnitude, Is.GreaterThan(360f));
+        }
+
+        [TestCase(16f / 9f)]
+        [TestCase(1920f / 840f)]
+        [TestCase(1f)]
+        public void OverviewChart_FitsProjectedEdgesAndOffCenterClusters(float aspect)
+        {
+            var view = new GameObject("Overview framing regression", typeof(Camera));
+            try
+            {
+                var camera = view.GetComponent<Camera>();
+                camera.fieldOfView = 58f; camera.aspect = aspect; camera.farClipPlane = 250000f;
+                var distance = GalacticLandmarkLayout.OverviewCameraDistance(camera.fieldOfView, aspect);
+                var position = new Vector3(0, distance * .3f, -distance);
+                view.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-position, Vector3.up));
+                var bounds = new SpatialBounds { min_x = 0, max_x = 300, min_y = 0, max_y = 300, min_z = 0, max_z = 300 };
+                for (var x = 0; x <= 300; x += 30)
+                for (var y = 0; y <= 300; y += 30)
+                for (var z = 0; z <= 300; z += 300)
+                {
+                    var point = GalacticLandmarkLayout.Project(new SpatialNode { id = "edge", x = x, y = y, z = z }, bounds);
+                    var screen = camera.WorldToViewportPoint(point);
+                    Assert.That(screen.z, Is.GreaterThan(camera.nearClipPlane));
+                    Assert.That(screen.x, Is.InRange(.01f, .99f), "Horizontal projection clipped at " + point);
+                    Assert.That(screen.y, Is.InRange(.01f, .99f), "Vertical projection clipped at " + point);
+                }
+            }
+            finally { UnityEngine.Object.DestroyImmediate(view); }
         }
 
         [Test]
@@ -740,10 +839,78 @@ namespace ClustrGalaxy.Tests
         }
 
         [Test]
+        public void FixtureLaunch_RequiresExplicitLoopbackAndSeparateMode()
+        {
+            Assert.That(GalaxyLaunchOptions.FixtureApi(new[] { "--clustr-fixture-url=http://127.0.0.1:18765/api" }),
+                Is.EqualTo("http://127.0.0.1:18765/api"));
+            foreach (var endpoint in new[] { "https://clustr.subcult.tv/api", "http://localhost/api", "http://127.0.0.1/api?x=1", "http://user@127.0.0.1/api" })
+                Assert.Throws<ArgumentException>(() => GalaxyLaunchOptions.FixtureApi(new[] { "--clustr-fixture-url=" + endpoint }));
+            var offlineFixture = new[] { "--clustr-fixture-url=http://127.0.0.1/api", "--clustr-offline" };
+            Assert.That(GalaxyLaunchOptions.FixtureApi(offlineFixture), Is.EqualTo("http://127.0.0.1/api"));
+            Assert.That(GalaxyLaunchOptions.IsOfflineOnly(offlineFixture), Is.True);
+            Assert.Throws<ArgumentException>(() => GalaxyLaunchOptions.FixtureApi(new[] { "--clustr-fixture-url=http://127.0.0.1/api", "--clustr-demo" }));
+        }
+
+        [TestCase("none")]
+        [TestCase("missing-gpu")]
+        [TestCase("short")]
+        [TestCase("flight-mixed")]
+        [TestCase("stall")]
+        [TestCase("functional")]
+        public void InteractionDiagnosticsKeepUiSeparateAndMissingCountersFail(string fault)
+        {
+            var report=new InteractionPerformanceReport{source_sha="working-source",build_id="artifact",width=2560,height=1440,
+                sample_count=3600,valid_gpu_samples=3600,other_gameplay_samples=3600,measured_seconds=30,
+                cpu_p95_ms=8,gpu_p95_ms=2,maximum_frame_ms=30,peak_gc_bytes=4096,peak_player_memory_bytes=1024,peak_gpu_memory_bytes=1024,
+                cpu_available=true,gc_available=true,memory_available=true,gpu_available=true,gpu_memory_available=true,gpu_complete=true,functional_passed=true};
+            switch(fault)
+            {
+                case "missing-gpu":report.valid_gpu_samples--;break;
+                case "short":report.measured_seconds=10;break;
+                case "flight-mixed":report.ordinary_flight_samples=1;report.other_gameplay_samples--;break;
+                case "stall":report.maximum_frame_ms=51;break;
+                case "functional":report.functional_passed=false;break;
+            }
+            Assert.That(report.Evaluate().Length==0,Is.EqualTo(fault=="none"));
+        }
+
+        [Test]
+        public void LocalProfilesAreExplicitSafeAndBackwardCompatible()
+        {
+            Assert.That(GalaxyLaunchOptions.LocalProfileId(null), Is.EqualTo("offline-pilot"));
+            Assert.That(GalaxyLaunchOptions.LocalProfileId(new[] { "--clustr-profile=second-pilot" }), Is.EqualTo("second-pilot"));
+            foreach (var value in new[] { "", "../pilot", "pilot/name", "https://remote", new string('x', 65) })
+                Assert.Throws<ArgumentException>(() => GalaxyLaunchOptions.LocalProfileId(new[] { "--clustr-profile=" + value }));
+            Assert.Throws<ArgumentException>(() => GalaxyLaunchOptions.LocalProfileId(new[] { "--clustr-profile=a", "--clustr-profile=b" }));
+        }
+
+        [Test]
         public void BetaProfileVerdict_EnforcesEveryLinuxAcceptanceThreshold()
         {
-            var passing = new GalaxyBetaProfileReport
+            var passing = PassingProfile();
+
+            Assert.That(GalaxyBetaProfile.Evaluate(passing).Qualified, Is.True);
+
+            passing.p95_gpu_frame_ms = 18f;
+            passing.p95_gc_allocated_bytes_per_frame = 64;
+            passing.ordinary_peak_gc_bytes = 64;
+            var failed = GalaxyBetaProfile.Evaluate(passing);
+            Assert.That(failed.Qualified, Is.False);
+            Assert.That(failed.Failures, Has.Some.Contains("GPU"));
+            Assert.That(failed.Failures, Has.Some.Contains("GC"));
+        }
+
+        private static GalaxyBetaProfileReport PassingProfile() => new GalaxyBetaProfileReport
             {
+                width = 2560, height = 1440, measured_seconds = 600, source_sha = "test-sha", build_id = "test-build",
+                gpu_recorded_samples = 36000, gpu_drain_complete = true, timestamp_clock_compatible = true,
+                gpu_cpu_timer_frequency = 1000, capture_start_timestamp = 1000, capture_end_timestamp = 601000,
+                first_gpu_timestamp = 1001, last_gpu_timestamp = 600999,
+                warm_cache_available = true, warm_cache_overview_seconds = 1, cache_usage_bytes = 1024,
+                moving_flight_verified = true, measured_flight_distance = 1000,
+                smoke_complete = true, sample_count = 36000, valid_gpu_samples = 36000,
+                ordinary_flight_samples = 36000, ordinary_flight_seconds = 600, ordinary_maximum_frame_stall_ms = 40,
+                cpu_counter_available = true, gc_counter_available = true, memory_counter_available = true,
                 p95_cpu_frame_ms = 12.5f,
                 p95_gpu_frame_ms = 15.5f,
                 maximum_frame_stall_ms = 40f,
@@ -755,14 +922,85 @@ namespace ClustrGalaxy.Tests
                 gpu_memory_available = true
             };
 
-            Assert.That(GalaxyBetaProfile.Evaluate(passing).Qualified, Is.True);
+        [TestCase("missing-cpu")]
+        [TestCase("missing-gpu")]
+        [TestCase("missing-gc")]
+        [TestCase("missing-memory")]
+        [TestCase("invalid-counter")]
+        [TestCase("insufficient-samples")]
+        [TestCase("short-duration")]
+        [TestCase("resolution")]
+        [TestCase("smoke")]
+        [TestCase("warm-cache")]
+        [TestCase("slow-cache")]
+        [TestCase("cache-cap")]
+        [TestCase("cache-missing")]
+        [TestCase("stationary")]
+        [TestCase("overflow")]
+        [TestCase("nonfinite")]
+        [TestCase("negative-gc")]
+        [TestCase("gpu-clock")]
+        [TestCase("gpu-drain")]
+        [TestCase("gpu-bounds")]
+        [TestCase("gpu-duration")]
+        public void QualificationCannotPassWithMissingOrInvalidEvidence(string fault)
+        {
+            var report = PassingProfile();
+            switch (fault)
+            {
+                case "missing-cpu": report.cpu_counter_available = false; break;
+                case "missing-gpu": report.valid_gpu_samples--; break;
+                case "missing-gc": report.gc_counter_available = false; break;
+                case "missing-memory": report.memory_counter_available = false; break;
+                case "invalid-counter": report.invalid_measured_samples = 1; break;
+                case "insufficient-samples": report.sample_count = 1; break;
+                case "short-duration": report.measured_seconds = 30; break;
+                case "resolution": report.width = 1920; break;
+                case "smoke": report.smoke_complete = false; break;
+                case "warm-cache": report.warm_cache_available = false; break;
+                case "slow-cache": report.warm_cache_overview_seconds = 3.1f; break;
+                case "cache-cap": report.cache_usage_bytes = 10L * 1024 * 1024 * 1024 + 1; break;
+                case "cache-missing": report.cache_usage_bytes = -1; break;
+                case "stationary": report.moving_flight_verified = false; break;
+                case "overflow": report.sample_overflow = true; break;
+                case "nonfinite": report.p95_cpu_frame_ms = float.NaN; break;
+                case "gpu-clock": report.gpu_cpu_timer_frequency = 0; break;
+                case "gpu-drain": report.gpu_drain_complete = false; break;
+                case "gpu-bounds": report.last_gpu_timestamp = report.capture_end_timestamp; break;
+                case "gpu-duration": report.gpu_cpu_timer_frequency = 2000; break;
+                case "negative-gc": report.ordinary_peak_gc_bytes = -1; break;
+            }
+            Assert.That(GalaxyBetaProfile.Evaluate(report).Qualified, Is.False);
+        }
 
-            passing.p95_gpu_frame_ms = 18f;
-            passing.p95_gc_allocated_bytes_per_frame = 64;
-            var failed = GalaxyBetaProfile.Evaluate(passing);
-            Assert.That(failed.Qualified, Is.False);
-            Assert.That(failed.Failures, Has.Some.Contains("GPU"));
-            Assert.That(failed.Failures, Has.Some.Contains("GC"));
+        [TestCase("none")]
+        [TestCase("initialization")]
+        [TestCase("guidance")]
+        [TestCase("ghost")]
+        [TestCase("offscreen")]
+        [TestCase("silent")]
+        [TestCase("effects")]
+        [TestCase("voice-cap")]
+        [TestCase("effect-cap")]
+        public void ActiveFeatureQualificationRequiresObservedWorkload(string fault)
+        {
+            var report = PassingProfile();
+            report.active_features_requested = report.active_features_initialized = true;
+            report.feature_frames = report.guidance_frames = report.ghost_frames = 36000;
+            report.ghost_in_view_frames = report.audio_frames = report.celebration_frames = 10000;
+            report.maximum_audio_voices = 8; report.maximum_celebrations = 3;
+            switch (fault)
+            {
+                case "initialization": report.active_features_initialized = false; break;
+                case "guidance": report.guidance_frames--; break;
+                case "ghost": report.ghost_frames--; break;
+                case "offscreen": report.ghost_in_view_frames = 0; break;
+                case "silent": report.audio_frames = 0; break;
+                case "effects": report.celebration_frames = 0; break;
+                case "voice-cap": report.maximum_audio_voices = 9; break;
+                case "effect-cap": report.maximum_celebrations = 4; break;
+            }
+            Assert.That(GalaxyBetaProfile.Evaluate(report).Qualified, Is.EqualTo(fault == "none"));
         }
 
         [Test]

@@ -1,0 +1,173 @@
+{
+  "selectedAssets": [
+    {
+      "file": "SolarSystemScope/2k_mars.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "2d187f3e77a98eaa8cea5f4cc722f633c122ef170b9e94ace6b5fb6cbc3f8e01"
+    },
+    {
+      "file": "SolarSystemScope/2k_jupiter.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "b0f04d005350252636b0e3396fc592548cbd9e9126b269d32d5c6abd4b0e4f2b"
+    },
+    {
+      "file": "SolarSystemScope/2k_sun.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_sun.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "ff0f076ba65e03b5ab518451bc96699325be38e3ccbdd5869ee1c00f3a0c8816"
+    },
+    {
+      "file": "SolarSystemScope/2k_moon.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "2764ba6535ea0481a062846ee033cc7a909dae05b31a8fd13f3e98f3a7fd92bd"
+    },
+    {
+      "file": "SolarSystemScope/2k_mercury.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "5a5c80607f643496bac9a631e71957def35ed788895f18b678ac849c2b38e48a"
+    },
+    {
+      "file": "SolarSystemScope/2k_neptune.jpg",
+      "source": "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+      "license": "CC-BY-4.0",
+      "sha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6"
+    },
+    {
+      "file": "space-kit/License.txt",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "License.txt",
+      "license": "CC0-1.0",
+      "sha256": "bd4e050e69d41351282c4d53f943cd4d80a80b968593e60653ba5292637941b7"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_cargoA.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_cargoA.fbx",
+      "license": "CC0-1.0",
+      "sha256": "757c1e4c1499e264de6cd787b8f2c81c2cd84ee3637a4167f78992ba00f7a360"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_cargoB.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_cargoB.fbx",
+      "license": "CC0-1.0",
+      "sha256": "6e8d858535a4beac2cf12fa8024fde82143a31dd3edcf3a9f67bab76c2029ca0"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_miner.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_miner.fbx",
+      "license": "CC0-1.0",
+      "sha256": "566d62444b0177891e2370fa2cf1d54899c73900c235d8f23f08f03eaf124409"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_racer.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_racer.fbx",
+      "license": "CC0-1.0",
+      "sha256": "6b7de1d93ceff256190e2fcf9fdc7dc2d27af0f87ba48eb92786ab7759488561"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_speederA.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_speederA.fbx",
+      "license": "CC0-1.0",
+      "sha256": "61a103ca79d5abaa7f9d73680e1869cbbe133107e6445301e78498a993fdd7e1"
+    },
+    {
+      "file": "space-kit/Models/FBX format/craft_speederB.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/craft_speederB.fbx",
+      "license": "CC0-1.0",
+      "sha256": "ac7b2135e2f7d79fae928228b1f934258d820080fa206a858354a373e540dcc2"
+    },
+    {
+      "file": "space-kit/Models/FBX format/satelliteDish.fbx",
+      "source": "https://kenney.nl/assets/space-kit",
+      "archivePath": "Models/FBX format/satelliteDish.fbx",
+      "license": "CC0-1.0",
+      "sha256": "a47d21e06bdc8faf87a9579bce99b13d7f08d5ad0d090165725e330ade26d91b"
+    },
+    {
+      "file": "space-station-kit/License.txt",
+      "source": "https://kenney.nl/assets/space-station-kit",
+      "archivePath": "License.txt",
+      "license": "CC0-1.0",
+      "sha256": "e8de83b5cb2f01810e32f07691cb1dcf9494dc4a7f8cce0ec8175dfb8c5d98d9"
+    },
+    {
+      "file": "space-station-kit/Models/FBX format/computer-wide.fbx",
+      "source": "https://kenney.nl/assets/space-station-kit",
+      "archivePath": "Models/FBX format/computer-wide.fbx",
+      "license": "CC0-1.0",
+      "sha256": "093d7cbbc1becaf3dc4da32e94a39c0ab2aed22fd24c5c5e93c1364699737f6e"
+    },
+    {
+      "file": "space-station-kit/Models/FBX format/Textures/colormap.png",
+      "source": "https://kenney.nl/assets/space-station-kit",
+      "archivePath": "Models/FBX format/Textures/colormap.png",
+      "license": "CC0-1.0",
+      "sha256": "6ca023be9f12e8c2358fcf94320c8a894b4c05a3dd0bad1f5c268312053caca1"
+    },
+    {
+      "file": "sci-fi-sounds/License.txt",
+      "source": "https://kenney.nl/assets/sci-fi-sounds",
+      "archivePath": "License.txt",
+      "license": "CC0-1.0",
+      "sha256": "a9767b25c3533f69d03af136480efad08efba19a9f0d89616992b34c79fd6186"
+    },
+    {
+      "file": "sci-fi-sounds/Audio/spaceEngineLow_000.ogg",
+      "source": "https://kenney.nl/assets/sci-fi-sounds",
+      "archivePath": "Audio/spaceEngineLow_000.ogg",
+      "license": "CC0-1.0",
+      "sha256": "d7deee8d7217ce63aab802ad7365a59cacfd243392dc1bd03b0a9d454aa494df"
+    },
+    {
+      "file": "sci-fi-sounds/Audio/computerNoise_000.ogg",
+      "source": "https://kenney.nl/assets/sci-fi-sounds",
+      "archivePath": "Audio/computerNoise_000.ogg",
+      "license": "CC0-1.0",
+      "sha256": "1527944e16eb14b48ee03fe3e7ce6aae94262833a4e1f83928d451a7414fe4e1"
+    },
+    {
+      "file": "interface-sounds/License.txt",
+      "source": "https://kenney.nl/assets/interface-sounds",
+      "archivePath": "License.txt",
+      "license": "CC0-1.0",
+      "sha256": "f7966c773bbed0eca6a9c75081c44a178b38eae112724dbb5fdfbd4192d118a9"
+    },
+    {
+      "file": "interface-sounds/Audio/click_001.ogg",
+      "source": "https://kenney.nl/assets/interface-sounds",
+      "archivePath": "Audio/click_001.ogg",
+      "license": "CC0-1.0",
+      "sha256": "ccfb7fa0cccdd9faec0eb16033c732b1e308d139d80f799161495d58f7adcdb9"
+    },
+    {
+      "file": "input-prompts/License.txt",
+      "source": "https://kenney.nl/assets/input-prompts",
+      "archivePath": "License.txt",
+      "license": "CC0-1.0",
+      "sha256": "ca2f58f80f903512119da5828868199478119818cd7ecffb303d625cb74cbb5a"
+    },
+    {
+      "file": "input-prompts/Xbox Series/Default/xbox_button_a.png",
+      "source": "https://kenney.nl/assets/input-prompts",
+      "archivePath": "Xbox Series/Default/xbox_button_a.png",
+      "license": "CC0-1.0",
+      "sha256": "c24af67ce34d3116e4750f052221d6bfe8a87cb0de8364bb23a573a85391fb10"
+    },
+    {
+      "file": "input-prompts/Xbox Series/Default/xbox_button_b.png",
+      "source": "https://kenney.nl/assets/input-prompts",
+      "archivePath": "Xbox Series/Default/xbox_button_b.png",
+      "license": "CC0-1.0",
+      "sha256": "5d95680fcfbf59ba94a3cc696fd8251e4fe292b421716b90b5272ca5b32d91bf"
+    }
+  ]
+}

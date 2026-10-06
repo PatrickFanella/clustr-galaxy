@@ -53,7 +53,7 @@ namespace ClustrGalaxy.Interaction
         {
             ClearInspection();
             var thread = entity != null ? entity.GetComponent<CommentThreadNode>() : null;
-            if (thread != null)
+            if (thread != null && thread.isActiveAndEnabled)
             {
                 inspectedRootId = entity.StableId;
                 if (thread.DemoModel != null)

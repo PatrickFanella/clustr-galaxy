@@ -20,9 +20,10 @@ namespace ClustrGalaxy.Core.Navigation
     public sealed class NavigationTarget
     {
         public NavigationTarget(GalaxyEntityId id, GalaxyEntityKind kind, string displayName, Vector3 position,
-            bool active, bool known, float collisionRadius = 0, float gravitySoftening = 0)
+            bool active, bool known, float collisionRadius = 0, float gravitySoftening = 0,
+            Vector3 velocity = default, CelestialBodyDefinition body = null)
         { Id = id; Kind = kind; DisplayName = displayName ?? string.Empty; Position = position; Active = active;
-            Known = known; CollisionRadius = collisionRadius; GravitySoftening = gravitySoftening; }
+            Known = known; CollisionRadius = collisionRadius; GravitySoftening = gravitySoftening; Velocity = velocity; Body = body; }
         public GalaxyEntityId Id { get; }
         public GalaxyEntityKind Kind { get; }
         public string DisplayName { get; }
@@ -31,6 +32,7 @@ namespace ClustrGalaxy.Core.Navigation
         public bool Known { get; }
         public float CollisionRadius { get; }
         public float GravitySoftening { get; }
+        public Vector3 Velocity { get; } public CelestialBodyDefinition Body { get; }
     }
 
     public sealed class GalaxyNavigationState
@@ -58,11 +60,12 @@ namespace ClustrGalaxy.Core.Navigation
 
     public readonly struct NavigationFrame
     {
-        public NavigationFrame(NavigationLevel level, GalaxyEntityId id, NavigationPose returnPose)
-        { Level = level; Id = id; ReturnPose = returnPose; }
+        public NavigationFrame(NavigationLevel level, GalaxyEntityId id, NavigationPose returnPose, SpatialScopeRequest? scope = null)
+        { Level = level; Id = id; ReturnPose = returnPose; Scope = scope; }
         public NavigationLevel Level { get; }
         public GalaxyEntityId Id { get; }
         public NavigationPose ReturnPose { get; }
+        public SpatialScopeRequest? Scope { get; }
     }
 
     public abstract class NavigationIntent { }
@@ -94,13 +97,15 @@ namespace ClustrGalaxy.Core.Navigation
     { public PlotApproachIntent(NavigationTarget target, bool mastery) { Target = target; Mastery = mastery; }
         public NavigationTarget Target { get; } public bool Mastery { get; } }
     public sealed class ReturnNavigationIntent : NavigationIntent { }
+    public sealed class ClearFlightGuidanceIntent : NavigationIntent { }
 
     public sealed class NavigationEffect
     {
         internal NavigationEffect(bool pause, bool resume, bool teleport, Vector3 position, Vector3 velocity,
-            Vector3 angularVelocity, bool rebase, SpatialScopeRequest? load, GalaxyEntityId masteryArrival)
-        { PausePhysics = pause; ResumePhysics = resume; Teleport = teleport; Position = position; Velocity = velocity;
+            Vector3 angularVelocity, bool rebase, SpatialScopeRequest? load, GalaxyEntityId masteryArrival, Quaternion? rotation = null)
+        { Rotation = rotation; PausePhysics = pause; ResumePhysics = resume; Teleport = teleport; Position = position; Velocity = velocity;
             AngularVelocity = angularVelocity; Rebase = rebase; ScopeToLoad = load; MasteryArrival = masteryArrival; }
+        public Quaternion? Rotation { get; }
         public bool PausePhysics { get; }
         public bool ResumePhysics { get; }
         public bool Teleport { get; }
@@ -130,14 +135,16 @@ namespace ClustrGalaxy.Core.Navigation
         public const float AutopilotArrivalSpeed = 1.5f;
         private readonly List<NavigationFrame> history = new();
         private GalaxyNavigationState state = NewState();
-        private Vector3 storedVelocity;
-        private Vector3 storedAngularVelocity;
 
         public GalaxyNavigationState State => state;
+        public OrbitalAutopilot Orbit { get; } = new();
 
         public NavigationOutcome Apply(NavigationIntent intent)
         {
             if (intent == null) throw new ArgumentNullException(nameof(intent));
+            if (intent is FastTravelIntent || intent is PlotApproachIntent || intent is ClearFlightGuidanceIntent ||
+                intent is EnterSurveyNavigationIntent || intent is SetSurveyModeIntent || intent is ReturnNavigationIntent)
+                Orbit.Cancel();
             switch (intent)
             {
                 case SetMapIntent map: return SetMap(map);
@@ -157,6 +164,8 @@ namespace ClustrGalaxy.Core.Navigation
                 case FastTravelIntent travel: return QueueTravel(travel.Target);
                 case PlotApproachIntent approach: return Plot(approach.Target, approach.Mastery);
                 case ReturnNavigationIntent _: return Return();
+                case ClearFlightGuidanceIntent _:
+                    state=Copy(pending:default(GalaxyEntityId),plotted:default(GalaxyEntityId),status:"FREE FLIGHT");return Success();
                 default: return Reject("Unsupported navigation intent.");
             }
         }
@@ -170,44 +179,36 @@ namespace ClustrGalaxy.Core.Navigation
                 var target = resolve(state.PendingTravelId);
                 if (!CanTravel(target)) { state = Copy(pending: default(GalaxyEntityId), status: "FAST TRAVEL CANCELLED — DESTINATION NO LONGER AVAILABLE"); return Success(); }
                 var arrival = ArrivalAnchor(target, pose.Position);
-                storedVelocity = Vector3.Zero; storedAngularVelocity = Vector3.Zero;
                 state = Copy(pending: default(GalaxyEntityId), status: "ARRIVED — " + target.DisplayName);
                 return Success(new NavigationEffect(false, false, true, arrival, Vector3.Zero, Vector3.Zero, true, null, default));
             }
 
             if (state.PlottedDestinationId.IsEmpty) return Success();
             var destination = resolve(state.PlottedDestinationId);
-            if (!CanTravel(destination))
+            if (!CanApproach(destination))
             { state = Copy(plotted: default(GalaxyEntityId), status: "ROUTE LOST — DESTINATION NO LONGER AVAILABLE"); return Success(); }
             var anchor = ArrivalAnchor(destination, pose.Position);
             var arrived = Vector3.Distance(pose.Position, anchor) <= Math.Max(0, arrivalTolerance) &&
-                velocity.Length() <= AutopilotArrivalSpeed;
+                (velocity - destination.Velocity).Length() <= AutopilotArrivalSpeed;
             if (mode == NavigationFlightMode.Autopilot)
             {
-                var desired = DesiredVelocity(pose.Position, anchor, brakeAcceleration, arrivalTolerance);
+                var desired = destination.Velocity + DesiredVelocity(pose.Position, anchor, brakeAcceleration, arrivalTolerance);
                 state = Copy(autopilotArrived: arrived, status: arrived ? "AUTOPILOT ARRIVED — " + destination.DisplayName : state.Status);
                 return Success(new NavigationEffect(false, false, false, default, desired, default, false, null, default));
             }
             if (mode == NavigationFlightMode.PilotMastery && arrived && !state.AutopilotArrived && !state.MasteryArrivalReported)
             {
                 state = Copy(masteryReported: true, status: "MASTERY ARRIVAL — " + destination.DisplayName);
-                return Success(new NavigationEffect(false, false, false, default, default, default, false, null, destination.Id));
+                return Success(new NavigationEffect(false, false, false, default, default, default, false, null, destination.Kind == GalaxyEntityKind.Subreddit ? destination.Id : default));
             }
             return Success();
         }
 
         private NavigationOutcome SetMap(SetMapIntent intent)
         {
-            if (state.IsMapOpen == intent.Open) return Success();
-            if (intent.Open)
-            {
-                storedVelocity = intent.Velocity; storedAngularVelocity = intent.AngularVelocity;
-                state = Copy(mapOpen: true);
-                return Success(new NavigationEffect(true, false, false, default, default, default, false, null, default));
-            }
-            state = Copy(mapOpen: false);
-            return Success(new NavigationEffect(false, true, false, intent.Pose.Position, storedVelocity,
-                storedAngularVelocity, false, null, default));
+            state = Copy(mapOpen: intent.Open);
+            // Chart inspection changes presentation only; momentum continues in local physics.
+            return Success();
         }
 
         private NavigationOutcome Inspect(InspectNavigationTargetIntent intent)
@@ -221,8 +222,6 @@ namespace ClustrGalaxy.Core.Navigation
                 GalaxyEntityKind.Comment => NavigationLevel.Inspect,
                 _ => state.Level
             };
-            history.Add(new NavigationFrame(next, intent.Target.Id, intent.Pose));
-            state = Copy(mapOpen: true, level: next, focused: intent.Target.Id, historyValue: history.ToArray());
             SpatialScopeRequest? load = intent.Target.Kind switch
             {
                 GalaxyEntityKind.Community => new SpatialScopeRequest(SpatialScope.Community, intent.Target.Id),
@@ -231,6 +230,8 @@ namespace ClustrGalaxy.Core.Navigation
                 GalaxyEntityKind.Comment => new SpatialScopeRequest(SpatialScope.Thread, intent.Target.Id),
                 _ => null
             };
+            history.Add(new NavigationFrame(next, intent.Target.Id, intent.Pose, load));
+            state = Copy(mapOpen: true, level: next, focused: intent.Target.Id, selected: intent.Target.Id, historyValue: history.ToArray());
             return Success(new NavigationEffect(false, false, false, default, default, default, false, load, default));
         }
 
@@ -243,7 +244,7 @@ namespace ClustrGalaxy.Core.Navigation
 
         private NavigationOutcome Plot(NavigationTarget target, bool mastery)
         {
-            if (!CanTravel(target)) return Reject("APPROACH UNAVAILABLE — SELECT A KNOWN SYSTEM");
+            if (!CanApproach(target)) return Reject("APPROACH UNAVAILABLE — SELECT A KNOWN BODY");
             state = Copy(plotted: target.Id, autopilotArrived: false, masteryReported: false,
                 status: mastery ? "MASTERY APPROACH SET — " + target.DisplayName : "AUTOPILOT PLOTTED — " + target.DisplayName);
             return Success();
@@ -255,10 +256,12 @@ namespace ClustrGalaxy.Core.Navigation
             var frame = history[history.Count - 1]; history.RemoveAt(history.Count - 1);
             var previous = history.Count == 0 ? default : history[history.Count - 1];
             state = Copy(level: history.Count == 0 ? NavigationLevel.Galaxy : previous.Level,
-                focused: history.Count == 0 ? default : previous.Id, historyValue: history.ToArray());
-            return Success(new NavigationEffect(false, false, true, frame.ReturnPose.Position, default, default, false, null, default));
+                focused: history.Count == 0 ? default : previous.Id, selected: default(GalaxyEntityId), historyValue: history.ToArray());
+            return Success(new NavigationEffect(false, false, true, frame.ReturnPose.Position, default, default, false, history.Count == 0 ? null : previous.Scope, default, frame.ReturnPose.Rotation));
         }
 
+        private bool CanApproach(NavigationTarget target) => target != null && target.Active &&
+            (GalaxyKinds.IsNavigable(target.Kind) || target.Kind == GalaxyEntityKind.Post || target.Body != null) && (!state.IsSurvey || target.Known);
         private bool CanTravel(NavigationTarget target) => target != null && target.Active &&
             GalaxyKinds.IsNavigable(target.Kind) && (!state.IsSurvey || target.Known);
         private static Vector3 ArrivalAnchor(NavigationTarget target, Vector3 origin)
@@ -277,7 +280,14 @@ namespace ClustrGalaxy.Core.Navigation
             return offset / distance * speed;
         }
 
-        private NavigationOutcome Success(NavigationEffect effect = null) => new(true, "", state, effect);
+        private NavigationOutcome unchangedOutcome;
+        private NavigationOutcome Success(NavigationEffect effect = null)
+        {
+            if (effect != null) return new NavigationOutcome(true, "", state, effect);
+            if (unchangedOutcome == null || !ReferenceEquals(unchangedOutcome.State, state))
+                unchangedOutcome = new NavigationOutcome(true, "", state, null);
+            return unchangedOutcome;
+        }
         private NavigationOutcome Reject(string reason) => new(false, reason, state, NavigationEffect.None);
         private static GalaxyNavigationState NewState() => new(false, false, false, NavigationLevel.Galaxy,
             default, default, default, default, Array.Empty<NavigationFrame>(), "", false, false);

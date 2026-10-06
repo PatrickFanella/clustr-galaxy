@@ -1,5 +1,8 @@
 using System;
 using System.Linq;
+using System.Collections;
+using ClustrGalaxy.Interaction;
+using ClustrGalaxy.World;
 using UnityEngine;
 
 namespace ClustrGalaxy.Data
@@ -13,11 +16,29 @@ namespace ClustrGalaxy.Data
     {
         private SpatialSceneLoader loader = null!;
         private SmokeStage stage;
+        private ProbeTargeting targeting;
+        private GalaxyEntityRegistry registry;
+        private float deadline;
+        private string connectedSystem;
+        public void BindPlayer(ProbeTargeting playerTargeting, GalaxyEntityRegistry entities)
+        { targeting = playerTargeting; registry = entities; }
+        private void Update()
+        {
+            if (!Completed && !Failed && Time.realtimeSinceStartup > deadline)
+            {
+                stage = SmokeStage.Failed;
+                Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED hierarchy timeout: " + loader.StatusText);
+                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
+            }
+        }
+        public bool Completed => stage == SmokeStage.Complete;
+        public bool Failed => stage == SmokeStage.Failed;
 
         public void Initialize(SpatialSceneLoader sceneLoader)
         {
             loader = sceneLoader ?? throw new ArgumentNullException(nameof(sceneLoader));
-            loader.SceneLoaded += Advance;
+            loader.SceneCommitted += Advance;
+            deadline = Time.realtimeSinceStartup + 180f;
             Debug.Log("[ClustrGalaxy.LiveSmoke] Waiting for pinned overview.");
         }
 
@@ -33,7 +54,7 @@ namespace ClustrGalaxy.Data
                 .FirstOrDefault();
         }
 
-        private void Advance()
+        private void Advance(SpatialScene scene)
         {
             if (!loader.IsPinned || loader.Scene == null) return;
             try
@@ -42,26 +63,41 @@ namespace ClustrGalaxy.Data
                 {
                     case SmokeStage.Overview:
                         LoadNext("overview", SelectHighestActivity(loader.Scene, "community"),
-                            SmokeStage.Community, node => loader.LoadCommunity(node.id));
+                            SmokeStage.Community, SelectPlayerTarget);
                         break;
                     case SmokeStage.Community:
+                        var home = SelectHighestActivity(loader.Scene, "subreddit");
+                        var link = loader.Scene.links.FirstOrDefault(route => route.source == home.id || !route.directed && route.target == home.id);
+                        connectedSystem = link == null ? null : link.source == home.id ? link.target : link.source;
                         LoadNext("community", SelectHighestActivity(loader.Scene, "subreddit"),
-                            SmokeStage.System, node => loader.LoadSystem(node.id));
+                            SmokeStage.System, SelectPlayerTarget);
                         break;
                     case SmokeStage.System:
+                        var star = registry.FindEntity(loader.Scene.root_id);
+                        var gravity = star != null ? star.GetComponent<ClustrGalaxy.Simulation.GravitySource>() : null;
+                        if (gravity?.Definition == null || Vector3.Distance(targeting.transform.position, star.transform.position) <= gravity.Definition.ExclusionRadius + ClustrGalaxy.Flight.ShipSurfaceSafety.HullRadius)
+                            throw new InvalidOperationException("Live system loaded with the probe inside its stellar exclusion volume.");
+                        Debug.Log("[ClustrGalaxy.LiveSmoke] Physical system start is outside stellar exclusion.");
                         LoadNext("system", SelectHighestActivity(loader.Scene, "post"),
-                            SmokeStage.Discussion, node => loader.LoadDiscussion(node.id));
+                            SmokeStage.Discussion, SelectPlayerTarget);
                         break;
                     case SmokeStage.Discussion:
                         LoadNext("discussion", SelectHighestActivity(loader.Scene, "comment",
                                 node => node.metrics != null && node.metrics.reply_count > 0),
-                            SmokeStage.Thread, node => loader.LoadThread(node.id));
+                            SmokeStage.Thread, SelectPlayerTarget);
                         break;
                     case SmokeStage.Thread:
+                        if (targeting.GetComponent<CommentThreadController>()?.DisplayedModel == null)
+                            throw new InvalidOperationException("Thread did not reach the HUD tree.");
+                        foreach (var node in loader.Scene.nodes)
+                            if (node.id != loader.Scene.root_id && registry.FindEntity(node.id) != null)
+                                throw new InvalidOperationException("Thread reply was materialized as a physical entity: " + node.id);
                         stage = SmokeStage.Complete;
                         Debug.Log($"[ClustrGalaxy.LiveSmoke] COMPLETE revision={loader.Manifest.revision_id} " +
                             $"catalog={loader.Manifest.spatial_catalog_id} thread={loader.Scene.root_id} " +
                             $"nodes={loader.Scene.nodes.Length} links={loader.Scene.links.Length}.");
+                        if (Array.Exists(Environment.GetCommandLineArgs(), arg => arg == "--clustr-jump-smoke")) StartCoroutine(JumpJourney());
+                        else if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(0);
                         break;
                 }
             }
@@ -69,8 +105,45 @@ namespace ClustrGalaxy.Data
             {
                 stage = SmokeStage.Failed;
                 Debug.LogError($"[ClustrGalaxy.LiveSmoke] FAILED stage={stage}: {exception.Message}");
+                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
             }
         }
+
+        private IEnumerator JumpJourney()
+        {
+            yield return null;
+            var navigation = targeting.GetComponent<ClustrGalaxy.Flight.GalaxyNavigationController>();
+            var jump = targeting.GetComponent<ClustrGalaxy.Flight.GalaxyJumpController>();
+            var beforeScene = loader.Scene; var beforeSystem = loader.Session.CurrentSystemId;
+            var beforeProgress = loader.Session.Activities.State;
+            var target = (ClustrGalaxy.Core.Domain.GalaxyEntityId)connectedSystem;
+            navigation.SetMapOpen(false);
+            if (!jump.Begin(target)) { JumpFailure("No eligible connected system"); yield break; }
+            yield return new WaitForSecondsRealtime(.25f); jump.Cancel();
+            if (jump.Active || loader.Session.CurrentSystemId != beforeSystem || !ReferenceEquals(beforeScene,loader.Scene))
+            { JumpFailure("Cancelled charge replaced the usable scene"); yield break; }
+            if (!jump.Begin(target)) { JumpFailure("Retry did not engage"); yield break; }
+            var until=Time.realtimeSinceStartup+30;
+            while(jump.Active && Time.realtimeSinceStartup<until)yield return null;
+            if(jump.Active || navigation.IsMapOpen || targeting.GetComponent<Rigidbody>().isKinematic ||
+                !targeting.GetComponent<ClustrGalaxy.Flight.ObserverProbeController>().enabled || loader.Session.CurrentSystemId.Value!=connectedSystem || loader.Scene.root_id!=connectedSystem ||
+                !ClustrGalaxy.Flight.ShipSurfaceSafety.IsClear(targeting.transform.position) ||
+                !ReferenceEquals(beforeProgress,loader.Session.Activities.State))
+            { JumpFailure("Destination, clearance or progression assertion failed"); yield break; }
+            // Returning must work even when the first system's render objects were pooled.
+            if (!jump.Begin(beforeSystem)) { JumpFailure("Return jump by stable identity did not engage"); yield break; }
+            until=Time.realtimeSinceStartup+30;
+            while(jump.Active && Time.realtimeSinceStartup<until)yield return null;
+            if(jump.Active || navigation.IsMapOpen || targeting.GetComponent<Rigidbody>().isKinematic ||
+                !targeting.GetComponent<ClustrGalaxy.Flight.ObserverProbeController>().enabled || loader.Session.CurrentSystemId!=beforeSystem || loader.Scene.root_id!=beforeSystem.Value ||
+                !ClustrGalaxy.Flight.ShipSurfaceSafety.IsClear(targeting.transform.position) ||
+                !ReferenceEquals(beforeProgress,loader.Session.Activities.State))
+            { JumpFailure("Return destination, clearance or progression assertion failed"); yield break; }
+            Debug.Log("[ClustrGalaxy.LiveSmoke] JUMP COMPLETE · round trip by stable identity, safe arrivals, unchanged progression");
+            Application.Quit(0);
+        }
+        private void JumpFailure(string reason)
+        { stage=SmokeStage.Failed;Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED jump: "+reason);Application.Quit(2); }
 
         private void LoadNext(string completedScope, SpatialNode selected, SmokeStage next,
             Action<SpatialNode> request)
@@ -82,9 +155,31 @@ namespace ClustrGalaxy.Data
                 return;
             }
 
-            Debug.Log($"[ClustrGalaxy.LiveSmoke] {completedScope} ok; selecting {selected.type} {selected.id}.");
+            Debug.Log($"[ClustrGalaxy.LiveSmoke] {completedScope} ok; nodes={loader.Scene.nodes.Length} links={loader.Scene.links.Length}; selecting {selected.type} {selected.id}.");
             stage = next;
-            request(selected);
+            deadline = Time.realtimeSinceStartup + 180f;
+            StartCoroutine(SelectAfterPresentation(selected, request));
+        }
+
+        private IEnumerator SelectAfterPresentation(SpatialNode selected, Action<SpatialNode> request)
+        {
+            // Finish the committing frame and all presentation callbacks before another selection.
+            yield return null;
+            try { request(selected); }
+            catch (Exception exception)
+            {
+                stage = SmokeStage.Failed;
+                Debug.LogError("[ClustrGalaxy.LiveSmoke] FAILED player selection: " + exception.Message);
+                if (!GalaxyLaunchOptions.IsBetaProfile(Environment.GetCommandLineArgs())) Application.Quit(2);
+            }
+        }
+
+        private void SelectPlayerTarget(SpatialNode node)
+        {
+            var entity = registry?.FindActiveEntity(node.id);
+            if (entity == null || targeting == null)
+                throw new InvalidOperationException("Required rendered target is unavailable: " + node.id);
+            targeting.SelectTarget(entity);
         }
 
         private static long Activity(SpatialNode node)
@@ -96,7 +191,7 @@ namespace ClustrGalaxy.Data
 
         private void OnDestroy()
         {
-            if (loader != null) loader.SceneLoaded -= Advance;
+            if (loader != null) loader.SceneCommitted -= Advance;
         }
 
         private enum SmokeStage

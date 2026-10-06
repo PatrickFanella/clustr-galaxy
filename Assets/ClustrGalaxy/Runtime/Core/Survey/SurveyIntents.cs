@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ClustrGalaxy.Core.Domain;
+using ClustrGalaxy.Core.Activities;
 
 namespace ClustrGalaxy.Core.Survey
 {
@@ -29,11 +30,11 @@ namespace ClustrGalaxy.Core.Survey
     {
         public CompleteScanIntent(string intentId, SurveySnapshotId snapshot, DateTime utc, GalaxyEntityId targetId,
             GalaxyEntityKind targetKind, IEnumerable<SurveyRoute> routes, IEnumerable<GalaxyEntityId> loadedPostIds,
-            GalaxyEntityId systemId = default, bool systemCompletedNow = false) : base(intentId, snapshot, utc)
+            GalaxyEntityId systemId = default, bool systemCompletedNow = false, bool cleanSignal = false) : base(intentId, snapshot, utc)
         {
             TargetId = targetId; TargetKind = targetKind; Routes = routes ?? Array.Empty<SurveyRoute>();
             LoadedPostIds = loadedPostIds ?? Array.Empty<GalaxyEntityId>(); SystemId = systemId;
-            SystemCompletedNow = systemCompletedNow;
+            SystemCompletedNow = systemCompletedNow; CleanSignal = cleanSignal;
         }
         public GalaxyEntityId TargetId { get; }
         public GalaxyEntityKind TargetKind { get; }
@@ -41,6 +42,7 @@ namespace ClustrGalaxy.Core.Survey
         public IEnumerable<GalaxyEntityId> LoadedPostIds { get; }
         public GalaxyEntityId SystemId { get; }
         public bool SystemCompletedNow { get; }
+        public bool CleanSignal { get; }
     }
 
     public sealed class SavePersonalConstellationIntent : SurveyIntent
@@ -79,13 +81,14 @@ namespace ClustrGalaxy.Core.Survey
         internal SurveyTransitionOutcome(bool succeeded, bool changed, string rejection, SurveyState state,
             IReadOnlyList<GalaxyEntityId> entities, IReadOnlyList<GalaxyRouteId> routes,
             IReadOnlyList<string> notifications, IReadOnlyList<string> achievements, string cosmeticReward,
-            string personalConstellationId, string queueStatus)
+            string personalConstellationId, string queueStatus, IReadOnlyList<CelebrationCue> celebrations = null)
         {
             Succeeded = succeeded; Changed = changed; Rejection = rejection ?? string.Empty; State = state;
             RevealedEntities = entities ?? Array.Empty<GalaxyEntityId>(); RevealedRoutes = routes ?? Array.Empty<GalaxyRouteId>();
             Notifications = notifications ?? Array.Empty<string>(); Achievements = achievements ?? Array.Empty<string>();
             CosmeticReward = cosmeticReward ?? string.Empty; PersonalConstellationId = personalConstellationId ?? string.Empty;
             QueueStatus = queueStatus ?? string.Empty;
+            Celebrations = celebrations ?? Array.Empty<CelebrationCue>();
         }
         public bool Succeeded { get; }
         public bool Changed { get; }
@@ -98,5 +101,6 @@ namespace ClustrGalaxy.Core.Survey
         public string CosmeticReward { get; }
         public string PersonalConstellationId { get; }
         public string QueueStatus { get; }
+        public IReadOnlyList<CelebrationCue> Celebrations { get; }
     }
 }

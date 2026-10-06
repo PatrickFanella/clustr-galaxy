@@ -122,6 +122,8 @@ namespace ClustrGalaxy.Core.Survey
         public DateTime? SavedUtc { get; }
         public bool IsKnown(GalaxyEntityId id) => BinaryContains(KnownEntities, id);
         public bool IsIdentified(GalaxyEntityId id) => BinaryContains(IdentifiedEntities, id);
+        public bool StarfieldAfterimageUnlocked => Snapshot.StorageNamespace == "demo" &&
+            Discoveries.Contains("easter-egg:signal-afterimage");
         public bool IsScanComplete(GalaxyEntityId id) => BinaryContains(CompletedScans, id);
         public bool IsProcessed(string id) => ProcessedIntentIds.Contains(id, StringComparer.Ordinal);
 

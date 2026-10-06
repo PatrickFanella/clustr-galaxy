@@ -7,9 +7,12 @@ namespace ClustrGalaxy.World
     public sealed class InstancedStarfield : MonoBehaviour
     {
         private const int BatchSize = 1023;
+        private readonly Matrix4x4[] batch = new Matrix4x4[BatchSize];
         private Mesh mesh = null!;
         private Material material = null!;
         private Matrix4x4[] matrices = Array.Empty<Matrix4x4>();
+        private Matrix4x4[] worldMatrices = Array.Empty<Matrix4x4>();
+        private Matrix4x4 renderedRoot;
         private Color originalColor;
         private Color originalBaseColor;
         private Color originalEmissionColor;
@@ -20,6 +23,7 @@ namespace ClustrGalaxy.World
         private float pulseRemaining;
         private float pulseDuration;
         private bool unsupportedReported;
+        public bool AuthoredAfterimageEnabled { get; private set; }
 
         public void Initialize(Mesh starMesh, Material sharedMaterial, Matrix4x4[] instances)
         {
@@ -27,6 +31,7 @@ namespace ClustrGalaxy.World
             material = sharedMaterial;
             material.enableInstancing = true;
             matrices = instances ?? Array.Empty<Matrix4x4>();
+            worldMatrices = new Matrix4x4[matrices.Length];renderedRoot=default;
             originalColor = material.color;
             hasBaseColor = material.HasProperty("_BaseColor");
             hasEmissionColor = material.HasProperty("_EmissionColor");
@@ -35,6 +40,23 @@ namespace ClustrGalaxy.World
             pulseBaseColor = originalBaseColor;
             pulseColor = pulseBaseColor;
         }
+
+        public void SetAuthoredAfterimage(bool enabled)
+        {
+            if (AuthoredAfterimageEnabled == enabled) return;
+            AuthoredAfterimageEnabled = enabled;
+            pulseBaseColor = enabled ? Color.Lerp(originalBaseColor, new Color(0.75f, 0.4f, 1f), 0.6f) : originalBaseColor;
+            ApplyRestingColor();
+        }
+
+        private void ApplyRestingColor()
+        {
+            if (material == null) return;
+            if (AuthoredAfterimageEnabled) SetPulseColor(pulseBaseColor);
+            else RestoreOriginalMaterialState();
+        }
+
+        private void OnEnable() => ApplyRestingColor();
 
         /// <summary>Local, reversible presentation only; it changes no catalog data.</summary>
         public void TriggerAuthoredColorPulse(Color color, float durationSeconds = 1.2f)
@@ -55,14 +77,19 @@ namespace ClustrGalaxy.World
                 }
                 return;
             }
+            var rootMatrix=transform.localToWorldMatrix;
+            if(rootMatrix!=renderedRoot)
+            {
+                for(var index=0;index<matrices.Length;index++)worldMatrices[index]=rootMatrix*matrices[index];
+                renderedRoot=rootMatrix;
+            }
             UpdatePulse();
             try
             {
                 for (var offset = 0; offset < matrices.Length; offset += BatchSize)
                 {
                     var count = Math.Min(BatchSize, matrices.Length - offset);
-                    var batch = new Matrix4x4[count];
-                    Array.Copy(matrices, offset, batch, 0, count);
+                    Array.Copy(worldMatrices, offset, batch, 0, count);
                     Graphics.DrawMeshInstanced(mesh, 0, material, batch, count, null,
                         ShadowCastingMode.Off, receiveShadows: false, gameObject.layer);
                 }
@@ -93,7 +120,7 @@ namespace ClustrGalaxy.World
             pulseRemaining = Mathf.Max(0f, pulseRemaining - Time.unscaledDeltaTime);
             var phase = 1f - pulseRemaining / pulseDuration;
             SetPulseColor(Color.Lerp(pulseBaseColor, pulseColor, Mathf.Sin(phase * Mathf.PI)));
-            if (pulseRemaining <= 0f) RestoreOriginalMaterialState();
+            if (pulseRemaining <= 0f) ApplyRestingColor();
         }
 
         private void SetPulseColor(Color color)
