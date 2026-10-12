@@ -1,7 +1,28 @@
 name: Linux beta gates
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+
 jobs:
+  runner-availability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require an eligible native runner
+        env:
+          NATIVE_RUNNER_ENABLED: ${{ vars.UNITY_RUNNER_ENABLED }}
+        run: |
+          if [ "$NATIVE_RUNNER_ENABLED" != 'true' ]; then
+            echo "::error::Native qualification is unavailable. Register unity-6000.4.10f1-linux for this repository, verify its toolchain, then set UNITY_RUNNER_ENABLED=true. Linux checks do not replace this gate."
+            exit 1
+          fi
+
   unity:
+    if: vars.UNITY_RUNNER_ENABLED == 'true'
     runs-on: unity-6000.4.10f1-linux
     timeout-minutes: 45
     steps:
