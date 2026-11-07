@@ -11,6 +11,14 @@ import tempfile
 import time
 
 
+def _supports_option(executable, env, option):
+    try:
+        result = subprocess.run([executable, "--help"], env=env, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return option in result.stdout + result.stderr
+
+
 @contextlib.contextmanager
 def isolated_display(evidence, width=2560, height=1440):
     evidence = pathlib.Path(evidence); evidence.mkdir(parents=True, exist_ok=True)
@@ -27,17 +35,25 @@ def isolated_display(evidence, width=2560, height=1440):
                    WESTON_MODULE_MAP=";".join(f"{file.name}={file}" for file in modules),
                    WESTON_DATA_DIR=str(root / "usr/share/weston"))
     log = (evidence / "weston.log").resolve()
-    command = [executable, "--backend=headless", "--renderer=gl", "--shell=kiosk", "--xwayland", "--fake-seat",
+    command = [executable, "--backend=headless", "--renderer=gl", "--shell=kiosk", "--xwayland",
                "--width=" + str(width), "--height=" + str(height), "--refresh-rate=120000", "--no-config",
                "--socket=clustr-galaxy", "--log=" + str(log)]
+    # Weston 15 accepts --fake-seat; Weston 14 (Debian 13) exits on it.
+    if _supports_option(executable, env, "--fake-seat"): command.insert(5, "--fake-seat")
     process = subprocess.Popen(command, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     try:
         deadline = time.monotonic() + 15
         while True:
             text = log.read_text(errors="replace") if log.exists() else ""
             display = re.search(r"xserver listening on display (:\d+)", text)
-            if display: break
-            if process.poll() is not None or time.monotonic() > deadline: raise RuntimeError("Isolated compositor failed: " + str(log))
+            if display:
+                # Weston announces Xwayland before it finishes parsing options,
+                # so confirm it is still running before handing out the display.
+                time.sleep(.5)
+                text = log.read_text(errors="replace")
+                if process.poll() is None and "fatal:" not in text: break
+            if process.poll() is not None or "fatal:" in text or time.monotonic() > deadline:
+                raise RuntimeError("Isolated compositor failed: " + str(log))
             time.sleep(.1)
         renderer = re.search(r"GL renderer: (.+)", text)
         if renderer is None or any(name in renderer.group(1).lower() for name in ("llvmpipe", "softpipe", "swiftshader")):
