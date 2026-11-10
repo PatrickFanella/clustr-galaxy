@@ -2,6 +2,27 @@ name: Linux beta gates
 on:
   push:
     branches: [main]
+    # Docs-only merges cannot change the player or the harness. Pull requests
+    # still run every change so their status is always reported.
+    # docs/free-asset-notices.md is not listed: the builder ships it and the
+    # harness asserts it exists.
+    paths-ignore:
+      - 'README.md'
+      - 'CONTEXT.md'
+      - 'native/README.md'
+      - 'docs/adr/**'
+      - 'docs/superpowers/**'
+      - 'docs/beta-completion.md'
+      - 'docs/ci-configuration.md'
+      - 'docs/exploration-*.md'
+      - 'docs/feature-acceptance-checkpoint.md'
+      - 'docs/galaxy-world-model.md'
+      - 'docs/linux-qualification.md'
+      - 'docs/manual-controller-acceptance.md'
+      - 'docs/qualification-continuation-*.md'
+      - 'docs/replay-format.md'
+      - 'docs/space-simulation-research.md'
+      - 'docs/visual-direction.md'
   pull_request:
   workflow_dispatch:
 permissions:
